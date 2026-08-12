@@ -1,19 +1,9 @@
 
-import config from "../config/config";
+import { apiRequest } from "./api";
 
 export const fetchAuthStatus = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/auth/status`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        return await res.json();
+        return await apiRequest("/auth/status");
     } catch (error) {
         console.error("❌ Fetch auth status error:", error);
         return { connected: false };
@@ -22,13 +12,8 @@ export const fetchAuthStatus = async () => {
 
 export const fetchLogout = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/auth/logout`, {
-            method: "GET",
-            credentials: "include",
-        });
-
-        console.log("res", res);
-        return res;
+        await apiRequest("/auth/logout", { method: "POST" });
+        return { ok: true };
     } catch (error) {
         console.error("❌ Error during logout:", error);
     }

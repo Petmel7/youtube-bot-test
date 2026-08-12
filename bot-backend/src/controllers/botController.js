@@ -1,27 +1,33 @@
 
-const { startBot } = require("../services/youtubeService");
+const { createBotRun, getOwnedBotRun } = require("../services/botRunService");
+const { toBotRunDto } = require("../utils/dto");
+const {
+    assertObjectBody,
+    validateVideoId,
+    validatePrompt,
+    validateIdempotencyKey
+} = require("../utils/validators");
 
 const startBotController = async (req, res) => {
-    const user = req.user;
+    assertObjectBody(req.body);
 
-    if (!user || !user.tokens) {
-        return res.status(401).json({ error: "Unauthorized. No tokens found." });
-    }
+    const videoId = validateVideoId(req.body.videoId);
+    const prompt = validatePrompt(req.body.prompt);
+    const idempotencyKey = validateIdempotencyKey(req.body.idempotencyKey);
+    const { run, created } = await createBotRun({ user: req.user, videoId, prompt, idempotencyKey });
 
-    const { videoId, prompt } = req.body;
-
-    if (!videoId) {
-        return res.status(400).json({ error: "Missing video ID" });
-    }
-
-    try {
-        const totalReplies = await startBot(user, videoId, prompt);
-        res.json({ success: true, message: `✅ Bot finished replying to ${totalReplies} comments.` });
-    } catch (error) {
-        console.error("❌ Error starting bot:", error);
-        res.status(500).json({ error: "Failed to start bot" });
-    }
+    res.status(created ? 202 : 200).json({
+        success: true,
+        runId: String(run._id),
+        status: run.status,
+        run: toBotRunDto(run)
+    });
 };
 
-module.exports = { startBotController };
+const getBotRunController = async (req, res) => {
+    const run = await getOwnedBotRun(req.user._id, req.params.runId);
+    res.json({ success: true, run: toBotRunDto(run) });
+};
+
+module.exports = { startBotController, getBotRunController };
 

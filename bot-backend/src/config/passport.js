@@ -20,7 +20,6 @@ passport.use(
                 let user = await User.findOne({ googleId: profile.id });
 
                 if (!refreshToken && user?.tokens?.refresh_token) {
-                    console.log("🔄 Використовуємо старий refresh_token");
                     refreshToken = user.tokens.refresh_token;
                 }
 

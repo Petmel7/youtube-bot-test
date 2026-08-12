@@ -1,14 +1,22 @@
-const isAuthenticated = (req, res, next) => {
+const { unauthorized, forbidden } = require("../utils/errors");
 
-    if (req.isAuthenticated() && req.user?.tokens) {
+const isAuthenticated = (req, res, next) => {
+    if (req.isAuthenticated() && req.user) {
         return next();
     }
 
-    console.error("❌ Unauthorized: No tokens found or user is not authenticated");
-    res.status(401).json({ error: "Unauthorized" });
+    next(unauthorized());
 };
 
-module.exports = { isAuthenticated };
+const requireYouTubeConnection = (req, res, next) => {
+    if (req.user?.tokens?.refresh_token || req.user?.tokens?.access_token) {
+        return next();
+    }
+
+    next(forbidden("YOUTUBE_NOT_CONNECTED", "YouTube authorization is required"));
+};
+
+module.exports = { isAuthenticated, requireYouTubeConnection };
 
 
 // const User = require("../models/User");

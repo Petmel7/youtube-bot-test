@@ -1,27 +1,16 @@
-import config from "../config/config";
+import { apiRequest } from "./api";
 
-export const fetchAddTheme = async (channelTheme, botGender) => {
-    if (!channelTheme || !botGender) {
+export const fetchAddTheme = async (channelTheme, gender) => {
+    if (!channelTheme || !gender) {
         console.warn("❌ Введіть тематику каналу та виберіть стать!");
         return null;
     }
 
-    const genderText = botGender === "male" ? "You are a man." : "You are a woman.";
-
     try {
-        const res = await fetch(`${config.backendUrl}/user-prompt/add`, {
+        const data = await apiRequest("/user-prompt/add", {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ channelTheme, genderText })
+            body: JSON.stringify({ channelTheme, gender })
         });
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
-        console.log("✅ Тематика каналу та стать бота додані!", data.prompt);
         return data.success ? data.prompt : null;
     } catch (error) {
         console.error("❌ Error adding channel theme:", error);
@@ -36,14 +25,10 @@ export const fetchSaveTheme = async (channelTheme, setSavedTheme, setIsEditingTh
     }
 
     try {
-        const res = await fetch(`${config.backendUrl}/user-prompt/update`, {
+        const data = await apiRequest("/user-prompt/update", {
             method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ channelTheme })
         });
-
-        const data = await res.json();
         if (data.success) {
             setSavedTheme(channelTheme);
             setIsEditingTheme(false);
@@ -57,16 +42,11 @@ export const fetchSaveTheme = async (channelTheme, setSavedTheme, setIsEditingTh
 
 export const fetchUserPrompt = async (setSavedTheme, setSavedGender) => {
     try {
-        const res = await fetch(`${config.backendUrl}/user-prompt`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        const data = await res.json();
+        const data = await apiRequest("/user-prompt");
         if (data.success && data.prompt) {
             setSavedTheme(data.prompt.channelTheme);
-            setSavedGender(data.prompt.genderText);
+            setSavedGender(data.prompt.gender);
+            return data.prompt;
         }
     } catch (error) {
         console.error("❌ Error fetching channel theme:", error);
@@ -76,20 +56,7 @@ export const fetchUserPrompt = async (setSavedTheme, setSavedGender) => {
 // ✅ Отримати тематику каналу
 export const fetchGetTheme = async () => {
     try {
-        console.log("📌 Виконуємо fetchGetTheme...");
-        const res = await fetch(`${config.backendUrl}/user-prompt`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        console.log("📌 Отримана тема res:", res);
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
+        const data = await apiRequest("/user-prompt");
         return data.prompt || null;
     } catch (error) {
         console.error("❌ Error fetching channel theme:", error);
@@ -98,19 +65,14 @@ export const fetchGetTheme = async () => {
 };
 
 export const generateBotPrompt = (botGender, savedTheme, channelTheme) => {
-    console.log("📌 Вибраний гендер:", botGender);
-
     if (!botGender) {
         alert("❌ Please select bot identity (Male/Female).");
         return null;
     }
 
-    const genderText = botGender === "male" ? "You are a man." : "You are a woman.";
-
     return {
         channelTheme: savedTheme || channelTheme,
-        genderText,
-        generalPrompt: `${savedTheme || channelTheme}\n${genderText}`
+        gender: botGender
     };
 };
 
@@ -121,14 +83,10 @@ export const fetchSaveGender = async (botGender, setSavedGender, setIsEditingGen
     }
 
     try {
-        const res = await fetch(`${config.backendUrl}/user-prompt/update-gender`, {
+        const data = await apiRequest("/user-prompt/update-gender", {
             method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ genderText: botGender })
+            body: JSON.stringify({ gender: botGender })
         });
-
-        const data = await res.json();
         if (data.success) {
             setSavedGender(botGender);
             setIsEditingGender(false);

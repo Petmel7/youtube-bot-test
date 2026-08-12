@@ -1,21 +1,14 @@
-import config from "../config/config";
+import { apiRequest } from "./api";
 
 export const fetchMyVideos = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/youtube/my-videos`, {
-            method: "GET",
-            credentials: "include"
-        });
-
-        const data = await res.json();
+        const data = await apiRequest("/youtube/my-videos");
         if (data.success) {
-            return data.videos;
+            return { success: true, videos: data.videos };
         } else {
-            console.warn("❌ Failed to fetch videos:", data.error);
-            return [];
+            return { success: false, videos: [], error: data.error };
         }
     } catch (err) {
-        console.error("❌ Error:", err);
-        return [];
+        return { success: false, videos: [], error: err };
     }
 };

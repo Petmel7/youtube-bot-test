@@ -1,19 +1,8 @@
-import config from "../config/config";
+import { apiRequest } from "./api";
 
 export const fetchUsers = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/user/users`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
-        console.log("data", data);
+        const data = await apiRequest("/user/users");
         return data.users || [];
     } catch (error) {
         console.error("❌ Error fetching users data:", error);
@@ -23,17 +12,7 @@ export const fetchUsers = async () => {
 
 export const fetchUserData = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/user/user`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
+        const data = await apiRequest("/user/user");
         return data.user;
     } catch (error) {
         console.error("❌ Error fetching user data:", error);
@@ -43,17 +22,7 @@ export const fetchUserData = async () => {
 
 export const fetchUserRole = async () => {
     try {
-        const res = await fetch(`${config.backendUrl}/user/user-role`, {
-            method: "GET",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
+        const data = await apiRequest("/user/user-role");
         return data.user;
     } catch (error) {
         console.error("❌ Error fetching user data:", error);

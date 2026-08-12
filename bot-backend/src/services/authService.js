@@ -1,29 +1,26 @@
 const User = require("../models/User");
 const { google } = require("googleapis");
 const { googleClientId, googleClientSecret, googleRedirectUri } = require("../config/config");
+const { forbidden, unauthorized, upstream } = require("../utils/errors");
 
 const findUserById = async (userId) => {
     try {
         return await User.findById(userId);
     } catch (error) {
-        console.error("❌ Error fetching user:", error);
-        return null;
+        throw error;
     }
 };
 
-const storeUserTokensInSession = (req, user) => {
-    req.session.tokens = user.tokens;
-    console.log("✅ Session updated:", req.session);
+const storeUserTokensInSession = (req, userId) => {
+    req.session.userId = String(userId);
 };
 
 async function getValidAccessToken(user) {
     if (!user.tokens.refresh_token) {
-        throw new Error("❌ Відсутній refresh_token! Видаліть токени та авторизуйтесь знову.");
+        throw forbidden("YOUTUBE_NOT_CONNECTED", "YouTube authorization is required");
     }
 
     if (user.tokens.expiry_date < Date.now()) {
-        console.log("🔄 Оновлення access_token...");
-
         const oauth2Client = new google.auth.OAuth2(googleClientId, googleClientSecret, googleRedirectUri);
         oauth2Client.setCredentials({ refresh_token: user.tokens.refresh_token });
 
@@ -38,18 +35,14 @@ async function getValidAccessToken(user) {
                 }
             });
 
-            console.log("✅ Токен оновлено!");
             return credentials.access_token;
         } catch (error) {
-            console.error("❌ Помилка оновлення токена:", error.response ? error.response.data : error.message);
-
             if (error.response?.data?.error === "invalid_grant") {
-                console.error("⚠️ `invalid_grant` – Токен відкликано! Видаляю токени...");
                 await User.findByIdAndUpdate(user._id, { $unset: { tokens: "" } });
-                throw new Error("Токен відкликано. Повторна авторизація необхідна.");
+                throw unauthorized("YouTube authorization expired. Please reconnect.");
             }
 
-            throw new Error("Не вдалося оновити `access_token`.");
+            throw upstream("GOOGLE_TOKEN_REFRESH_FAILED", "Failed to refresh YouTube authorization");
         }
     }
 

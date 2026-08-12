@@ -1,31 +1,30 @@
 const UserPrompt = require("../models/UserPrompt");
-const { generatePrompt } = require("../config/promptConfig");
+const { generatePrompt, genderToText } = require("../config/promptConfig");
+const { conflict, notFound } = require("../utils/errors");
 
-const createUserPrompt = async (userId, channelTheme, genderText) => {
-    if (!channelTheme || !genderText) {
-        throw new Error("Missing channelTheme or genderText");
-    }
-
+const createUserPrompt = async (userId, channelTheme, gender) => {
     const existingPrompt = await UserPrompt.findOne({ userId });
     if (existingPrompt) {
-        throw new Error("User prompt already exists. Use update instead.");
+        throw conflict("PROMPT_EXISTS", "User prompt already exists");
     }
 
-    const generalPrompt = generatePrompt(channelTheme, genderText);
-    const newPrompt = new UserPrompt({ userId, channelTheme, genderText, generalPrompt });
+    const generalPrompt = generatePrompt(channelTheme, gender);
+    const newPrompt = new UserPrompt({ userId, channelTheme, gender, genderText: genderToText(gender), generalPrompt });
 
     await newPrompt.save();
     return newPrompt;
 };
 
-const updateUserPromptData = async (userId, channelTheme, genderText) => {
-    if (!channelTheme && !genderText) {
-        throw new Error("Missing channelTheme or genderText");
-    }
-
-    const updateData = {};
-    if (channelTheme) updateData.channelTheme = channelTheme;
-    if (genderText) updateData.genderText = genderText;
+const updateUserPromptData = async (userId, channelTheme, gender) => {
+    const current = await UserPrompt.findOne({ userId });
+    const nextTheme = channelTheme || current?.channelTheme;
+    const nextGender = gender || current?.gender || (current?.genderText === "You are a woman." ? "female" : "male");
+    const updateData = {
+        channelTheme: nextTheme,
+        gender: nextGender,
+        genderText: genderToText(nextGender),
+        generalPrompt: generatePrompt(nextTheme, nextGender)
+    };
 
     return await UserPrompt.findOneAndUpdate({ userId }, updateData, { upsert: true, new: true });
 };
@@ -33,27 +32,14 @@ const updateUserPromptData = async (userId, channelTheme, genderText) => {
 const getUserPromptData = async (userId) => {
     const prompt = await UserPrompt.findOne({ userId });
     if (!prompt) {
-        throw new Error("Prompt not found");
+        throw notFound("PROMPT_NOT_FOUND", "Prompt not found");
     }
     return prompt;
 };
 
-const updateUserGenderService = async (userId, genderText) => {
-    if (!genderText) {
-        throw new Error("Missing genderText");
-    }
-
-    const updatedPrompt = await UserPrompt.findOneAndUpdate(
-        { userId },
-        { genderText },
-        { new: true }
-    );
-
-    if (!updatedPrompt) {
-        throw new Error("Prompt not found or update failed");
-    }
-
-    return updatedPrompt;
+const updateUserGenderService = async (userId, gender) => {
+    const current = await getUserPromptData(userId);
+    return updateUserPromptData(userId, current.channelTheme, gender);
 };
 
 module.exports = {

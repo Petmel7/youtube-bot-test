@@ -1,55 +1,168 @@
 const fetch = require("node-fetch");
 const { google } = require("googleapis");
-const { getValidAccessToken } = require("./authService")
+const BotRun = require("../models/BotRun");
+const { getValidAccessToken } = require("./authService");
 const { generateResponse } = require("./geminiService");
-const { googleClientId, googleClientSecret, googleRedirectUri, youtubeApiBase } = require("../config/config");
+const {
+    googleClientId,
+    googleClientSecret,
+    googleRedirectUri,
+    youtubeApiBase,
+    botMaxCommentsPerRun,
+    botMaxPagesPerRun
+} = require("../config/config");
+const { forbidden, notFound, upstream } = require("../utils/errors");
 
-async function startBot(user, videoId, userPrompt) {
-    console.log(`🤖 Bot started on video: ${videoId}`);
-    console.log(`✅ userPrompt: ${userPrompt}`);
-
+const createYoutubeClient = async (user) => {
     const accessToken = await getValidAccessToken(user);
-    console.log("🔍 Використовується токен:", accessToken);
-
     const authClient = new google.auth.OAuth2(googleClientId, googleClientSecret, googleRedirectUri);
     authClient.setCredentials({ access_token: accessToken });
-    const youtube = google.youtube({ version: "v3", auth: authClient });
 
-    let nextPageToken = null;
-    let totalReplies = 0;
+    return { youtube: google.youtube({ version: "v3", auth: authClient }), accessToken };
+};
+
+const markRunFailed = async (runId, error) => {
+    await BotRun.findByIdAndUpdate(runId, {
+        status: "failed",
+        errorCode: error.code || "BOT_RUN_FAILED",
+        errorMessage: error.isOperational ? error.message : "Bot run failed",
+        completedAt: new Date()
+    });
+};
+
+const addRunResult = async (runId, result) => {
+    const update = {
+        $inc: {
+            processedCount: 1,
+            successCount: result.status === "replied" ? 1 : 0,
+            failureCount: result.status === "failed" ? 1 : 0,
+            skippedCount: result.status === "skipped" ? 1 : 0
+        },
+        $push: { results: result }
+    };
+
+    await BotRun.findByIdAndUpdate(runId, update);
+};
+
+const hasPreviouslyReplied = async (userId, videoId, commentId) => {
+    return BotRun.exists({
+        userId,
+        videoId,
+        results: {
+            $elemMatch: {
+                commentId,
+                status: "replied"
+            }
+        }
+    });
+};
+
+const verifyVideoOwnership = async (user, videoId) => {
+    const { youtube } = await createYoutubeClient(user);
+    const channelId = await getUserChannelId(user);
+    const response = await youtube.videos.list({
+        part: "snippet",
+        id: videoId
+    });
+
+    const video = response.data.items?.[0];
+    if (!video) {
+        throw notFound("VIDEO_NOT_FOUND", "Video not found");
+    }
+
+    if (video.snippet?.channelId !== channelId) {
+        throw forbidden("VIDEO_FORBIDDEN", "Video does not belong to the authenticated channel");
+    }
+};
+
+async function executeBotRun(runId, user, videoId, userPrompt) {
+    const run = await BotRun.findById(runId);
+    if (!run || run.status !== "queued") {
+        return;
+    }
+
+    await BotRun.findByIdAndUpdate(runId, { status: "running", startedAt: new Date() });
 
     try {
+        await verifyVideoOwnership(user, videoId);
+
+        const { youtube, accessToken } = await createYoutubeClient(user);
+        let nextPageToken = null;
+        let pageCount = 0;
+        let processed = 0;
+
         do {
+            pageCount++;
             const response = await youtube.commentThreads.list({
                 part: "snippet",
                 videoId,
-                maxResults: 100,
-                pageToken: nextPageToken
+                maxResults: Math.min(100, botMaxCommentsPerRun),
+                pageToken: nextPageToken || undefined
             });
 
-            for (const item of response.data.items) {
-                const commentId = item.snippet.topLevelComment.id;
-                const commentText = item.snippet.topLevelComment.snippet.textOriginal;
-                console.log(`💬 Found comment: ${commentText}`);
+            const items = response.data.items || [];
+            for (const item of items) {
+                if (processed >= botMaxCommentsPerRun) break;
 
-                const responseText = await generateResponse(commentText, userPrompt);
-                await replyToComment(accessToken, commentId, responseText);
-                totalReplies++;
+                const commentId = item.snippet?.topLevelComment?.id;
+                const commentText = item.snippet?.topLevelComment?.snippet?.textOriginal;
+                if (!commentId || !commentText) {
+                    await addRunResult(runId, {
+                        commentId: commentId || "unknown",
+                        status: "skipped",
+                        errorCode: "INVALID_COMMENT",
+                        errorMessage: "Comment data was incomplete"
+                    });
+                    processed++;
+                    continue;
+                }
+
+                if (await hasPreviouslyReplied(user._id, videoId, commentId)) {
+                    await addRunResult(runId, { commentId, status: "skipped" });
+                    processed++;
+                    continue;
+                }
+
+                try {
+                    const responseText = await generateResponse(commentText, userPrompt);
+                    await replyToComment(accessToken, commentId, responseText);
+                    await addRunResult(runId, { commentId, status: "replied" });
+                } catch (error) {
+                    await addRunResult(runId, {
+                        commentId,
+                        status: "failed",
+                        errorCode: error.code || "COMMENT_FAILED",
+                        errorMessage: error.isOperational ? error.message : "Failed to process comment"
+                    });
+                }
+
+                processed++;
             }
 
-            nextPageToken = response.data.nextPageToken || null;
-        } while (nextPageToken);
+            nextPageToken = processed < botMaxCommentsPerRun ? response.data.nextPageToken || null : null;
+        } while (nextPageToken && pageCount < botMaxPagesPerRun);
 
-        console.log(`✅ Bot finished replying to ${totalReplies} comments.`);
-        return totalReplies;
+        const completedRun = await BotRun.findById(runId);
+        const status = completedRun.failureCount > 0
+            ? (completedRun.successCount > 0 || completedRun.skippedCount > 0 ? "partial" : "failed")
+            : "completed";
 
+        await BotRun.findByIdAndUpdate(runId, {
+            status,
+            completedAt: new Date(),
+            errorCode: status === "failed" ? "BOT_RUN_NO_REPLIES" : undefined,
+            errorMessage: status === "failed" ? "Bot run did not create any replies" : undefined
+        });
     } catch (error) {
-        console.error("❌ Error in bot:", error.response?.data || error.message);
-        throw error;
+        await markRunFailed(runId, error);
     }
 }
 
 async function replyToComment(accessToken, commentId, responseText) {
+    if (!responseText) {
+        throw upstream("EMPTY_REPLY", "Reply text is empty");
+    }
+
     const authClient = new google.auth.OAuth2(googleClientId, googleClientSecret, googleRedirectUri);
     authClient.setCredentials({ access_token: accessToken });
     const youtube = google.youtube({ version: "v3", auth: authClient });
@@ -64,9 +177,8 @@ async function replyToComment(accessToken, commentId, responseText) {
                 }
             }
         });
-        console.log(`✅ Replied: ${responseText}`);
     } catch (error) {
-        console.error("❌ Error replying to comment:", error.response?.data || error.message);
+        throw upstream("YOUTUBE_REPLY_FAILED", "Failed to reply to YouTube comment");
     }
 }
 
@@ -77,69 +189,50 @@ const getUserChannelId = async (user) => {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!res.ok) throw new Error(`❌ Failed to fetch channel ID. Status: ${res.status}`);
+    if (!res.ok) throw upstream("YOUTUBE_CHANNEL_FAILED", "Failed to fetch channel ID");
     const data = await res.json();
 
-    if (!data.items.length) throw new Error("❌ No channels found for user");
+    if (!data.items?.length) throw notFound("YOUTUBE_CHANNEL_NOT_FOUND", "No channels found for user");
     return data.items[0].id;
 };
 
 const getChannelVideos = async (user, channelId) => {
     const accessToken = await getValidAccessToken(user);
 
-    // 1. Отримуємо ID відео
     const searchRes = await fetch(`${youtubeApiBase}/search?part=snippet&channelId=${channelId}&type=video&maxResults=50`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!searchRes.ok) throw new Error(`❌ Failed to fetch videos. Status: ${searchRes.status}`);
+    if (!searchRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
     const searchData = await searchRes.json();
 
-    const videoIds = searchData.items.map(item => item.id.videoId).filter(Boolean).join(",");
-
+    const videoIds = (searchData.items || []).map(item => item.id.videoId).filter(Boolean).join(",");
     if (!videoIds) return [];
 
-    // 2. Запит повної інформації про відео
     const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!detailsRes.ok) throw new Error(`❌ Failed to fetch video details. Status: ${detailsRes.status}`);
+    if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
     const detailsData = await detailsRes.json();
 
-    return detailsData.items.map(video => ({
+    return (detailsData.items || []).map(video => ({
         videoId: video.id,
-        title: video.snippet.title,
-        description: video.snippet.description,
-        publishedAt: video.snippet.publishedAt,
-        thumbnail: video.snippet.thumbnails?.medium?.url || null,
-        duration: video.contentDetails.duration,
-        views: video.statistics?.viewCount,
-        likes: video.statistics?.likeCount,
-        comments: video.statistics?.commentCount
+        title: video.snippet?.title || "",
+        description: video.snippet?.description || "",
+        publishedAt: video.snippet?.publishedAt || null,
+        thumbnail: video.snippet?.thumbnails?.medium?.url || null,
+        duration: video.contentDetails?.duration || null,
+        views: video.statistics?.viewCount || null,
+        likes: video.statistics?.likeCount || null,
+        comments: video.statistics?.commentCount || null
     }));
 };
 
-// const getChannelVideos = async (user, channelId) => {
-//     const accessToken = await getValidAccessToken(user); // <== тут беремо токен з урахуванням оновлення
-
-//     const res = await fetch(`${youtubeApiBase}/search?part=snippet&channelId=${channelId}&type=video&maxResults=50`, {
-//         headers: { Authorization: `Bearer ${accessToken}` }
-//     });
-
-//     if (!res.ok) throw new Error(`❌ Failed to fetch videos. Status: ${res.status}`);
-//     const data = await res.json();
-
-//     return data.items.map(item => ({
-//         videoId: item.id.videoId,
-//         title: item.snippet.title,
-//         publishedAt: item.snippet.publishedAt
-//     }));
-// };
-
 module.exports = {
-    startBot,
+    executeBotRun,
     replyToComment,
     getUserChannelId,
-    getChannelVideos
+    getChannelVideos,
+    verifyVideoOwnership
 };

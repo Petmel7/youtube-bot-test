@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { fetchStartBot } from "../services/botService";
+import { fetchBotRun, fetchStartBot } from "../services/botService";
 import { validateChannelTheme, validateVideoUrl } from "../validate/validateInputs";
 import { fetchUserPrompt, fetchSaveTheme, fetchSaveGender, generateBotPrompt } from "../services/promptService";
 import Gender from "../components/Gender";
@@ -24,6 +24,7 @@ const Dashboard = () => {
     const [savedGender, setSavedGender] = useState(null);
     const [isEditingTheme, setIsEditingTheme] = useState(false);
     const [isEditingGender, setIsEditingGender] = useState(false);
+    const [botRun, setBotRun] = useState(null);
     const { t } = useTranslation();
     const isConnected = useAuthStatus(null, "/");
 
@@ -37,6 +38,26 @@ const Dashboard = () => {
         };
         getUserPrompt();
     }, []);
+
+    useEffect(() => {
+        if (!botRun || !["queued", "running"].includes(botRun.status)) return;
+
+        const timerId = setInterval(async () => {
+            try {
+                const run = await fetchBotRun(botRun.id);
+                setBotRun(run);
+                if (!["queued", "running"].includes(run.status)) {
+                    setIsBotRunning(false);
+                    clearInterval(timerId);
+                }
+            } catch (error) {
+                setIsBotRunning(false);
+                clearInterval(timerId);
+            }
+        }, 3000);
+
+        return () => clearInterval(timerId);
+    }, [botRun]);
 
     const saveTheme = async () => {
         if (!validateChannelTheme(channelTheme, setError)) return;
@@ -57,6 +78,9 @@ const Dashboard = () => {
         if (!prompt) return;
 
         const result = await fetchStartBot(videoUrl, prompt, botGender, setIsBotRunning);
+        if (result.run) {
+            setBotRun(result.run);
+        }
         alert(result.message);
 
         setVideoUrl("");
@@ -105,6 +129,11 @@ const Dashboard = () => {
                 startBot,
                 isBotRunning
             }} />
+            {botRun && (
+                <p>
+                    Bot run: {botRun.status}. Replies: {botRun.successCount}, failed: {botRun.failureCount}, skipped: {botRun.skippedCount}.
+                </p>
+            )}
         </div>
     );
 };

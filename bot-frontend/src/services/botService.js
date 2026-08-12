@@ -1,5 +1,5 @@
 
-import config from "../config/config";
+import { apiRequest, createIdempotencyKey } from "./api";
 import { fetchAddTheme, fetchGetTheme } from "./promptService";
 
 export const fetchStartBot = async (videoUrl, prompt, botGender, setIsBotRunning) => {
@@ -17,38 +17,34 @@ export const fetchStartBot = async (videoUrl, prompt, botGender, setIsBotRunning
     setIsBotRunning(true);
 
     try {
-        const savedTheme = await fetchGetTheme();
+        let savedTheme = await fetchGetTheme();
         if (!savedTheme) {
-            console.log("ℹ️ Тематика каналу ще не задана. Додаємо нову...");
-            const addTheme = await fetchAddTheme(prompt.channelTheme, botGender);
-            if (!addTheme) {
+            savedTheme = await fetchAddTheme(prompt.channelTheme, botGender);
+            if (!savedTheme) {
                 console.warn("❌ Не вдалося додати тематику каналу.");
                 setIsBotRunning(false);
                 return { success: false, message: "Failed to add channel theme!" };
             }
-        } else {
-            console.log(`✅ Тематика вже є: ${savedTheme.channelTheme}`);
         }
 
-        // 🔥 Запуск бота з передачею `prompt`
-        const res = await fetch(`${config.backendUrl}/bot/start`, {
+        const data = await apiRequest("/bot/start", {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ videoId, prompt: prompt.generalPrompt }) // ✅ Тепер prompt передається
+            body: JSON.stringify({
+                videoId,
+                prompt: savedTheme?.generalPrompt || "",
+                idempotencyKey: createIdempotencyKey()
+            })
         });
 
-        if (!res.ok) {
-            throw new Error(`HTTP error! Status: ${res.status}`);
-        }
-
-        const data = await res.json();
-        return { success: data.success, message: data.message || "Bot started!" };
+        return { success: data.success, message: "Bot run started.", run: data.run };
     } catch (error) {
-        console.error("❌ Bot start error:", error);
-        return { success: false, message: "Error starting bot!" };
-    } finally {
         setIsBotRunning(false);
+        return { success: false, message: error.message || "Error starting bot!" };
     }
+};
+
+export const fetchBotRun = async (runId) => {
+    const data = await apiRequest(`/bot/runs/${runId}`);
+    return data.run;
 };
 

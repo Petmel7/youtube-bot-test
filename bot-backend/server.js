@@ -7,6 +7,10 @@ require("dotenv").config();
 const connectDB = require("./src/config/db");
 const sessionMiddleware = require("./src/config/session");
 const corsMiddleware = require("./src/config/cors");
+const validateEnv = require("./src/config/validateEnv");
+const errorHandler = require("./src/middleware/errorHandler");
+
+validateEnv();
 
 // ✅ Підключення Passport конфігурації
 require("./src/config/passport");
@@ -33,13 +37,6 @@ app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ Логування сесій (для діагностики)
-app.use((req, res, next) => {
-    console.log("Session:", req.session);
-    console.log("User:", req.user);
-    next();
-});
-
 app.get("/", (req, res) => {
     res.send("✅ YouTube Bot Backend is running!");
 });
@@ -50,6 +47,7 @@ app.use("/bot", botRoutes);
 app.use("/user", userRoutes);
 app.use("/user-prompt", userPromptRoutes);
 app.use("/youtube", youtubeRoutes);
+app.use(errorHandler);
 
 // ✅ Запуск сервера
 const PORT = process.env.PORT || 10000;

@@ -79,6 +79,7 @@ const VideoListButton = () => {
     const [videos, setVideos] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
 
     const handleClick = async () => {
         if (isOpen) {
@@ -88,8 +89,12 @@ const VideoListButton = () => {
 
         setLoading(true);
         const res = await fetchMyVideos();
-        if (res && Array.isArray(res)) {
-            setVideos(res);
+        if (res.success) {
+            setVideos(res.videos);
+            setErrorMessage("");
+        } else {
+            setVideos([]);
+            setErrorMessage(res.error?.message || "Failed to fetch videos");
         }
         setIsOpen(true);
         setLoading(false);
@@ -115,6 +120,7 @@ const VideoListButton = () => {
 
             {isOpen && (
                 <ul className={styles.videoList}>
+                    {errorMessage && <li>{errorMessage}</li>}
                     {videos.length === 0 && <li>{t("no.videos")}</li>}
                     {videos.map((video) => (
                         <li key={video.videoId} className={styles.videoItem}>

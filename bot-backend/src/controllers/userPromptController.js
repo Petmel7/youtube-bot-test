@@ -1,55 +1,41 @@
 
 const { createUserPrompt, updateUserPromptData, getUserPromptData, updateUserGenderService } = require("../services/userPromptService");
+const { toPromptDto } = require("../utils/dto");
+const { assertObjectBody, validateChannelTheme, validateGender } = require("../utils/validators");
 
 const addUserPrompt = async (req, res) => {
-    try {
-        console.log("📌 Отриманий запит:", req.body);
-        const { channelTheme, genderText } = req.body;
-        const userId = req.user._id;
+    assertObjectBody(req.body);
+    const channelTheme = validateChannelTheme(req.body.channelTheme);
+    const gender = validateGender(req.body.gender);
+    const userId = req.user._id;
 
-        const newPrompt = await createUserPrompt(userId, channelTheme, genderText);
-        res.json({ success: true, prompt: newPrompt });
-    } catch (error) {
-        console.error("❌ Error adding prompt:", error.message);
-        res.status(400).json({ error: error.message });
-    }
+    const newPrompt = await createUserPrompt(userId, channelTheme, gender);
+    res.json({ success: true, prompt: toPromptDto(newPrompt) });
 };
 
 const updateUserPrompt = async (req, res) => {
-    try {
-        const { channelTheme, genderText } = req.body;
-        const userId = req.user._id;
+    assertObjectBody(req.body);
+    const channelTheme = req.body.channelTheme === undefined ? undefined : validateChannelTheme(req.body.channelTheme);
+    const gender = req.body.gender === undefined ? undefined : validateGender(req.body.gender);
+    const userId = req.user._id;
 
-        const updatedPrompt = await updateUserPromptData(userId, channelTheme, genderText);
-        res.json({ success: true, prompt: updatedPrompt });
-    } catch (error) {
-        console.error("❌ Error updating prompt:", error.message);
-        res.status(400).json({ error: error.message });
-    }
+    const updatedPrompt = await updateUserPromptData(userId, channelTheme, gender);
+    res.json({ success: true, prompt: toPromptDto(updatedPrompt) });
 };
 
 const getUserPrompt = async (req, res) => {
-    try {
-        const userId = req.user._id;
-        const prompt = await getUserPromptData(userId);
-        res.json({ success: true, prompt });
-    } catch (error) {
-        console.error("❌ Error fetching prompt:", error.message);
-        res.status(404).json({ error: error.message });
-    }
+    const userId = req.user._id;
+    const prompt = await getUserPromptData(userId);
+    res.json({ success: true, prompt: toPromptDto(prompt) });
 };
 
 const updateUserGender = async (req, res) => {
-    try {
-        const userId = req.user._id;
-        const { genderText } = req.body;
+    assertObjectBody(req.body);
+    const userId = req.user._id;
+    const gender = validateGender(req.body.gender);
 
-        const updatedPrompt = await updateUserGenderService(userId, genderText);
-        res.json({ success: true, prompt: updatedPrompt });
-    } catch (error) {
-        console.error("❌ Error updating bot gender:", error.message);
-        res.status(400).json({ error: error.message });
-    }
+    const updatedPrompt = await updateUserGenderService(userId, gender);
+    res.json({ success: true, prompt: toPromptDto(updatedPrompt) });
 };
 
 module.exports = {
