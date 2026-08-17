@@ -21,6 +21,7 @@ const PAYMENT_VERIFICATION_CODES = Object.freeze({
     TRANSFER_NOT_FOUND: "PAYMENT_TRANSFER_NOT_FOUND",
     TRANSFER_AMBIGUOUS: "PAYMENT_TRANSFER_AMBIGUOUS",
     WRONG_RECIPIENT: "PAYMENT_WRONG_RECIPIENT",
+    INVALID_RECEIPT: "PAYMENT_INVALID_RECEIPT",
     INVALID_AMOUNT: "PAYMENT_INVALID_AMOUNT",
     UNDERPAID: "PAYMENT_UNDERPAID",
     OVERPAID: "PAYMENT_OVERPAID",
@@ -144,12 +145,20 @@ const createPaymentVerifier = ({
                 return pendingResult(PAYMENT_VERIFICATION_CODES.RECEIPT_NOT_FOUND, context);
             }
 
-            const confirmedBlock = receipt.blockNumber ?? null;
+            if (!Number.isInteger(receipt.blockNumber) || receipt.blockNumber < 0) {
+                return createResult({
+                    ...context,
+                    outcome: PAYMENT_OUTCOMES.REJECTED,
+                    code: PAYMENT_VERIFICATION_CODES.INVALID_RECEIPT,
+                    retryable: true,
+                    transactionStatus: receipt.status === 1 ? "SUCCESS" : "REVERTED"
+                });
+            }
+
+            const confirmedBlock = receipt.blockNumber;
             const firstSeenBlock = transaction.blockNumber ?? confirmedBlock;
             const currentBlock = await provider.getBlockNumber();
-            const confirmationCount = confirmedBlock === null
-                ? 0
-                : Math.max(0, currentBlock - confirmedBlock + 1);
+            const confirmationCount = Math.max(0, currentBlock - confirmedBlock + 1);
             const receiptContext = {
                 ...context,
                 firstSeenBlock,
@@ -166,12 +175,7 @@ const createPaymentVerifier = ({
             const matchingTransfers = transfers.filter(transfer => transfer.to === configuredTreasuryAddress);
 
             if (matchingTransfers.length === 0) {
-                return rejectResult(
-                    transfers.length > 0
-                        ? PAYMENT_VERIFICATION_CODES.WRONG_RECIPIENT
-                        : PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND,
-                    receiptContext
-                );
+                return rejectResult(PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND, receiptContext);
             }
 
             if (matchingTransfers.length > 1) {
@@ -187,6 +191,15 @@ const createPaymentVerifier = ({
                 verifiedTokenAmountBaseUnits
             };
 
+            if (confirmationCount < config.confirmations) {
+                return createResult({
+                    ...transferContext,
+                    outcome: PAYMENT_OUTCOMES.CONFIRMING,
+                    code: PAYMENT_VERIFICATION_CODES.CONFIRMING,
+                    retryable: true
+                });
+            }
+
             if (transfer.value < expectedAmount) {
                 return createResult({
                     ...transferContext,
@@ -200,15 +213,6 @@ const createPaymentVerifier = ({
                     ...transferContext,
                     outcome: PAYMENT_OUTCOMES.OVERPAID,
                     code: PAYMENT_VERIFICATION_CODES.OVERPAID
-                });
-            }
-
-            if (confirmationCount < config.confirmations) {
-                return createResult({
-                    ...transferContext,
-                    outcome: PAYMENT_OUTCOMES.CONFIRMING,
-                    code: PAYMENT_VERIFICATION_CODES.CONFIRMING,
-                    retryable: true
                 });
             }
 

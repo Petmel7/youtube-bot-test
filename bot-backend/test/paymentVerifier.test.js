@@ -102,6 +102,8 @@ const verifyWith = async ({ provider = makeProvider(), intent = makeIntent(), ve
     createPaymentVerifier({ provider, config: verifierConfig }).verifyPaymentIntent(intent)
 );
 
+const stableStringify = (value) => JSON.stringify(value, Object.keys(value).sort());
+
 test("EVM provider constructs an ethers JsonRpcProvider from configured RPC and exposes only narrow operations", async () => {
     let constructedRpcUrl = null;
     class FakeProvider {
@@ -209,7 +211,7 @@ test("PaymentVerifier rejects no matching, ambiguous, and wrong-recipient transf
     const wrongRecipient = await verifyWith({
         provider: makeProvider({ receipt: makeReceipt({ logs: [makeTransferLog({ to: otherAddress })] }) })
     });
-    assert.equal(wrongRecipient.code, PAYMENT_VERIFICATION_CODES.WRONG_RECIPIENT);
+    assert.equal(wrongRecipient.code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
 
     const ambiguous = await verifyWith({
         provider: makeProvider({ receipt: makeReceipt({ logs: [makeTransferLog(), makeTransferLog({ value: 6000000n })] }) })
@@ -253,18 +255,84 @@ test("PaymentVerifier compares token amounts exactly with BigInt and rejects inv
     assert.equal((await verifyWith({ intent: makeIntent({ expectedTokenAmountBaseUnits: "0" }) })).code, PAYMENT_VERIFICATION_CODES.INVALID_AMOUNT);
 });
 
-test("PaymentVerifier applies configured confirmation policy at below, exact, and above threshold", async () => {
-    const below = await verifyWith({ provider: makeProvider({ currentBlock: 158 }) });
-    assert.equal(below.outcome, PAYMENT_OUTCOMES.CONFIRMING);
-    assert.equal(below.confirmationCount, 59);
+test("PaymentVerifier confirmation threshold dominates amount terminal outcomes", async () => {
+    const exactBelow = await verifyWith({ provider: makeProvider({ currentBlock: 158 }) });
+    assert.equal(exactBelow.outcome, PAYMENT_OUTCOMES.CONFIRMING);
+    assert.equal(exactBelow.code, PAYMENT_VERIFICATION_CODES.CONFIRMING);
+    assert.equal(exactBelow.confirmationCount, 59);
+
+    const underpaidBelow = await verifyWith({
+        provider: makeProvider({
+            currentBlock: 158,
+            receipt: makeReceipt({ logs: [makeTransferLog({ value: 4999999n })] })
+        })
+    });
+    assert.equal(underpaidBelow.outcome, PAYMENT_OUTCOMES.CONFIRMING);
+    assert.equal(underpaidBelow.code, PAYMENT_VERIFICATION_CODES.CONFIRMING);
+    assert.notEqual(underpaidBelow.outcome, PAYMENT_OUTCOMES.UNDERPAID);
+    assert.equal(underpaidBelow.verifiedTokenAmountBaseUnits, "4999999");
+
+    const overpaidBelow = await verifyWith({
+        provider: makeProvider({
+            currentBlock: 158,
+            receipt: makeReceipt({ logs: [makeTransferLog({ value: 5000001n })] })
+        })
+    });
+    assert.equal(overpaidBelow.outcome, PAYMENT_OUTCOMES.CONFIRMING);
+    assert.equal(overpaidBelow.code, PAYMENT_VERIFICATION_CODES.CONFIRMING);
+    assert.notEqual(overpaidBelow.outcome, PAYMENT_OUTCOMES.OVERPAID);
+    assert.equal(overpaidBelow.verifiedTokenAmountBaseUnits, "5000001");
 
     const exact = await verifyWith({ provider: makeProvider({ currentBlock: 159 }) });
     assert.equal(exact.outcome, PAYMENT_OUTCOMES.VERIFIED);
     assert.equal(exact.confirmationCount, 60);
 
+    const underpaid = await verifyWith({
+        provider: makeProvider({
+            currentBlock: 159,
+            receipt: makeReceipt({ logs: [makeTransferLog({ value: 4999999n })] })
+        })
+    });
+    assert.equal(underpaid.outcome, PAYMENT_OUTCOMES.UNDERPAID);
+    assert.equal(underpaid.code, PAYMENT_VERIFICATION_CODES.UNDERPAID);
+
+    const overpaid = await verifyWith({
+        provider: makeProvider({
+            currentBlock: 159,
+            receipt: makeReceipt({ logs: [makeTransferLog({ value: 5000001n })] })
+        })
+    });
+    assert.equal(overpaid.outcome, PAYMENT_OUTCOMES.OVERPAID);
+    assert.equal(overpaid.code, PAYMENT_VERIFICATION_CODES.OVERPAID);
+
     const above = await verifyWith({ provider: makeProvider({ currentBlock: 160 }) });
     assert.equal(above.outcome, PAYMENT_OUTCOMES.VERIFIED);
     assert.equal(above.confirmationCount, 61);
+});
+
+test("PaymentVerifier rejects invalid receipt block numbers before confirmation calculation", async () => {
+    const withoutBlockNumber = await verifyWith({
+        provider: makeProvider({ receipt: { status: 1, logs: [makeTransferLog()] } })
+    });
+    assert.equal(withoutBlockNumber.outcome, PAYMENT_OUTCOMES.REJECTED);
+    assert.equal(withoutBlockNumber.code, PAYMENT_VERIFICATION_CODES.INVALID_RECEIPT);
+    assert.equal(withoutBlockNumber.retryable, true);
+    assert.notEqual(withoutBlockNumber.outcome, PAYMENT_OUTCOMES.CONFIRMING);
+
+    const undefinedBlockNumber = await verifyWith({
+        provider: makeProvider({ receipt: makeReceipt({ blockNumber: undefined }) })
+    });
+    assert.equal(undefinedBlockNumber.code, PAYMENT_VERIFICATION_CODES.INVALID_RECEIPT);
+
+    const nonIntegerBlockNumber = await verifyWith({
+        provider: makeProvider({ receipt: makeReceipt({ blockNumber: 100.5 }) })
+    });
+    assert.equal(nonIntegerBlockNumber.code, PAYMENT_VERIFICATION_CODES.INVALID_RECEIPT);
+
+    const negativeBlockNumber = await verifyWith({
+        provider: makeProvider({ receipt: makeReceipt({ blockNumber: -1 }) })
+    });
+    assert.equal(negativeBlockNumber.code, PAYMENT_VERIFICATION_CODES.INVALID_RECEIPT);
 });
 
 test("PaymentVerifier VERIFIED result contains backend-derived fields", async () => {
@@ -298,14 +366,40 @@ test("PaymentVerifier returns deterministic retryable provider failures without 
     assert.equal(result.message, undefined);
 });
 
-test("PaymentVerifier is deterministic and side-effect free for repeated verification", async () => {
-    const intent = Object.freeze(makeIntent());
+test("PaymentVerifier is deterministic and does not mutate the supplied PaymentIntent", async () => {
+    const intent = makeIntent();
+    const before = stableStringify(intent);
     const provider = makeProvider();
     const first = await verifyWith({ provider, intent });
     const second = await verifyWith({ provider, intent });
 
+    assert.equal(stableStringify(intent), before);
     assert.deepEqual(second, first);
     assert.equal(provider.calls.getTransaction, 2);
     assert.equal(provider.calls.getTransactionReceipt, 2);
     assert.equal(provider.calls.parseTransferLogs, 2);
+});
+
+test("PaymentVerifier does not invoke application persistence or settlement code", async () => {
+    const forbidden = () => {
+        throw new Error("application persistence should not be called");
+    };
+    const intent = makeIntent({
+        save: forbidden,
+        updateOne: forbidden
+    });
+    const provider = makeProvider({
+        walletUpdateOne: forbidden,
+        walletTransactionCreate: forbidden,
+        paymentIntentFindOneAndUpdate: forbidden,
+        finalizeCharge: forbidden,
+        grantDevelopmentCredits: forbidden
+    });
+
+    const result = await verifyWith({ provider, intent });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(provider.calls.getTransaction, 1);
+    assert.equal(provider.calls.getTransactionReceipt, 1);
+    assert.equal(provider.calls.parseTransferLogs, 1);
 });
