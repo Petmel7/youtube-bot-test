@@ -231,11 +231,6 @@ const createPaymentSettlementService = ({
                     return toSettlementDto({ intent: updatedIntent, wallet, transaction: existingCredit, created: false });
                 }
 
-                const walletBefore = await getOrCreateWallet(intent.userId, { session });
-                const walletAfterShape = {
-                    balance: walletBefore.balance + intent.creditAmount,
-                    reserved: walletBefore.reserved
-                };
                 const metadata = {
                     source: "payment",
                     packageId: intent.packageId,
@@ -249,18 +244,35 @@ const createPaymentSettlementService = ({
                     confirmationCount: intent.confirmationCount
                 };
 
+                const walletBefore = await addSession(WalletModel.findOneAndUpdate(
+                    { userId: intent.userId },
+                    {
+                        $setOnInsert: { userId: intent.userId, balance: 0, reserved: 0, unit: aiCreditUnit },
+                        $inc: { balance: intent.creditAmount }
+                    },
+                    { upsert: true, new: false, setDefaultsOnInsert: true }
+                ), session);
+                const wallet = await addSession(WalletModel.findOne({ userId: intent.userId }), session);
+
+                if (!wallet) {
+                    throw unavailable("PAYMENT_TRANSACTION_ABORTED", "Payment wallet update failed");
+                }
+
+                const balanceBefore = walletBefore?.balance || 0;
+                const reservedBefore = walletBefore?.reserved || 0;
+
                 let credit;
                 try {
                     [credit] = await TransactionModel.create([{
                         userId: intent.userId,
-                        walletId: walletBefore._id,
+                        walletId: wallet._id,
                         type: "CREDIT",
                         amount: intent.creditAmount,
-                        unit: walletBefore.unit,
-                        balanceBefore: walletBefore.balance,
-                        balanceAfter: walletAfterShape.balance,
-                        reservedBefore: walletBefore.reserved,
-                        reservedAfter: walletAfterShape.reserved,
+                        unit: wallet.unit,
+                        balanceBefore,
+                        balanceAfter: balanceBefore + intent.creditAmount,
+                        reservedBefore,
+                        reservedAfter: reservedBefore,
                         referenceType: "paymentintent",
                         referenceId: String(intent._id),
                         paymentIntentId: intent._id,
@@ -274,15 +286,6 @@ const createPaymentSettlementService = ({
                         const duplicate = await findPaymentCreditByKey(idempotencyKey, { session });
                         if (duplicate) {
                             assertCreditMatchesIntent(duplicate, intent);
-                            const confirmedAt = now();
-                            const updatedIntent = await attachCreditToIntent({
-                                intent,
-                                credit: duplicate,
-                                overpaidAmountBaseUnits,
-                                confirmedAt
-                            }, { session });
-                            const wallet = await getOrCreateWallet(intent.userId, { session });
-                            return toSettlementDto({ intent: updatedIntent, wallet, transaction: duplicate, created: false });
                         }
 
                         const duplicateByIntent = await findPaymentCreditByPaymentIntent(intent._id, { session });
@@ -290,19 +293,14 @@ const createPaymentSettlementService = ({
                             assertCreditMatchesIntent(duplicateByIntent, intent);
                         }
 
+                        const duplicateByTx = await findPaymentCreditByTx({ chainId: intent.chainId, txHash: intent.txHash }, { session });
+                        if (duplicateByTx) {
+                            assertCreditMatchesIntent(duplicateByTx, intent);
+                        }
+
                         throw conflict("PAYMENT_DUPLICATE_CREDIT", "Payment credit already exists");
                     }
                     throw error;
-                }
-
-                const wallet = await addSession(WalletModel.findOneAndUpdate(
-                    { _id: walletBefore._id, userId: intent.userId },
-                    { $inc: { balance: intent.creditAmount } },
-                    { new: true }
-                ), session);
-
-                if (!wallet) {
-                    throw unavailable("PAYMENT_TRANSACTION_ABORTED", "Payment wallet update failed");
                 }
 
                 const confirmedAt = now();

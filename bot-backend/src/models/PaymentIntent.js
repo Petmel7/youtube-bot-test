@@ -44,6 +44,64 @@ const nullableCanonicalDecimalString = {
     message: "{PATH} must be a canonical decimal string"
 };
 
+const creditedTransactionIdWriteOnceError = () => Object.assign(
+    new Error("creditedTransactionId is write-once after assignment"),
+    { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" }
+);
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const idsEqual = (left, right) => String(left || "") === String(right || "");
+
+const guardCreditedTransactionIdUpdate = function guardCreditedTransactionIdUpdate(next) {
+    const update = this.getUpdate() || {};
+    const setUpdate = update.$set || {};
+    const unsetUpdate = update.$unset || {};
+    const setsCreditedTransactionId = hasOwn(setUpdate, "creditedTransactionId") || hasOwn(update, "creditedTransactionId");
+    const unsetsCreditedTransactionId = hasOwn(unsetUpdate, "creditedTransactionId");
+
+    if (!setsCreditedTransactionId && !unsetsCreditedTransactionId) {
+        return next();
+    }
+
+    if (unsetsCreditedTransactionId) {
+        return next(creditedTransactionIdWriteOnceError());
+    }
+
+    const value = hasOwn(setUpdate, "creditedTransactionId")
+        ? setUpdate.creditedTransactionId
+        : update.creditedTransactionId;
+    const filter = this.getFilter() || {};
+
+    if (!value || filter.creditedTransactionId !== null) {
+        return next(creditedTransactionIdWriteOnceError());
+    }
+
+    return next();
+};
+
+const guardCreditedTransactionIdSave = async function guardCreditedTransactionIdSave(next) {
+    if (this.isNew || !this.isModified("creditedTransactionId")) {
+        return next();
+    }
+
+    const existing = await this.constructor
+        .findById(this._id)
+        .select("creditedTransactionId")
+        .session(this.$session());
+
+    if (
+        existing?.creditedTransactionId &&
+        (!this.creditedTransactionId || !idsEqual(existing.creditedTransactionId, this.creditedTransactionId))
+    ) {
+        return next(creditedTransactionIdWriteOnceError());
+    }
+
+    return next();
+};
+
+guardCreditedTransactionIdSave.document = true;
+guardCreditedTransactionIdSave.query = false;
+
 const paymentIntentSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true, immutable: true },
     idempotencyKey: immutableString,
@@ -94,7 +152,14 @@ paymentIntentSchema.index({ creditedTransactionId: 1 });
 paymentIntentSchema.index({ status: 1, updatedAt: 1 });
 paymentIntentSchema.index({ status: 1, expiresAt: 1 });
 
+paymentIntentSchema.pre("findOneAndUpdate", guardCreditedTransactionIdUpdate);
+paymentIntentSchema.pre("updateOne", guardCreditedTransactionIdUpdate);
+paymentIntentSchema.pre("updateMany", guardCreditedTransactionIdUpdate);
+paymentIntentSchema.pre("save", guardCreditedTransactionIdSave);
+
 const PaymentIntent = mongoose.model("PaymentIntent", paymentIntentSchema, "paymentintents");
 
 module.exports = PaymentIntent;
 module.exports.paymentIntentStatuses = paymentIntentStatuses;
+module.exports.guardCreditedTransactionIdUpdate = guardCreditedTransactionIdUpdate;
+module.exports.guardCreditedTransactionIdSave = guardCreditedTransactionIdSave;

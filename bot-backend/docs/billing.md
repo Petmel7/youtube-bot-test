@@ -83,3 +83,9 @@ one Wallet.balance increment
 The deterministic payment CREDIT idempotency key is `payment:${paymentIntentId}:credit`. Payment ledger rows also store immutable `paymentIntentId`, `chainId`, and `txHash`, with payment-specific unique partial indexes for one CREDIT per payment intent and one CREDIT per blockchain transaction.
 
 Settlement credits only the frozen `PaymentIntent.creditAmount`. For `CONFIRMED_OVERPAID`, the excess token base units are stored as `overpaidAmountBaseUnits` metadata and do not mint extra credits. `Wallet.reserved` is not changed by payment settlement.
+
+`PaymentIntent.creditedTransactionId` is write-once: settlement may assign it from `null` to the payment CREDIT transaction, but normal model updates must not replace, null, or unset it after assignment.
+
+Payment CREDIT ledger snapshots must reflect the wallet mutation's serialized balance transition: `balanceAfter = balanceBefore + amount`. The balance increment uses atomic `$inc`; settlement does not overwrite or recalculate `reserved`.
+
+The gated real-MongoDB settlement integration test requires `PAYMENT_SETTLEMENT_INTEGRATION_MONGO_URI` to point at an explicit test/integration database backed by a transaction-capable topology. Normal `npm test` skips this live integration coverage when the variable is not configured.

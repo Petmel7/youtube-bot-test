@@ -7,6 +7,10 @@ const {
     createPaymentSettlementService,
     paymentCreditKey
 } = require("../src/services/payments/paymentSettlementService");
+const {
+    guardCreditedTransactionIdSave,
+    guardCreditedTransactionIdUpdate
+} = PaymentIntent;
 
 const userId = "64b000000000000000000001";
 const otherUserId = "64b000000000000000000002";
@@ -102,6 +106,9 @@ const createFakeModels = ({ failOn } = {}) => {
     };
 
     const WalletModel = {
+        findOne(filter) {
+            return query(clone([...state.wallets.values()].find(doc => matches(doc, filter))));
+        },
         findOneAndUpdate(filter, update, options = {}) {
             let wallet = [...state.wallets.values()].find(doc => matches(doc, filter));
             if (!wallet && options.upsert) {
@@ -191,6 +198,32 @@ const createServiceHarness = ({ failOn } = {}) => {
     return { service, ...models };
 };
 
+const runCreditedTransactionIdGuard = (filter, update) => new Promise((resolve, reject) => {
+    guardCreditedTransactionIdUpdate.call({
+        getFilter: () => filter,
+        getUpdate: () => update
+    }, (error) => (error ? reject(error) : resolve()));
+});
+
+const runCreditedTransactionIdSaveGuard = (existingValue, nextValue) => new Promise((resolve, reject) => {
+    const context = {
+        _id: "intent-1",
+        creditedTransactionId: nextValue,
+        isNew: false,
+        isModified: field => field === "creditedTransactionId",
+        $session: () => "session",
+        constructor: {
+            findById: () => ({
+                select: () => ({
+                    session: async () => ({ creditedTransactionId: existingValue })
+                })
+            })
+        }
+    };
+
+    guardCreditedTransactionIdSave.call(context, (error) => (error ? reject(error) : resolve()));
+});
+
 const seedWallet = (state, overrides = {}) => {
     const wallet = {
         _id: `${overrides.userId || userId}-wallet`,
@@ -227,6 +260,47 @@ test("PaymentIntent and WalletTransaction schemas expose payment settlement fiel
     )));
 });
 
+test("creditedTransactionId update guard allows first assignment and rejects replacement or removal", async () => {
+    await assert.doesNotReject(() => runCreditedTransactionIdGuard(
+        { _id: "intent-1", creditedTransactionId: null },
+        { $set: { creditedTransactionId: "64c000000000000000000001" } }
+    ));
+
+    await assert.rejects(() => runCreditedTransactionIdGuard(
+        { _id: "intent-1" },
+        { $set: { creditedTransactionId: "64c000000000000000000002" } }
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+
+    await assert.rejects(() => runCreditedTransactionIdGuard(
+        { _id: "intent-1", creditedTransactionId: "64c000000000000000000001" },
+        { $set: { creditedTransactionId: "64c000000000000000000002" } }
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+
+    await assert.rejects(() => runCreditedTransactionIdGuard(
+        { _id: "intent-1", creditedTransactionId: "64c000000000000000000001" },
+        { $set: { creditedTransactionId: null } }
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+
+    await assert.rejects(() => runCreditedTransactionIdGuard(
+        { _id: "intent-1", creditedTransactionId: "64c000000000000000000001" },
+        { $unset: { creditedTransactionId: "" } }
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+
+    await assert.doesNotReject(() => runCreditedTransactionIdSaveGuard(null, "64c000000000000000000001"));
+    await assert.doesNotReject(() => runCreditedTransactionIdSaveGuard(
+        "64c000000000000000000001",
+        "64c000000000000000000001"
+    ));
+    await assert.rejects(() => runCreditedTransactionIdSaveGuard(
+        "64c000000000000000000001",
+        "64c000000000000000000002"
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+    await assert.rejects(() => runCreditedTransactionIdSaveGuard(
+        "64c000000000000000000001",
+        null
+    ), { code: "PAYMENT_CREDITED_TRANSACTION_WRITE_ONCE" });
+});
+
 test("confirmed payment settles once and credits only PaymentIntent.creditAmount", async () => {
     const { service, state } = createServiceHarness();
     const intent = createPaymentIntent({ creditAmount: 750 });
@@ -249,6 +323,9 @@ test("confirmed payment settles once and credits only PaymentIntent.creditAmount
     assert.equal(wallet.balance, 850);
     assert.equal(wallet.reserved, 25);
     assert.equal(transaction.amount, 750);
+    assert.equal(transaction.balanceBefore, 100);
+    assert.equal(transaction.balanceAfter, 850);
+    assert.equal(transaction.balanceAfter, transaction.balanceBefore + transaction.amount);
     assert.equal(transaction.idempotencyKey, paymentCreditKey(intent._id));
     assert.equal(transaction.paymentIntentId, intent._id);
     assert.equal(transaction.chainId, intent.chainId);
@@ -426,6 +503,14 @@ test("different payment intents for same user use atomic increments without losi
     assert.equal(state.wallets.get(userId).balance, 2550);
     assert.equal(state.wallets.get(userId).reserved, 80);
     assert.equal(state.transactions.size, 2);
+
+    const transitions = [...state.transactions.values()]
+        .map(transaction => [transaction.balanceBefore, transaction.balanceAfter, transaction.amount])
+        .sort((left, right) => left[0] - right[0]);
+    assert.deepEqual(transitions, [
+        [0, 750, 750],
+        [750, 2550, 1800]
+    ]);
 });
 
 test("transaction rollback removes CREDIT, wallet increment, and intent update on failures", async () => {
