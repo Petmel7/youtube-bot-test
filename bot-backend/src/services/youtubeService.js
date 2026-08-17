@@ -1,7 +1,7 @@
 const { google } = require("googleapis");
 const BotRun = require("../models/BotRun");
 const { getValidAccessToken } = require("./authService");
-const { generateResponse } = require("./geminiService");
+const aiProvider = require("./ai/aiProvider");
 const {
     googleClientId,
     googleClientSecret,
@@ -123,7 +123,15 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                 }
 
                 try {
-                    const responseText = await generateResponse(commentText, userPrompt);
+                    const response = await aiProvider.generateReply({
+                        userId: user._id,
+                        runId,
+                        videoId,
+                        commentId,
+                        comment: commentText,
+                        prompt: userPrompt
+                    });
+                    const responseText = response.text;
                     await replyToComment(accessToken, commentId, responseText);
                     await addRunResult(runId, { commentId, status: "replied" });
                 } catch (error) {
