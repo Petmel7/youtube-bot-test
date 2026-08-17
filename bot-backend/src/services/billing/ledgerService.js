@@ -6,6 +6,14 @@ const createLedgerService = ({ TransactionModel = WalletTransaction } = {}) => {
         return session ? query.session(session) : query;
     };
 
+    const findReservationSettlement = async (reservationKey, { session } = {}) => {
+        const query = TransactionModel.findOne({
+            reservationKey,
+            type: { $in: ["DEBIT", "RELEASE"] }
+        });
+        return session ? query.session(session) : query;
+    };
+
     const recordTransaction = async (entry, { session } = {}) => {
         const existing = await findByIdempotencyKey(entry.idempotencyKey, { session });
         if (existing) {
@@ -17,7 +25,7 @@ const createLedgerService = ({ TransactionModel = WalletTransaction } = {}) => {
         return { transaction: docs[0], created: true };
     };
 
-    return { findByIdempotencyKey, recordTransaction };
+    return { findByIdempotencyKey, findReservationSettlement, recordTransaction };
 };
 
 module.exports = createLedgerService();

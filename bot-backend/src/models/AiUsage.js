@@ -14,6 +14,9 @@ const aiUsageSchema = new mongoose.Schema({
     estimatedCredits: { type: Number, default: null },
     reservedCredits: { type: Number, default: null },
     actualCredits: { type: Number, default: null },
+    reservationKey: { type: String, default: null },
+    debitKey: { type: String, default: null },
+    releaseKey: { type: String, default: null },
     billingStatus: {
         type: String,
         enum: [

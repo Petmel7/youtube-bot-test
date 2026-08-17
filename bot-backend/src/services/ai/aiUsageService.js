@@ -34,6 +34,9 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         estimatedCredits: nullableNumber(result.estimatedCredits),
         reservedCredits: nullableNumber(result.reservedCredits),
         actualCredits: nullableNumber(result.actualCredits),
+        reservationKey: result.reservationKey || null,
+        debitKey: result.debitKey || null,
+        releaseKey: result.releaseKey || null,
         billingStatus: result.billingStatus || "NOT_BILLED",
         latencyMs: nullableNumber(result.latencyMs),
         success: Boolean(result.success),
@@ -53,9 +56,19 @@ const updateAiUsageBillingStatus = async (operationKey, update, model = AiUsage)
         $set: {
             billingStatus: update.billingStatus,
             errorCode: update.errorCode || null,
-            actualCredits: nullableNumber(update.actualCredits)
+            actualCredits: nullableNumber(update.actualCredits),
+            ...(update.reservationKey ? { reservationKey: update.reservationKey } : {}),
+            ...(update.debitKey ? { debitKey: update.debitKey } : {}),
+            ...(update.releaseKey ? { releaseKey: update.releaseKey } : {})
         }
     }
 );
 
-module.exports = { buildOperationKey, recordAiUsage, updateAiUsageBillingStatus };
+const getAiUsageByOperationKey = (operationKey, model = AiUsage) => model.findOne({ operationKey });
+
+module.exports = {
+    buildOperationKey,
+    getAiUsageByOperationKey,
+    recordAiUsage,
+    updateAiUsageBillingStatus
+};

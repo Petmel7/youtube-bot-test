@@ -1,6 +1,7 @@
 const { createGeminiProvider } = require("./providers/geminiProvider");
 const {
     buildOperationKey,
+    getAiUsageByOperationKey,
     recordAiUsage,
     updateAiUsageBillingStatus
 } = require("./aiUsageService");
@@ -15,6 +16,7 @@ const defaultProvider = createGeminiProvider();
 const createAiProvider = ({
     provider = defaultProvider,
     usageRecorder = recordAiUsage,
+    usageReader = getAiUsageByOperationKey,
     usageStatusUpdater = updateAiUsageBillingStatus,
     wallet = walletService,
     estimateCost = estimateAiOperationCost,
@@ -46,6 +48,37 @@ const createAiProvider = ({
             commentId
         };
 
+        const finalizeRecordedUsage = async (usageRecord) => {
+            const actual = calculateActualCost({
+                usage: {
+                    promptTokens: usageRecord.promptTokens,
+                    outputTokens: usageRecord.outputTokens,
+                    totalTokens: usageRecord.totalTokens
+                },
+                provider: usageRecord.provider,
+                model: usageRecord.model
+            });
+
+            await wallet.finalizeCharge({
+                userId,
+                reservationKey,
+                reservedAmount: estimate.credits,
+                actualAmount: actual.credits,
+                debitKey,
+                releaseKey,
+                referenceType,
+                referenceId,
+                metadata: billingMetadata
+            });
+            await usageStatusUpdater(operationKey, {
+                billingStatus: "CHARGE_FINALIZED",
+                actualCredits: actual.credits,
+                reservationKey,
+                debitKey,
+                releaseKey
+            });
+        };
+
         const reservation = await wallet.reserveCredits({
             userId,
             amount: estimate.credits,
@@ -55,7 +88,50 @@ const createAiProvider = ({
             metadata: billingMetadata
         });
         if (!reservation.created) {
-            throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation was already processed");
+            const existingUsage = await usageReader(operationKey);
+
+            if (reservation.settlement?.type === "DEBIT") {
+                await usageStatusUpdater(operationKey, {
+                    billingStatus: "CHARGE_FINALIZED",
+                    reservationKey,
+                    debitKey,
+                    releaseKey
+                });
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation was already processed");
+            }
+
+            if (reservation.settlement?.type === "RELEASE") {
+                await usageStatusUpdater(operationKey, {
+                    billingStatus: "RESERVATION_RELEASED",
+                    reservationKey,
+                    releaseKey
+                });
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation reservation was already released");
+            }
+
+            if (existingUsage?.billingStatus === "USAGE_RECORDED" && existingUsage.success) {
+                await finalizeRecordedUsage(existingUsage);
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation billing was recovered from recorded usage");
+            }
+
+            if (existingUsage?.billingStatus === "PROVIDER_FAILED") {
+                await wallet.releaseReservation({
+                    userId,
+                    reservationKey,
+                    amount: estimate.credits,
+                    idempotencyKey: releaseKey,
+                    referenceType,
+                    referenceId,
+                    metadata: { ...billingMetadata, reason: "provider-failed-recovery" }
+                });
+                await usageStatusUpdater(operationKey, {
+                    billingStatus: "RESERVATION_RELEASED",
+                    actualCredits: 0,
+                    reservationKey,
+                    releaseKey
+                });
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation provider failure was recovered");
+            }
         }
 
         try {
@@ -70,12 +146,15 @@ const createAiProvider = ({
                         ...result,
                         estimatedCredits: estimate.credits,
                         reservedCredits: estimate.credits,
+                        reservationKey,
+                        releaseKey,
                         billingStatus: "ACCOUNTING_RECOVERY_REQUIRED",
                         errorCode: error.code || "ACCOUNTING_ERROR"
                     });
                 } finally {
                     await wallet.releaseReservation({
                         userId,
+                        reservationKey,
                         amount: estimate.credits,
                         idempotencyKey: releaseKey,
                         referenceType,
@@ -92,11 +171,15 @@ const createAiProvider = ({
                     estimatedCredits: estimate.credits,
                     reservedCredits: estimate.credits,
                     actualCredits: actual.credits,
+                    reservationKey,
+                    debitKey,
+                    releaseKey,
                     billingStatus: "USAGE_RECORDED"
                 });
             } catch (error) {
                 await wallet.releaseReservation({
                     userId,
+                    reservationKey,
                     amount: estimate.credits,
                     idempotencyKey: releaseKey,
                     referenceType,
@@ -109,6 +192,7 @@ const createAiProvider = ({
             try {
                 await wallet.finalizeCharge({
                     userId,
+                    reservationKey,
                     reservedAmount: estimate.credits,
                     actualAmount: actual.credits,
                     debitKey,
@@ -119,13 +203,19 @@ const createAiProvider = ({
                 });
                 await usageStatusUpdater(operationKey, {
                     billingStatus: "CHARGE_FINALIZED",
-                    actualCredits: actual.credits
+                    actualCredits: actual.credits,
+                    reservationKey,
+                    debitKey,
+                    releaseKey
                 });
             } catch (error) {
                 await usageStatusUpdater(operationKey, {
                     billingStatus: "ACCOUNTING_RECOVERY_REQUIRED",
                     errorCode: error.code || "ACCOUNTING_ERROR",
-                    actualCredits: actual.credits
+                    actualCredits: actual.credits,
+                    reservationKey,
+                    debitKey,
+                    releaseKey
                 });
                 throw accountingError(error.code || "ACCOUNTING_ERROR", "AI billing finalization failed");
             }
@@ -145,11 +235,14 @@ const createAiProvider = ({
                     estimatedCredits: estimate.credits,
                     reservedCredits: estimate.credits,
                     actualCredits: 0,
+                    reservationKey,
+                    releaseKey,
                     billingStatus: "PROVIDER_FAILED"
                 });
             } finally {
                 await wallet.releaseReservation({
                     userId,
+                    reservationKey,
                     amount: estimate.credits,
                     idempotencyKey: releaseKey,
                     referenceType,

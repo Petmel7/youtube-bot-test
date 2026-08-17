@@ -11,6 +11,28 @@ const assertPositiveInteger = (amount) => {
 };
 
 const addSession = (query, session) => session ? query.session(session) : query;
+const idsEqual = (left, right) => String(left || "") === String(right || "");
+
+const assertReservationMatches = (reservation, { userId, amount, referenceType, referenceId }) => {
+    if (!reservation || reservation.type !== "RESERVATION") {
+        throw conflict("AI_RESERVATION_NOT_FOUND", "AI operation reservation was not found");
+    }
+
+    if (
+        !idsEqual(reservation.userId, userId) ||
+        reservation.amount !== amount ||
+        reservation.referenceType !== referenceType ||
+        reservation.referenceId !== referenceId
+    ) {
+        throw conflict("AI_RESERVATION_MISMATCH", "AI operation reservation does not match the settlement request");
+    }
+};
+
+const assertSettlementMatches = (settlement, reservationKey) => {
+    if (settlement && settlement.reservationKey !== reservationKey) {
+        throw conflict("AI_RESERVATION_MISMATCH", "AI operation settlement does not match the reservation");
+    }
+};
 
 const createWalletService = ({
     WalletModel = Wallet,
@@ -72,8 +94,16 @@ const createWalletService = ({
         return withTransaction(async (session) => {
             const existing = await ledgerService.findByIdempotencyKey(idempotencyKey, { session });
             if (existing) {
+                assertReservationMatches(existing, { userId, amount, referenceType, referenceId });
                 const wallet = await getOrCreateWallet(userId, { session });
-                return { wallet, transaction: existing, created: false };
+                const settlement = await ledgerService.findReservationSettlement(idempotencyKey, { session });
+                return {
+                    wallet,
+                    transaction: existing,
+                    settlement,
+                    created: false,
+                    settled: Boolean(settlement)
+                };
             }
 
             await getOrCreateWallet(userId, { session });
@@ -108,6 +138,7 @@ const createWalletService = ({
                 referenceType,
                 referenceId,
                 idempotencyKey,
+                reservationKey: idempotencyKey,
                 metadata
             }, { session });
 
@@ -116,11 +147,11 @@ const createWalletService = ({
             }
 
             const wallet = await addSession(WalletModel.findOne({ userId }), session);
-            return { wallet, transaction: ledger.transaction, created: true };
+            return { wallet, transaction: ledger.transaction, settlement: null, created: true, settled: false };
         });
     };
 
-    const finalizeCharge = async ({ userId, reservedAmount, actualAmount, debitKey, releaseKey, referenceType, referenceId, metadata }) => {
+    const finalizeCharge = async ({ userId, reservationKey, reservedAmount, actualAmount, debitKey, releaseKey, referenceType, referenceId, metadata }) => {
         assertPositiveInteger(reservedAmount);
         if (!Number.isInteger(actualAmount) || actualAmount < 0) {
             throw accountingError("ACCOUNTING_INVALID_AMOUNT", "Actual charge must be a non-negative integer");
@@ -130,17 +161,33 @@ const createWalletService = ({
         }
 
         return withTransaction(async (session) => {
+            const reservation = await ledgerService.findByIdempotencyKey(reservationKey, { session });
+            assertReservationMatches(reservation, { userId, amount: reservedAmount, referenceType, referenceId });
+
             const existingDebit = await ledgerService.findByIdempotencyKey(debitKey, { session });
             if (existingDebit) {
+                assertSettlementMatches(existingDebit, reservationKey);
                 const wallet = await getOrCreateWallet(userId, { session });
-                return { wallet, debit: existingDebit, release: releaseKey ? await ledgerService.findByIdempotencyKey(releaseKey, { session }) : null, created: false };
+                return {
+                    wallet,
+                    reservation,
+                    debit: existingDebit,
+                    release: releaseKey ? await ledgerService.findByIdempotencyKey(releaseKey, { session }) : null,
+                    created: false
+                };
+            }
+
+            const existingSettlement = await ledgerService.findReservationSettlement(reservationKey, { session });
+            if (existingSettlement) {
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation reservation has already been settled");
             }
 
             const before = await addSession(WalletModel.findOneAndUpdate(
                 {
                     userId,
                     reserved: { $gte: reservedAmount },
-                    balance: { $gte: actualAmount }
+                    balance: { $gte: actualAmount },
+                    $expr: { $gte: ["$balance", "$reserved"] }
                 },
                 { $inc: { balance: -actualAmount, reserved: -reservedAmount } },
                 { new: false }
@@ -155,58 +202,69 @@ const createWalletService = ({
                 reserved: before.reserved - reservedAmount
             };
 
-            const debit = actualAmount > 0
-                ? await ledgerService.recordTransaction({
-                    userId,
-                    walletId: before._id,
-                    type: "DEBIT",
-                    amount: actualAmount,
-                    balanceBefore: before.balance,
-                    balanceAfter: after.balance,
-                    reservedBefore: before.reserved,
-                    reservedAfter: after.reserved,
-                    referenceType,
-                    referenceId,
-                    idempotencyKey: debitKey,
-                    metadata
-                }, { session })
-                : null;
+            const debit = await ledgerService.recordTransaction({
+                userId,
+                walletId: before._id,
+                type: "DEBIT",
+                amount: actualAmount,
+                balanceBefore: before.balance,
+                balanceAfter: after.balance,
+                reservedBefore: before.reserved,
+                reservedAfter: after.reserved,
+                referenceType,
+                referenceId,
+                reservationKey,
+                idempotencyKey: debitKey,
+                metadata
+            }, { session });
 
             const unused = reservedAmount - actualAmount;
-            const release = unused > 0
-                ? await ledgerService.recordTransaction({
-                    userId,
-                    walletId: before._id,
-                    type: "RELEASE",
-                    amount: unused,
-                    balanceBefore: after.balance,
-                    balanceAfter: after.balance,
-                    reservedBefore: before.reserved,
-                    reservedAfter: after.reserved,
-                    referenceType,
-                    referenceId,
-                    idempotencyKey: releaseKey,
-                    metadata: { ...metadata, reason: "unused-reservation" }
-                }, { session })
-                : null;
+            const release = await ledgerService.recordTransaction({
+                userId,
+                walletId: before._id,
+                type: "RELEASE",
+                amount: unused,
+                balanceBefore: after.balance,
+                balanceAfter: after.balance,
+                reservedBefore: before.reserved,
+                reservedAfter: after.reserved,
+                referenceType,
+                referenceId,
+                reservationKey,
+                idempotencyKey: releaseKey,
+                metadata: { ...metadata, reason: "unused-reservation" }
+            }, { session });
 
             const wallet = await addSession(WalletModel.findOne({ userId }), session);
-            return { wallet, debit: debit?.transaction || null, release: release?.transaction || null };
+            return { wallet, reservation, debit: debit.transaction, release: release.transaction, created: true };
         });
     };
 
-    const releaseReservation = async ({ userId, amount, idempotencyKey, referenceType, referenceId, metadata }) => {
+    const releaseReservation = async ({ userId, reservationKey, amount, idempotencyKey, referenceType, referenceId, metadata }) => {
         assertPositiveInteger(amount);
 
         return withTransaction(async (session) => {
+            const reservation = await ledgerService.findByIdempotencyKey(reservationKey, { session });
+            assertReservationMatches(reservation, { userId, amount, referenceType, referenceId });
+
             const existing = await ledgerService.findByIdempotencyKey(idempotencyKey, { session });
             if (existing) {
+                assertSettlementMatches(existing, reservationKey);
                 const wallet = await getOrCreateWallet(userId, { session });
-                return { wallet, transaction: existing, created: false };
+                return { wallet, reservation, transaction: existing, created: false };
+            }
+
+            const existingSettlement = await ledgerService.findReservationSettlement(reservationKey, { session });
+            if (existingSettlement) {
+                throw conflict("AI_OPERATION_ALREADY_FINALIZED", "AI operation reservation has already been settled");
             }
 
             const before = await addSession(WalletModel.findOneAndUpdate(
-                { userId, reserved: { $gte: amount } },
+                {
+                    userId,
+                    reserved: { $gte: amount },
+                    $expr: { $gte: ["$balance", "$reserved"] }
+                },
                 { $inc: { reserved: -amount } },
                 { new: false }
             ), session);
@@ -231,12 +289,13 @@ const createWalletService = ({
                 reservedAfter: after.reserved,
                 referenceType,
                 referenceId,
+                reservationKey,
                 idempotencyKey,
                 metadata
             }, { session });
 
             const wallet = await addSession(WalletModel.findOne({ userId }), session);
-            return { wallet, transaction: ledger.transaction, created: ledger.created };
+            return { wallet, reservation, transaction: ledger.transaction, created: ledger.created };
         });
     };
 

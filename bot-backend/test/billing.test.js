@@ -27,9 +27,16 @@ const createFakeWalletModel = () => {
         if (filter.reserved?.$gte !== undefined && wallet.reserved < filter.reserved.$gte) return false;
         if (filter.balance?.$gte !== undefined && wallet.balance < filter.balance.$gte) return false;
         if (filter.$expr) {
-            const available = wallet.balance - wallet.reserved;
-            const required = filter.$expr.$gte[1];
-            if (available < required) return false;
+            const [left, right] = filter.$expr.$gte;
+            const valueOf = (operand) => {
+                if (operand?.$subtract) {
+                    return valueOf(operand.$subtract[0]) - valueOf(operand.$subtract[1]);
+                }
+                if (operand === "$balance") return wallet.balance;
+                if (operand === "$reserved") return wallet.reserved;
+                return operand;
+            };
+            if (valueOf(left) < valueOf(right)) return false;
         }
         return true;
     };
@@ -68,12 +75,33 @@ const createFakeTransactionModel = () => {
     return {
         transactions,
         findOne(filter) {
-            return query(clone(transactions.get(filter.idempotencyKey)));
+            if (filter.idempotencyKey) {
+                return query(clone(transactions.get(filter.idempotencyKey)));
+            }
+
+            const typeMatches = (tx) => {
+                if (!filter.type) return true;
+                if (filter.type.$in) return filter.type.$in.includes(tx.type);
+                return tx.type === filter.type;
+            };
+            const transaction = [...transactions.values()].find(tx => (
+                (!filter.reservationKey || tx.reservationKey === filter.reservationKey) &&
+                typeMatches(tx)
+            ));
+            return query(clone(transaction));
         },
         async create(entries) {
             return entries.map(entry => {
                 if (transactions.has(entry.idempotencyKey)) {
                     const error = new Error("duplicate key");
+                    error.code = 11000;
+                    throw error;
+                }
+                if (
+                    entry.reservationKey &&
+                    [...transactions.values()].some(tx => tx.reservationKey === entry.reservationKey && tx.type === entry.type)
+                ) {
+                    const error = new Error("duplicate reservation settlement");
                     error.code = 11000;
                     throw error;
                 }
@@ -193,6 +221,7 @@ test("successful finalization debits actual credits and releases unused reservat
     });
     const result = await service.finalizeCharge({
         userId: "user-1",
+        reservationKey: "reserve-1",
         reservedAmount: 80,
         actualAmount: 63,
         debitKey: "debit-1",
@@ -221,6 +250,7 @@ test("finalization rejects actual charge above reserved credits", async () => {
 
     await assert.rejects(() => service.finalizeCharge({
         userId: "user-1",
+        reservationKey: "reserve-1",
         reservedAmount: 50,
         actualAmount: 51,
         debitKey: "debit-1",
@@ -243,6 +273,7 @@ test("provider failure releases reservation without debit", async () => {
     });
     const result = await service.releaseReservation({
         userId: "user-1",
+        reservationKey: "reserve-1",
         amount: 80,
         idempotencyKey: "release-1",
         referenceType: "aiusage",
@@ -251,7 +282,121 @@ test("provider failure releases reservation without debit", async () => {
 
     assert.equal(result.wallet.balance, 100);
     assert.equal(result.wallet.reserved, 0);
+    assert.equal(result.transaction.reservationKey, "reserve-1");
     assert.equal([...TransactionModel.transactions.values()].some(tx => tx.type === "DEBIT"), false);
+});
+
+test("reservation ownership prevents another operation from settling reserved credits", async () => {
+    const { service } = createTestWalletService();
+
+    await service.grantDevelopmentCredits({ userId: "user-1", amount: 100, idempotencyKey: "grant-1" });
+    await service.reserveCredits({
+        userId: "user-1",
+        amount: 80,
+        idempotencyKey: "reserve-a",
+        referenceType: "aiusage",
+        referenceId: "op-a"
+    });
+
+    await assert.rejects(() => service.releaseReservation({
+        userId: "user-1",
+        reservationKey: "reserve-a",
+        amount: 80,
+        idempotencyKey: "release-b",
+        referenceType: "aiusage",
+        referenceId: "op-b"
+    }), { code: "AI_RESERVATION_MISMATCH" });
+
+    await assert.rejects(() => service.finalizeCharge({
+        userId: "user-1",
+        reservationKey: "reserve-a",
+        reservedAmount: 80,
+        actualAmount: 50,
+        debitKey: "debit-b",
+        releaseKey: "release-b",
+        referenceType: "aiusage",
+        referenceId: "op-b"
+    }), { code: "AI_RESERVATION_MISMATCH" });
+});
+
+test("release is idempotent and cannot consume another reservation", async () => {
+    const { service, TransactionModel } = createTestWalletService();
+
+    await service.grantDevelopmentCredits({ userId: "user-1", amount: 200, idempotencyKey: "grant-1" });
+    await service.reserveCredits({
+        userId: "user-1",
+        amount: 80,
+        idempotencyKey: "reserve-a",
+        referenceType: "aiusage",
+        referenceId: "op-a"
+    });
+    await service.reserveCredits({
+        userId: "user-1",
+        amount: 60,
+        idempotencyKey: "reserve-b",
+        referenceType: "aiusage",
+        referenceId: "op-b"
+    });
+
+    const first = await service.releaseReservation({
+        userId: "user-1",
+        reservationKey: "reserve-a",
+        amount: 80,
+        idempotencyKey: "release-a",
+        referenceType: "aiusage",
+        referenceId: "op-a"
+    });
+    const second = await service.releaseReservation({
+        userId: "user-1",
+        reservationKey: "reserve-a",
+        amount: 80,
+        idempotencyKey: "release-a",
+        referenceType: "aiusage",
+        referenceId: "op-a"
+    });
+
+    assert.equal(first.wallet.reserved, 60);
+    assert.equal(second.wallet.reserved, 60);
+    assert.equal([...TransactionModel.transactions.values()].filter(tx => tx.type === "RELEASE" && tx.reservationKey === "reserve-a").length, 1);
+});
+
+test("finalization is idempotent and creates one debit for the reservation", async () => {
+    const { service, TransactionModel } = createTestWalletService();
+
+    await service.grantDevelopmentCredits({ userId: "user-1", amount: 100, idempotencyKey: "grant-1" });
+    await service.reserveCredits({
+        userId: "user-1",
+        amount: 80,
+        idempotencyKey: "reserve-1",
+        referenceType: "aiusage",
+        referenceId: "op-1"
+    });
+
+    const first = await service.finalizeCharge({
+        userId: "user-1",
+        reservationKey: "reserve-1",
+        reservedAmount: 80,
+        actualAmount: 50,
+        debitKey: "debit-1",
+        releaseKey: "release-1",
+        referenceType: "aiusage",
+        referenceId: "op-1"
+    });
+    const second = await service.finalizeCharge({
+        userId: "user-1",
+        reservationKey: "reserve-1",
+        reservedAmount: 80,
+        actualAmount: 50,
+        debitKey: "debit-1",
+        releaseKey: "release-1",
+        referenceType: "aiusage",
+        referenceId: "op-1"
+    });
+
+    assert.equal(first.wallet.balance, 50);
+    assert.equal(second.wallet.balance, 50);
+    assert.equal(second.created, false);
+    assert.equal([...TransactionModel.transactions.values()].filter(tx => tx.type === "DEBIT" && tx.reservationKey === "reserve-1").length, 1);
 });
 
 test("two simultaneous reservations cannot overdraw available credits", async () => {

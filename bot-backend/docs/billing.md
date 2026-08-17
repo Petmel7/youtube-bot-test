@@ -14,18 +14,22 @@ Phase 2 uses integer `AI_CREDIT` accounting. Wallet balances are not USD floats;
 - `available = balance - reserved`
 - each accounting operation has a unique deterministic idempotency key
 - ledger records are historical accounting records and must not be updated or deleted
+- each AI reservation is identified by the reservation ledger entry's `reservationKey`
+- settlement entries must reference the exact reservation they finalize or release
 
 ## Lifecycle
 
 1. Estimate maximum AI operation cost from backend prompt/comment inputs and configured max output tokens.
-2. Atomically reserve credits before calling Gemini.
+2. Atomically reserve credits before calling Gemini and create an immutable `RESERVATION` ledger entry.
 3. Execute the AI provider operation.
 4. Record actual provider usage metadata in `aiusage`.
 5. Calculate actual credit cost from provider usage metadata.
-6. Finalize the debit and release unused reservation credits.
-7. On provider failure, release the full reservation and do not debit credits.
+6. Finalize the exact reservation by creating immutable `DEBIT` and `RELEASE` ledger entries. The `RELEASE` entry is also the settlement marker when unused credits are zero.
+7. On provider failure, release the exact reservation and do not debit credits.
 
 If usage metadata is missing or finalization fails, the operation is marked for accounting recovery and must not be treated as fully successful billing.
+
+The wallet ledger is the financial source of truth. `aiusage` stores reconciliation metadata such as reservation, debit, and release keys so a retry can recognize an existing reservation, complete a missing finalization from recorded usage, release a failed provider operation, or reconcile a finalized wallet charge without debiting twice.
 
 ## Development Credits
 

@@ -20,11 +20,16 @@ const walletTransactionSchema = new mongoose.Schema({
     reservedAfter: immutableOptionalNumber,
     referenceType: immutableString,
     referenceId: immutableString,
+    reservationKey: { type: String, default: null, index: true, immutable: true },
     idempotencyKey: { type: String, required: true, unique: true, immutable: true },
     metadata: { type: mongoose.Schema.Types.Mixed, default: undefined, immutable: true }
 }, { timestamps: { createdAt: true, updatedAt: false } });
 
 walletTransactionSchema.index({ userId: 1, createdAt: -1 });
+walletTransactionSchema.index(
+    { reservationKey: 1, type: 1 },
+    { unique: true, partialFilterExpression: { reservationKey: { $type: "string" } } }
+);
 
 const WalletTransaction = mongoose.model("WalletTransaction", walletTransactionSchema, "wallettransactions");
 
