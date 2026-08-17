@@ -4,7 +4,7 @@ const { paymentConfig } = require("../../config/config");
 const canonicalDecimalStringPattern = /^(0|[1-9][0-9]*)$/;
 
 const assertPositiveInteger = (value, field) => {
-    if (!Number.isInteger(value) || value <= 0) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
         throw new Error(`Invalid ${field}`);
     }
 };

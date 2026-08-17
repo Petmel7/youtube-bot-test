@@ -26,6 +26,10 @@ const positiveInteger = {
     validator: (value) => Number.isInteger(value) && value > 0,
     message: "{PATH} must be a positive integer"
 };
+const positiveSafeInteger = {
+    validator: (value) => Number.isSafeInteger(value) && value > 0,
+    message: "{PATH} must be a positive integer"
+};
 const nonNegativeInteger = {
     validator: (value) => value === null || (Number.isInteger(value) && value >= 0),
     message: "{PATH} must be a non-negative integer"
@@ -50,8 +54,8 @@ const paymentIntentSchema = new mongoose.Schema({
     tokenDecimals: { ...immutableNumber, min: 0 },
     recipientAddress: { ...immutableString, match: evmAddressPattern },
     expectedTokenAmountBaseUnits: { ...immutableString, validate: canonicalDecimalString },
-    expectedUsdAmountMinor: { ...immutableNumber, validate: positiveInteger },
-    creditAmount: { ...immutableNumber, validate: positiveInteger },
+    expectedUsdAmountMinor: { ...immutableNumber, validate: positiveSafeInteger },
+    creditAmount: { ...immutableNumber, validate: positiveSafeInteger },
     pricingVersion: immutableString,
 
     status: {

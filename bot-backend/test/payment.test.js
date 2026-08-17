@@ -42,6 +42,23 @@ const validPaymentConfig = (overrides = {}) => ({
     ...overrides
 });
 
+const validPaymentIntentDocument = (overrides = {}) => ({
+    userId: new mongoose.Types.ObjectId(),
+    idempotencyKey: "idem-1",
+    packageId: "starter_credits",
+    chainId: 8453,
+    tokenAddress: normalizeEvmAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    recipientAddress: treasuryAddress,
+    expectedTokenAmountBaseUnits: "5000000",
+    expectedUsdAmountMinor: 500,
+    creditAmount: 750,
+    pricingVersion: "pricing-v1",
+    expiresAt: new Date("2026-08-17T10:30:00.000Z"),
+    ...overrides
+});
+
 const query = (value) => ({
     session() {
         return this;
@@ -145,6 +162,21 @@ test("payment config validation rejects malformed package JSON and invalid packa
     assert.throws(() => parsePaymentPackages(JSON.stringify([
         { packageId: "bad-token", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "01" }
     ]), { pricingVersion: "v1" }), /expectedTokenAmountBaseUnits/);
+});
+
+test("payment pricing rejects unsafe and invalid financial integers", () => {
+    const packageWith = (overrides) => JSON.stringify([
+        { packageId: "bad-financial-integer", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "1", ...overrides }
+    ]);
+
+    assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: Number.MAX_SAFE_INTEGER + 1 }), { pricingVersion: "v1" }), /creditAmount/);
+    assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: 9007199254740992 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
+    assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: 0 }), { pricingVersion: "v1" }), /creditAmount/);
+    assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: 0 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
+    assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: -1 }), { pricingVersion: "v1" }), /creditAmount/);
+    assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: -1 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
+    assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: 1.5 }), { pricingVersion: "v1" }), /creditAmount/);
+    assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: 1.5 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
 });
 
 test("payment pricing service returns immutable package snapshots", () => {
@@ -286,21 +318,7 @@ test("PaymentIntent schema has required states, immutability, validation, and in
     assert.equal(PaymentIntent.schema.path("expectedTokenAmountBaseUnits").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("creditAmount").options.immutable, true);
 
-    const intent = new PaymentIntent({
-        userId: new mongoose.Types.ObjectId(),
-        idempotencyKey: "idem-1",
-        packageId: "starter_credits",
-        chainId: 8453,
-        tokenAddress: normalizeEvmAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
-        tokenSymbol: "USDC",
-        tokenDecimals: 6,
-        recipientAddress: treasuryAddress,
-        expectedTokenAmountBaseUnits: "5000000",
-        expectedUsdAmountMinor: 500,
-        creditAmount: 750,
-        pricingVersion: "pricing-v1",
-        expiresAt: new Date("2026-08-17T10:30:00.000Z")
-    });
+    const intent = new PaymentIntent(validPaymentIntentDocument());
     await intent.validate();
     assert.equal(intent.status, "PENDING");
 
@@ -313,4 +331,20 @@ test("PaymentIntent schema has required states, immutability, validation, and in
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.updatedAt === 1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.expiresAt === 1));
+});
+
+test("PaymentIntent schema rejects unsafe and invalid financial integers", async () => {
+    const assertInvalidFinancialInteger = async (field, value) => {
+        const intent = new PaymentIntent(validPaymentIntentDocument({ [field]: value }));
+        await assert.rejects(() => intent.validate(), new RegExp(field));
+    };
+
+    await assertInvalidFinancialInteger("creditAmount", Number.MAX_SAFE_INTEGER + 1);
+    await assertInvalidFinancialInteger("expectedUsdAmountMinor", 9007199254740992);
+    await assertInvalidFinancialInteger("creditAmount", 0);
+    await assertInvalidFinancialInteger("expectedUsdAmountMinor", 0);
+    await assertInvalidFinancialInteger("creditAmount", -1);
+    await assertInvalidFinancialInteger("expectedUsdAmountMinor", -1);
+    await assertInvalidFinancialInteger("creditAmount", 1.5);
+    await assertInvalidFinancialInteger("expectedUsdAmountMinor", 1.5);
 });
