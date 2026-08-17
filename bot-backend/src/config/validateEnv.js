@@ -1,4 +1,6 @@
 const {
+    paymentConfig,
+    paymentBaseNativeUsdcAddress,
     geminiModel,
     geminiMaxOutputTokens,
     geminiTimeoutMs,
@@ -10,6 +12,8 @@ const {
     aiOutputTokenCreditRate,
     aiEstimatedInputCharsPerToken
 } = require("./config");
+const { isValidEvmAddress } = require("../utils/evmAddress");
+const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
 
 const requiredEnv = [
     "MONGO_URI",
@@ -69,6 +73,54 @@ const validateEnv = () => {
             throw new Error(`Invalid ${name} configuration`);
         }
     });
+
+    validatePaymentConfig(paymentConfig, paymentBaseNativeUsdcAddress);
+};
+
+const validatePaymentConfig = (config, expectedTokenAddress = paymentBaseNativeUsdcAddress) => {
+    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || config.chainId !== 8453) {
+        throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
+    }
+
+    try {
+        const url = new URL(config.rpcUrl);
+        if (!["http:", "https:"].includes(url.protocol)) {
+            throw new Error("invalid protocol");
+        }
+    } catch {
+        throw new Error("Invalid PAYMENT_RPC_URL configuration");
+    }
+
+    if (!isValidEvmAddress(config.tokenAddress) || config.tokenAddress !== expectedTokenAddress) {
+        throw new Error("Invalid PAYMENT_TOKEN_ADDRESS configuration");
+    }
+
+    if (config.tokenSymbol !== "USDC") {
+        throw new Error("Invalid PAYMENT_TOKEN_SYMBOL configuration");
+    }
+
+    if (!Number.isInteger(config.tokenDecimals) || config.tokenDecimals !== 6) {
+        throw new Error("Invalid PAYMENT_TOKEN_DECIMALS configuration");
+    }
+
+    if (!isValidEvmAddress(config.treasuryAddress)) {
+        throw new Error("Invalid PAYMENT_TREASURY_ADDRESS configuration");
+    }
+
+    if (!Number.isInteger(config.confirmations) || config.confirmations < 1) {
+        throw new Error("Invalid PAYMENT_CONFIRMATIONS configuration");
+    }
+
+    if (!Number.isInteger(config.intentTtlMinutes) || config.intentTtlMinutes <= 0) {
+        throw new Error("Invalid PAYMENT_INTENT_TTL_MINUTES configuration");
+    }
+
+    if (typeof config.pricingVersion !== "string" || config.pricingVersion.trim() === "") {
+        throw new Error("Invalid PAYMENT_PRICING_VERSION configuration");
+    }
+
+    parsePaymentPackages(config.packagesJson, { pricingVersion: config.pricingVersion });
 };
 
 module.exports = validateEnv;
+module.exports.validatePaymentConfig = validatePaymentConfig;

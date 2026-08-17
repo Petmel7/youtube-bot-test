@@ -38,3 +38,20 @@ Development/test credit grants must use `WalletService.grantDevelopmentCredits`,
 ## Concurrency Strategy
 
 Wallet changes use atomic MongoDB updates and short database transactions for reservation, finalization, release, and ledger creation. No database transaction is held open while Gemini is running.
+
+## Phase 3A Payment Foundation
+
+Phase 3A defines backend-owned payment intent and package-pricing primitives only. It does not perform blockchain verification, RPC calls, wallet balance credits, payment settlement, routes, controllers, frontend wallet UI, reconciliation workers, or refunds.
+
+The approved MVP payment rail is Base Mainnet native USDC:
+
+- chain ID: `8453`
+- token: native USDC
+- token decimals: `6`
+- treasury address: backend configuration only
+
+Users may choose a server-defined package, but the frontend must not provide financial facts such as chain ID, token address, token decimals, recipient, token amount, USD value, credit amount, confirmation count, or payment status.
+
+Each `PaymentIntent` stores an immutable snapshot of the selected package and payment configuration. The snapshot includes the package ID, credit amount, USD minor units, ERC-20 base-unit token amount as a canonical decimal string, pricing version, chain ID, token address, token decimals, and recipient address. Future verification and settlement must use this stored snapshot rather than current package configuration.
+
+Payment intent creation is idempotent by authenticated `userId + idempotencyKey`. Token base-unit amounts are stored as decimal strings and must not be calculated with JavaScript floating-point arithmetic.
