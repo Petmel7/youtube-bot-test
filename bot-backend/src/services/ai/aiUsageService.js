@@ -31,6 +31,10 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         promptTokens: nullableNumber(usage.promptTokens),
         outputTokens: nullableNumber(usage.outputTokens),
         totalTokens: nullableNumber(usage.totalTokens),
+        estimatedCredits: nullableNumber(result.estimatedCredits),
+        reservedCredits: nullableNumber(result.reservedCredits),
+        actualCredits: nullableNumber(result.actualCredits),
+        billingStatus: result.billingStatus || "NOT_BILLED",
         latencyMs: nullableNumber(result.latencyMs),
         success: Boolean(result.success),
         errorCode: result.errorCode || null
@@ -43,4 +47,15 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
     );
 };
 
-module.exports = { buildOperationKey, recordAiUsage };
+const updateAiUsageBillingStatus = async (operationKey, update, model = AiUsage) => model.updateOne(
+    { operationKey },
+    {
+        $set: {
+            billingStatus: update.billingStatus,
+            errorCode: update.errorCode || null,
+            actualCredits: nullableNumber(update.actualCredits)
+        }
+    }
+);
+
+module.exports = { buildOperationKey, recordAiUsage, updateAiUsageBillingStatus };

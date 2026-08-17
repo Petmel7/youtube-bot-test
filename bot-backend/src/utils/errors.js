@@ -17,6 +17,8 @@ const unprocessable = (code, message) => new AppError(422, code, message);
 const tooManyRequests = (code, message) => new AppError(429, code, message);
 const upstream = (code, message) => new AppError(502, code, message);
 const unavailable = (code, message) => new AppError(503, code, message);
+const paymentRequired = (code, message) => new AppError(402, code, message);
+const accountingError = (code = "ACCOUNTING_ERROR", message = "Accounting operation failed") => new AppError(503, code, message);
 
 module.exports = {
     AppError,
@@ -28,5 +30,7 @@ module.exports = {
     unprocessable,
     tooManyRequests,
     upstream,
-    unavailable
+    unavailable,
+    paymentRequired,
+    accountingError
 };

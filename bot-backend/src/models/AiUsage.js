@@ -11,6 +11,22 @@ const aiUsageSchema = new mongoose.Schema({
     promptTokens: { type: Number, default: null },
     outputTokens: { type: Number, default: null },
     totalTokens: { type: Number, default: null },
+    estimatedCredits: { type: Number, default: null },
+    reservedCredits: { type: Number, default: null },
+    actualCredits: { type: Number, default: null },
+    billingStatus: {
+        type: String,
+        enum: [
+            "NOT_BILLED",
+            "RESERVED",
+            "PROVIDER_FAILED",
+            "USAGE_RECORDED",
+            "CHARGE_FINALIZED",
+            "RESERVATION_RELEASED",
+            "ACCOUNTING_RECOVERY_REQUIRED"
+        ],
+        default: "NOT_BILLED"
+    },
     latencyMs: { type: Number, default: null },
     success: { type: Boolean, required: true },
     errorCode: { type: String, default: null }

@@ -29,6 +29,21 @@ const createFakeGenAI = ({ text = " Thanks! ", usageMetadata, error }) => ({
     }
 });
 
+const createFakeWallet = (events = []) => ({
+    async reserveCredits(input) {
+        events.push({ type: "reserve", input });
+        return { created: true };
+    },
+    async finalizeCharge(input) {
+        events.push({ type: "finalize", input });
+        return {};
+    },
+    async releaseReservation(input) {
+        events.push({ type: "release", input });
+        return {};
+    }
+});
+
 test("Gemini provider returns text and normalized model/provider usage", async () => {
     const provider = createGeminiProvider({
         genAI: createFakeGenAI({
@@ -106,6 +121,8 @@ test("Gemini provider exposes normalized failure information", async () => {
 
 test("AiProvider records usage after a successful operation", async () => {
     const records = [];
+    const statusUpdates = [];
+    const walletEvents = [];
     const provider = createAiProvider({
         provider: {
             provider: "gemini",
@@ -127,7 +144,13 @@ test("AiProvider records usage after a successful operation", async () => {
         },
         async usageRecorder(operation, result) {
             records.push({ operation, result });
-        }
+        },
+        async usageStatusUpdater(operationKey, update) {
+            statusUpdates.push({ operationKey, update });
+        },
+        wallet: createFakeWallet(walletEvents),
+        estimateCost: () => ({ promptTokens: 10, outputTokens: 10, credits: 50 }),
+        calculateActualCost: () => ({ promptTokens: 1, outputTokens: 2, totalTokens: 3, credits: 9 })
     });
 
     const result = await provider.generateReply({
@@ -144,10 +167,16 @@ test("AiProvider records usage after a successful operation", async () => {
     assert.equal(records[0].operation.operationKey, result.operationKey);
     assert.equal(records[0].operation.commentId, "comment-1");
     assert.equal(records[0].result.usage.totalTokens, 3);
+    assert.equal(records[0].result.billingStatus, "USAGE_RECORDED");
+    assert.equal(records[0].result.reservedCredits, 50);
+    assert.equal(records[0].result.actualCredits, 9);
+    assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "finalize"]);
+    assert.equal(statusUpdates[0].update.billingStatus, "CHARGE_FINALIZED");
 });
 
 test("AiProvider records failed operations and preserves error propagation", async () => {
     const records = [];
+    const walletEvents = [];
     const provider = createAiProvider({
         provider: {
             provider: "gemini",
@@ -161,7 +190,9 @@ test("AiProvider records failed operations and preserves error propagation", asy
         },
         async usageRecorder(operation, result) {
             records.push({ operation, result });
-        }
+        },
+        wallet: createFakeWallet(walletEvents),
+        estimateCost: () => ({ promptTokens: 10, outputTokens: 10, credits: 50 })
     });
 
     await assert.rejects(
@@ -179,6 +210,85 @@ test("AiProvider records failed operations and preserves error propagation", asy
     assert.equal(records.length, 1);
     assert.equal(records[0].result.success, false);
     assert.equal(records[0].result.errorCode, "GEMINI_TIMEOUT");
+    assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
+    assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
+});
+
+test("AiProvider does not call provider for duplicate logical operations", async () => {
+    let providerCalls = 0;
+    const provider = createAiProvider({
+        provider: {
+            provider: "gemini",
+            model: "gemini-test",
+            async generateReply() {
+                providerCalls++;
+                return {
+                    text: "Thanks!",
+                    provider: "gemini",
+                    model: "gemini-test",
+                    usage: { promptTokens: 1, outputTokens: 1, totalTokens: 2 },
+                    latencyMs: 1,
+                    success: true
+                };
+            }
+        },
+        async usageRecorder() {},
+        async usageStatusUpdater() {},
+        wallet: {
+            async reserveCredits() {
+                return { created: false };
+            }
+        },
+        estimateCost: () => ({ promptTokens: 1, outputTokens: 1, credits: 5 })
+    });
+
+    await assert.rejects(() => provider.generateReply({
+        userId: "64b000000000000000000000",
+        runId: "64b000000000000000000001",
+        videoId: "abcDEF123_-",
+        commentId: "comment-1",
+        comment: "Great video",
+        prompt: "Be friendly"
+    }), { code: "AI_OPERATION_ALREADY_FINALIZED" });
+
+    assert.equal(providerCalls, 0);
+});
+
+test("AiProvider releases reservation when usage persistence fails after provider success", async () => {
+    const walletEvents = [];
+    const provider = createAiProvider({
+        provider: {
+            provider: "gemini",
+            model: "gemini-test",
+            async generateReply() {
+                return {
+                    text: "Thanks!",
+                    provider: "gemini",
+                    model: "gemini-test",
+                    usage: { promptTokens: 1, outputTokens: 1, totalTokens: 2 },
+                    latencyMs: 1,
+                    success: true
+                };
+            }
+        },
+        async usageRecorder() {
+            throw new Error("write failed");
+        },
+        wallet: createFakeWallet(walletEvents),
+        estimateCost: () => ({ promptTokens: 1, outputTokens: 1, credits: 5 }),
+        calculateActualCost: () => ({ promptTokens: 1, outputTokens: 1, totalTokens: 2, credits: 3 })
+    });
+
+    await assert.rejects(() => provider.generateReply({
+        userId: "64b000000000000000000000",
+        runId: "64b000000000000000000001",
+        videoId: "abcDEF123_-",
+        commentId: "comment-1",
+        comment: "Great video",
+        prompt: "Be friendly"
+    }), { code: "ACCOUNTING_ERROR" });
+
+    assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
 });
 
 test("AI usage operationKey is deterministic and duplicate inserts are prevented", async () => {

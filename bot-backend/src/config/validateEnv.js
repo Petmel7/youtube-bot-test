@@ -5,7 +5,10 @@ const {
     geminiRetryCount,
     botMaxCommentsPerRun,
     botMaxPagesPerRun,
-    botReplyMaxLength
+    botReplyMaxLength,
+    aiPromptTokenCreditRate,
+    aiOutputTokenCreditRate,
+    aiEstimatedInputCharsPerToken
 } = require("./config");
 
 const requiredEnv = [
@@ -43,11 +46,26 @@ const validateEnv = () => {
         GEMINI_RETRY_COUNT: geminiRetryCount,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
-        BOT_REPLY_MAX_LENGTH: botReplyMaxLength
+        BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
+        AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
+        AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate,
+        AI_ESTIMATED_INPUT_CHARS_PER_TOKEN: aiEstimatedInputCharsPerToken
     };
 
     Object.entries(numericSettings).forEach(([name, value]) => {
         if (!Number.isFinite(value) || value < 0) {
+            throw new Error(`Invalid ${name} configuration`);
+        }
+    });
+
+    const positiveIntegerSettings = {
+        AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
+        AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate,
+        AI_ESTIMATED_INPUT_CHARS_PER_TOKEN: aiEstimatedInputCharsPerToken
+    };
+
+    Object.entries(positiveIntegerSettings).forEach(([name, value]) => {
+        if (!Number.isInteger(value) || value <= 0) {
             throw new Error(`Invalid ${name} configuration`);
         }
     });
