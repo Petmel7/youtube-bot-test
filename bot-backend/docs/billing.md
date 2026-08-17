@@ -65,3 +65,21 @@ The verifier checks the configured Base chain ID `8453`, the Base native USDC co
 Confirmation count uses the application policy `max(0, currentBlock - receipt.blockNumber + 1)` and compares it to `PAYMENT_CONFIRMATIONS`. This threshold is an application confirmation policy, not a protocol-finality guarantee.
 
 The verifier is side-effect free: it does not settle payment intents, credit wallets, create `WalletTransaction` records, run reconciliation, or perform live RPC calls in tests.
+
+## Phase 3C Payment Settlement
+
+Phase 3C settles only a persisted, already-verified `PaymentIntent`. It does not call Base RPC or `ethers` inside settlement. Blockchain verification ends before settlement begins.
+
+Settlement runs in one MongoDB transaction and enforces:
+
+```text
+one verified PaymentIntent
+  =
+one WalletTransaction(type=CREDIT)
+  =
+one Wallet.balance increment
+```
+
+The deterministic payment CREDIT idempotency key is `payment:${paymentIntentId}:credit`. Payment ledger rows also store immutable `paymentIntentId`, `chainId`, and `txHash`, with payment-specific unique partial indexes for one CREDIT per payment intent and one CREDIT per blockchain transaction.
+
+Settlement credits only the frozen `PaymentIntent.creditAmount`. For `CONFIRMED_OVERPAID`, the excess token base units are stored as `overpaidAmountBaseUnits` metadata and do not mint extra credits. `Wallet.reserved` is not changed by payment settlement.

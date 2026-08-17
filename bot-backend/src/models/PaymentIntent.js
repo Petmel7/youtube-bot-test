@@ -4,6 +4,7 @@ const immutableString = { type: String, required: true, immutable: true };
 const immutableNumber = { type: Number, required: true, immutable: true };
 const nullableString = { type: String, default: null };
 const nullableNumber = { type: Number, default: null };
+const nullableObjectId = { type: mongoose.Schema.Types.ObjectId, default: null };
 
 const paymentIntentStatuses = [
     "PENDING",
@@ -74,6 +75,8 @@ const paymentIntentSchema = new mongoose.Schema({
 
     expiresAt: { type: Date, required: true, immutable: true },
     confirmedAt: { type: Date, default: null },
+    creditedTransactionId: { ...nullableObjectId, ref: "WalletTransaction" },
+    overpaidAmountBaseUnits: { ...nullableString, validate: nullableCanonicalDecimalString },
     failureCode: nullableString,
     failureReason: nullableString
 }, {
@@ -87,6 +90,7 @@ paymentIntentSchema.index(
     { unique: true, partialFilterExpression: { txHash: { $type: "string" } } }
 );
 paymentIntentSchema.index({ userId: 1, createdAt: -1 });
+paymentIntentSchema.index({ creditedTransactionId: 1 });
 paymentIntentSchema.index({ status: 1, updatedAt: 1 });
 paymentIntentSchema.index({ status: 1, expiresAt: 1 });
 
