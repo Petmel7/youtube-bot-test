@@ -244,22 +244,20 @@ const createPaymentSettlementService = ({
                     confirmationCount: intent.confirmationCount
                 };
 
+                await getOrCreateWallet(intent.userId, { session });
                 const walletBefore = await addSession(WalletModel.findOneAndUpdate(
                     { userId: intent.userId },
-                    {
-                        $setOnInsert: { userId: intent.userId, balance: 0, reserved: 0, unit: aiCreditUnit },
-                        $inc: { balance: intent.creditAmount }
-                    },
-                    { upsert: true, new: false, setDefaultsOnInsert: true }
+                    { $inc: { balance: intent.creditAmount } },
+                    { new: false }
                 ), session);
                 const wallet = await addSession(WalletModel.findOne({ userId: intent.userId }), session);
 
-                if (!wallet) {
+                if (!walletBefore || !wallet) {
                     throw unavailable("PAYMENT_TRANSACTION_ABORTED", "Payment wallet update failed");
                 }
 
-                const balanceBefore = walletBefore?.balance || 0;
-                const reservedBefore = walletBefore?.reserved || 0;
+                const balanceBefore = walletBefore.balance;
+                const reservedBefore = walletBefore.reserved;
 
                 let credit;
                 try {

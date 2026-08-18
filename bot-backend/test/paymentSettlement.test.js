@@ -110,6 +110,10 @@ const createFakeModels = ({ failOn } = {}) => {
             return query(clone([...state.wallets.values()].find(doc => matches(doc, filter))));
         },
         findOneAndUpdate(filter, update, options = {}) {
+            if (update.$setOnInsert?.balance !== undefined && update.$inc?.balance !== undefined) {
+                throw Object.assign(new Error("conflicting balance update"), { code: "CONFLICTING_BALANCE_UPDATE" });
+            }
+
             let wallet = [...state.wallets.values()].find(doc => matches(doc, filter));
             if (!wallet && options.upsert) {
                 wallet = {
