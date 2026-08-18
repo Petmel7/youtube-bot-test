@@ -114,6 +114,28 @@ const assertSettlementState = async ({ userId, paymentIntentId, expectedBalance,
     return { wallet, credits, intent };
 };
 
+const assertSerializedCreditTransitions = ({ credits, initialBalance, finalBalance, expectedAmounts }) => {
+    const transitions = credits
+        .map(transaction => [transaction.balanceBefore, transaction.balanceAfter, transaction.amount])
+        .sort((left, right) => left[0] - right[0]);
+    const amounts = transitions.map(([, , amount]) => amount).sort((left, right) => left - right);
+
+    assert.deepEqual(amounts, [...expectedAmounts].sort((left, right) => left - right));
+    assert.equal(transitions[0][0], initialBalance);
+    assert.equal(transitions.at(-1)[1], finalBalance);
+
+    for (let index = 0; index < transitions.length; index += 1) {
+        const [balanceBefore, balanceAfter, amount] = transitions[index];
+        assert.equal(balanceAfter, balanceBefore + amount);
+
+        if (index > 0) {
+            assert.equal(balanceBefore, transitions[index - 1][1]);
+        }
+    }
+
+    return transitions;
+};
+
 test("payment settlement integration uses real MongoDB transactions and payment indexes", {
     skip: mongoUri ? false : "set PAYMENT_SETTLEMENT_INTEGRATION_MONGO_URI to run live MongoDB settlement coverage"
 }, async (t) => {
@@ -277,17 +299,16 @@ test("payment settlement integration uses real MongoDB transactions and payment 
 
             const wallet = await Wallet.findOne({ userId }).lean();
             const credits = await WalletTransaction.find({ userId, type: "CREDIT" }).lean();
-            const transitions = credits
-                .map(transaction => [transaction.balanceBefore, transaction.balanceAfter, transaction.amount])
-                .sort((left, right) => left[0] - right[0]);
 
             assert.equal(wallet.balance, 2650);
             assert.equal(wallet.reserved, 25);
             assert.equal(credits.length, 2);
-            assert.deepEqual(transitions, [
-                [100, 850, 750],
-                [850, 2650, 1800]
-            ]);
+            assertSerializedCreditTransitions({
+                credits,
+                initialBalance: 100,
+                finalBalance: 2650,
+                expectedAmounts: [750, 1800]
+            });
         });
     } finally {
         await mongoose.disconnect();

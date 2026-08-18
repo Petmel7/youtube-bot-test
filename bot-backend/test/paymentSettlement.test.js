@@ -241,6 +241,28 @@ const seedWallet = (state, overrides = {}) => {
     return wallet;
 };
 
+const assertSerializedCreditTransitions = ({ transactions, initialBalance, finalBalance, expectedAmounts }) => {
+    const transitions = transactions
+        .map(transaction => [transaction.balanceBefore, transaction.balanceAfter, transaction.amount])
+        .sort((left, right) => left[0] - right[0]);
+    const amounts = transitions.map(([, , amount]) => amount).sort((left, right) => left - right);
+
+    assert.deepEqual(amounts, [...expectedAmounts].sort((left, right) => left - right));
+    assert.equal(transitions[0][0], initialBalance);
+    assert.equal(transitions.at(-1)[1], finalBalance);
+
+    for (let index = 0; index < transitions.length; index += 1) {
+        const [balanceBefore, balanceAfter, amount] = transitions[index];
+        assert.equal(balanceAfter, balanceBefore + amount);
+
+        if (index > 0) {
+            assert.equal(balanceBefore, transitions[index - 1][1]);
+        }
+    }
+
+    return transitions;
+};
+
 test("PaymentIntent and WalletTransaction schemas expose payment settlement fields and indexes", () => {
     assert(PaymentIntent.schema.path("creditedTransactionId"));
     assert(PaymentIntent.schema.path("overpaidAmountBaseUnits"));
@@ -508,13 +530,12 @@ test("different payment intents for same user use atomic increments without losi
     assert.equal(state.wallets.get(userId).reserved, 80);
     assert.equal(state.transactions.size, 2);
 
-    const transitions = [...state.transactions.values()]
-        .map(transaction => [transaction.balanceBefore, transaction.balanceAfter, transaction.amount])
-        .sort((left, right) => left[0] - right[0]);
-    assert.deepEqual(transitions, [
-        [0, 750, 750],
-        [750, 2550, 1800]
-    ]);
+    assertSerializedCreditTransitions({
+        transactions: [...state.transactions.values()],
+        initialBalance: 0,
+        finalBalance: 2550,
+        expectedAmounts: [750, 1800]
+    });
 });
 
 test("transaction rollback removes CREDIT, wallet increment, and intent update on failures", async () => {
