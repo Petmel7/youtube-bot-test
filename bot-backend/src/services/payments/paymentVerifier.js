@@ -1,4 +1,5 @@
-const { paymentConfig, paymentBaseNativeUsdcAddress } = require("../../config/config");
+const { paymentConfig } = require("../../config/config");
+const { getSupportedPaymentNetwork } = require("../../config/paymentNetworks");
 const { normalizeEvmAddress } = require("../../utils/evmAddress");
 const { createEvmProvider } = require("./evmProvider");
 
@@ -85,8 +86,7 @@ const isValidExpectedAmount = (value) => (
 
 const createPaymentVerifier = ({
     provider = createEvmProvider(),
-    config = paymentConfig,
-    expectedTokenAddress = paymentBaseNativeUsdcAddress
+    config = paymentConfig
 } = {}) => {
     const verifyPaymentIntent = async (paymentIntent) => {
         const txHash = paymentIntent?.txHash;
@@ -99,23 +99,23 @@ const createPaymentVerifier = ({
         try {
             const configuredTokenAddress = normalizeEvmAddress(config.tokenAddress);
             const intentTokenAddress = normalizeEvmAddress(paymentIntent.tokenAddress);
-            const baseUsdcAddress = normalizeEvmAddress(expectedTokenAddress);
             const configuredTreasuryAddress = normalizeEvmAddress(config.treasuryAddress);
             const intentRecipientAddress = normalizeEvmAddress(paymentIntent.recipientAddress);
+            const supportedNetwork = getSupportedPaymentNetwork(config.chainId);
 
-            if (paymentIntent.chainId !== config.chainId || config.chainId !== 8453) {
+            if (!supportedNetwork || paymentIntent.chainId !== config.chainId) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);
             }
 
             const networkChainId = await provider.getNetworkChainId();
-            if (networkChainId !== 8453) {
+            if (networkChainId !== config.chainId) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);
             }
 
             if (
                 !configuredTokenAddress ||
                 !intentTokenAddress ||
-                configuredTokenAddress !== baseUsdcAddress ||
+                configuredTokenAddress !== supportedNetwork.tokenAddress ||
                 intentTokenAddress !== configuredTokenAddress ||
                 paymentIntent.tokenDecimals !== config.tokenDecimals ||
                 config.tokenDecimals !== 6

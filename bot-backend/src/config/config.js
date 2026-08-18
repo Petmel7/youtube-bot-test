@@ -1,7 +1,11 @@
 require("dotenv").config();
 const { normalizeEvmAddress } = require("../utils/evmAddress");
-
-const baseNativeUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const {
+    BASE_MAINNET_CHAIN_ID,
+    baseMainnetUsdcAddress,
+    baseSepoliaUsdcAddress,
+    supportedPaymentNetworks
+} = require("./paymentNetworks");
 
 module.exports = {
     googleClientId: process.env.GOOGLE_CLIENT_ID,
@@ -25,9 +29,9 @@ module.exports = {
     aiOutputTokenCreditRate: Number(process.env.AI_OUTPUT_TOKEN_CREDIT_RATE || 4),
     aiEstimatedInputCharsPerToken: Number(process.env.AI_ESTIMATED_INPUT_CHARS_PER_TOKEN || 4),
     paymentConfig: {
-        chainId: Number(process.env.PAYMENT_CHAIN_ID || 8453),
+        chainId: Number(process.env.PAYMENT_CHAIN_ID || BASE_MAINNET_CHAIN_ID),
         rpcUrl: process.env.PAYMENT_RPC_URL,
-        tokenAddress: normalizeEvmAddress(process.env.PAYMENT_TOKEN_ADDRESS || baseNativeUsdcAddress),
+        tokenAddress: normalizeEvmAddress(process.env.PAYMENT_TOKEN_ADDRESS || baseMainnetUsdcAddress),
         tokenSymbol: process.env.PAYMENT_TOKEN_SYMBOL || "USDC",
         tokenDecimals: Number(process.env.PAYMENT_TOKEN_DECIMALS || 6),
         treasuryAddress: normalizeEvmAddress(process.env.PAYMENT_TREASURY_ADDRESS),
@@ -36,5 +40,7 @@ module.exports = {
         pricingVersion: process.env.PAYMENT_PRICING_VERSION,
         packagesJson: process.env.PAYMENT_PACKAGES_JSON
     },
-    paymentBaseNativeUsdcAddress: baseNativeUsdcAddress
+    paymentBaseNativeUsdcAddress: baseMainnetUsdcAddress,
+    paymentBaseSepoliaUsdcAddress: baseSepoliaUsdcAddress,
+    supportedPaymentNetworks
 };

@@ -12,6 +12,7 @@ const {
 const { createPaymentIntentService } = require("../src/services/billing/paymentIntentService");
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const validPackagesJson = JSON.stringify([
     {
@@ -113,7 +114,20 @@ const createFakePaymentIntentModel = () => {
 };
 
 test("payment config validation accepts valid Base USDC config", () => {
-    assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), baseUsdcAddress));
+    assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "production" }));
+    assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "development" }));
+});
+
+test("payment config validation accepts Base Sepolia only outside production", () => {
+    const sepoliaConfig = validPaymentConfig({
+        chainId: 84532,
+        rpcUrl: "https://sepolia.base.org",
+        tokenAddress: baseSepoliaUsdcAddress
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "development" }));
+    assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "test" }));
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production" }), /PAYMENT_CHAIN_ID/);
 });
 
 test("payment config validation rejects invalid chain ID", () => {
@@ -130,6 +144,17 @@ test("payment config validation rejects invalid token address", () => {
 
 test("payment config validation rejects non-Base-USDC token address", () => {
     assert.throws(() => validatePaymentConfig(validPaymentConfig({ tokenAddress: treasuryAddress }), baseUsdcAddress), /PAYMENT_TOKEN_ADDRESS/);
+});
+
+test("payment config validation rejects supported chain and token mismatches", () => {
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        chainId: 84532,
+        tokenAddress: baseUsdcAddress
+    }), { nodeEnv: "development" }), /PAYMENT_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        chainId: 8453,
+        tokenAddress: baseSepoliaUsdcAddress
+    }), { nodeEnv: "development" }), /PAYMENT_TOKEN_ADDRESS/);
 });
 
 test("payment config validation rejects wrong token decimals", () => {

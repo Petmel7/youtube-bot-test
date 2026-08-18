@@ -1,6 +1,5 @@
 const {
     paymentConfig,
-    paymentBaseNativeUsdcAddress,
     geminiModel,
     geminiMaxOutputTokens,
     geminiTimeoutMs,
@@ -12,7 +11,8 @@ const {
     aiOutputTokenCreditRate,
     aiEstimatedInputCharsPerToken
 } = require("./config");
-const { isValidEvmAddress } = require("../utils/evmAddress");
+const { isValidEvmAddress, normalizeEvmAddress } = require("../utils/evmAddress");
+const { BASE_MAINNET_CHAIN_ID, getSupportedPaymentNetwork } = require("./paymentNetworks");
 const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
 
 const requiredEnv = [
@@ -74,11 +74,22 @@ const validateEnv = () => {
         }
     });
 
-    validatePaymentConfig(paymentConfig, paymentBaseNativeUsdcAddress);
+    validatePaymentConfig(paymentConfig);
 };
 
-const validatePaymentConfig = (config, expectedTokenAddress = paymentBaseNativeUsdcAddress) => {
-    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || config.chainId !== 8453) {
+const normalizeValidationOptions = (options) => (typeof options === "string" ? {} : (options || {}));
+
+const validatePaymentConfig = (config, options = {}) => {
+    const {
+        nodeEnv = process.env.NODE_ENV
+    } = normalizeValidationOptions(options);
+    const supportedNetwork = getSupportedPaymentNetwork(config.chainId);
+
+    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || !supportedNetwork) {
+        throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
+    }
+
+    if (nodeEnv === "production" && config.chainId !== BASE_MAINNET_CHAIN_ID) {
         throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
     }
 
@@ -91,7 +102,8 @@ const validatePaymentConfig = (config, expectedTokenAddress = paymentBaseNativeU
         throw new Error("Invalid PAYMENT_RPC_URL configuration");
     }
 
-    if (!isValidEvmAddress(config.tokenAddress) || config.tokenAddress !== expectedTokenAddress) {
+    const configuredTokenAddress = normalizeEvmAddress(config.tokenAddress);
+    if (!isValidEvmAddress(config.tokenAddress) || configuredTokenAddress !== supportedNetwork.tokenAddress) {
         throw new Error("Invalid PAYMENT_TOKEN_ADDRESS configuration");
     }
 

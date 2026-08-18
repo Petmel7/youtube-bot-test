@@ -10,6 +10,7 @@ const {
 } = require("../src/services/payments/paymentVerifier");
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const senderAddress = "0x2222222222222222222222222222222222222222";
 const otherAddress = "0x3333333333333333333333333333333333333333";
@@ -27,6 +28,13 @@ const config = {
     tokenDecimals: 6,
     treasuryAddress,
     confirmations: 60
+};
+
+const sepoliaConfig = {
+    ...config,
+    chainId: 84532,
+    rpcUrl: "https://sepolia.base.org",
+    tokenAddress: baseSepoliaUsdcAddress
 };
 
 const makeTransferLog = ({
@@ -172,6 +180,26 @@ test("PaymentVerifier rejects wrong provider network and frontend cannot overrid
     assert.equal(result.code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
 });
 
+test("PaymentVerifier accepts configured Base Sepolia chain and token", async () => {
+    const result = await verifyWith({
+        verifierConfig: sepoliaConfig,
+        intent: makeIntent({
+            chainId: 84532,
+            tokenAddress: baseSepoliaUsdcAddress
+        }),
+        provider: makeProvider({
+            chainId: 84532,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: baseSepoliaUsdcAddress })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 84532);
+    assert.equal(result.tokenAddress, baseSepoliaUsdcAddress);
+});
+
 test("PaymentVerifier returns pending when transaction or receipt is missing", async () => {
     const missingTransaction = await verifyWith({ provider: makeProvider({ transaction: null }) });
     assert.equal(missingTransaction.outcome, PAYMENT_OUTCOMES.PENDING);
@@ -202,6 +230,16 @@ test("PaymentVerifier rejects wrong token contract and frontend cannot override 
         verifierConfig: { ...config, tokenAddress: otherTokenAddress }
     });
     assert.equal(wrongConfigToken.code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+
+    const mismatchedSepoliaToken = await verifyWith({
+        verifierConfig: { ...sepoliaConfig, tokenAddress: baseUsdcAddress },
+        intent: makeIntent({
+            chainId: 84532,
+            tokenAddress: baseUsdcAddress
+        }),
+        provider: makeProvider({ chainId: 84532 })
+    });
+    assert.equal(mismatchedSepoliaToken.code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
 });
 
 test("PaymentVerifier rejects no matching, ambiguous, and wrong-recipient transfers", async () => {
