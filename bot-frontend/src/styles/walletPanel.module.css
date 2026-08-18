@@ -1,0 +1,303 @@
+.walletPanel {
+    margin: 0 0 24px;
+    padding: 18px;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.panelHeader,
+.intentHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.panelHeader h2,
+.intentHeader h3 {
+    margin: 0 0 4px;
+    font-size: 20px;
+}
+
+.panelHeader p {
+    color: #666;
+    font-size: 14px;
+}
+
+.balanceGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.balanceGrid div {
+    padding: 12px;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.balanceGrid span {
+    display: block;
+    color: #666;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.balanceGrid strong {
+    font-size: 22px;
+}
+
+.packageList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.packageButton,
+.primaryButton,
+.iconTextButton,
+.iconButton {
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.packageButton {
+    min-height: 66px;
+    padding: 10px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #111;
+    text-align: left;
+}
+
+.packageButton strong,
+.packageButton span {
+    display: block;
+}
+
+.packageButton strong {
+    margin-bottom: 4px;
+    font-size: 18px;
+}
+
+.packageButton span {
+    color: #666;
+}
+
+.packageButtonSelected {
+    border-color: #ff0033;
+    background: #fff5f7;
+}
+
+.primaryButton,
+.iconTextButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: #101828;
+    color: #fff;
+}
+
+.primaryButton {
+    width: 100%;
+}
+
+.iconTextButton {
+    flex: 0 0 auto;
+}
+
+.primaryButton:hover:not(:disabled),
+.iconTextButton:hover:not(:disabled) {
+    background: #1e90ff;
+}
+
+.primaryButton:disabled,
+.iconTextButton:disabled,
+.packageButton:disabled,
+.iconButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.intentBox {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e5e5;
+}
+
+.statusBadge {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: #f1f1f1;
+    color: #444;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.success {
+    background: #e7f7ed;
+    color: #157347;
+}
+
+.pending {
+    background: #fff7df;
+    color: #8a6100;
+}
+
+.danger {
+    background: #fde8e8;
+    color: #b42318;
+}
+
+.fieldRow {
+    display: grid;
+    grid-template-columns: minmax(96px, 0.75fr) minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.fieldLabel {
+    color: #666;
+    font-size: 13px;
+}
+
+.fieldValue {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+}
+
+.iconButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: #f1f1f1;
+    color: #222;
+}
+
+.iconButton:hover {
+    background: #e2e2e2;
+}
+
+.verifyForm {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.txInput {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+.muted,
+.notice,
+.error {
+    margin-top: 10px;
+    font-size: 14px;
+    text-align: center;
+}
+
+.muted {
+    color: #666;
+}
+
+.notice {
+    color: #157347;
+}
+
+.error {
+    color: #b42318;
+}
+
+:global(body.dark-mode) .walletPanel {
+    border-color: #3d3d3d;
+    background: #1f1f1f;
+}
+
+:global(body.dark-mode) .panelHeader p,
+:global(body.dark-mode) .balanceGrid span,
+:global(body.dark-mode) .packageButton span,
+:global(body.dark-mode) .fieldLabel,
+:global(body.dark-mode) .muted {
+    color: #c8c8c8;
+}
+
+:global(body.dark-mode) .balanceGrid div,
+:global(body.dark-mode) .packageButton {
+    border-color: #3d3d3d;
+    background: #272727;
+    color: #fff;
+}
+
+:global(body.dark-mode) .packageButtonSelected {
+    border-color: #ff4d6d;
+    background: #35131a;
+}
+
+:global(body.dark-mode) .intentBox,
+:global(body.dark-mode) .fieldRow {
+    border-color: #3d3d3d;
+}
+
+:global(body.dark-mode) .iconButton {
+    background: #333;
+    color: #fff;
+}
+
+:global(body.dark-mode) .txInput {
+    border-color: #555;
+    background: #272727;
+    color: #fff;
+}
+
+@media (max-width: 520px) {
+    .walletPanel {
+        padding: 14px;
+    }
+
+    .panelHeader,
+    .verifyForm {
+        flex-direction: column;
+    }
+
+    .iconTextButton,
+    .primaryButton {
+        width: 100%;
+    }
+
+    .balanceGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .fieldRow {
+        grid-template-columns: minmax(0, 1fr) 34px;
+    }
+
+    .fieldLabel {
+        grid-column: 1 / -1;
+    }
+}

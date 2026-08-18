@@ -49,6 +49,8 @@ const createWalletService = ({
         return addSession(query, session);
     };
 
+    const getWallet = async ({ userId }) => getOrCreateWallet(userId);
+
     const grantDevelopmentCredits = async ({ userId, amount, idempotencyKey, reason = "development-credit" }) => {
         assertPositiveInteger(amount);
 
@@ -301,6 +303,7 @@ const createWalletService = ({
 
     return {
         finalizeCharge,
+        getWallet,
         getOrCreateWallet,
         grantDevelopmentCredits,
         releaseReservation,

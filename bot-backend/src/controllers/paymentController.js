@@ -1,5 +1,7 @@
 const defaultPaymentLifecycleService = require("../services/payments/paymentLifecycleService");
-const { toPaymentIntentDto } = require("../utils/dto");
+const defaultWalletService = require("../services/billing/walletService");
+const { createPaymentPricingService } = require("../services/billing/paymentPricingService");
+const { toPaymentIntentDto, toPaymentPackageDto, toWalletDto } = require("../utils/dto");
 const {
     assertObjectBody,
     validateIdempotencyKey,
@@ -9,8 +11,43 @@ const {
 } = require("../utils/validators");
 
 const getUserId = (req) => req.user?._id || req.user?.id;
+let defaultPaymentPricingService;
 
-const createPaymentController = (paymentLifecycleService = defaultPaymentLifecycleService) => {
+const getDefaultPaymentPricingService = () => {
+    if (!defaultPaymentPricingService) {
+        defaultPaymentPricingService = createPaymentPricingService();
+    }
+
+    return defaultPaymentPricingService;
+};
+
+const createPaymentController = (
+    paymentLifecycleService = defaultPaymentLifecycleService,
+    {
+        walletService = defaultWalletService,
+        paymentPricingService = null
+    } = {}
+) => {
+    const getPaymentPricingService = () => paymentPricingService || getDefaultPaymentPricingService();
+
+    const getPaymentPackagesController = async (req, res) => {
+        const packages = getPaymentPricingService().listPackageSnapshots();
+
+        res.json({
+            success: true,
+            packages: packages.map(toPaymentPackageDto)
+        });
+    };
+
+    const getWalletController = async (req, res) => {
+        const wallet = await walletService.getWallet({ userId: getUserId(req) });
+
+        res.json({
+            success: true,
+            wallet: toWalletDto(wallet)
+        });
+    };
+
     const createPaymentIntentController = async (req, res) => {
         assertObjectBody(req.body);
 
@@ -66,6 +103,8 @@ const createPaymentController = (paymentLifecycleService = defaultPaymentLifecyc
     };
 
     return {
+        getPaymentPackagesController,
+        getWalletController,
         createPaymentIntentController,
         getPaymentIntentController,
         verifyPaymentIntentController

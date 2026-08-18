@@ -12,6 +12,7 @@ import Header from "../components/Header";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import Loading from "../components/Loading";
 import VideoListButton from "../components/VideoListButton";
+import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
 
 const Dashboard = () => {
@@ -98,6 +99,8 @@ const Dashboard = () => {
             <Header />
 
             <h1 className={styles.dashboardTitle}>YouTube {t('bot.dashboard')}</h1>
+
+            <WalletPanel />
 
             <div className={styles.themeConteaner}>
                 <Gender {...{

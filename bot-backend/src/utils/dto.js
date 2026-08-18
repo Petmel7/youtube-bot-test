@@ -76,4 +76,38 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
     };
 };
 
-module.exports = { toSafeUser, toPromptDto, toBotRunDto, toPaymentIntentDto };
+const toWalletDto = (wallet) => {
+    if (!wallet) return null;
+
+    const balance = wallet.balance || 0;
+    const reserved = wallet.reserved || 0;
+
+    return {
+        id: String(wallet._id || wallet.id),
+        balance,
+        reserved,
+        available: Math.max(balance - reserved, 0),
+        unit: wallet.unit
+    };
+};
+
+const toPaymentPackageDto = (paymentPackage) => {
+    if (!paymentPackage) return null;
+
+    return {
+        packageId: paymentPackage.packageId,
+        creditAmount: paymentPackage.creditAmount,
+        expectedUsdAmountMinor: paymentPackage.expectedUsdAmountMinor,
+        expectedTokenAmountBaseUnits: paymentPackage.expectedTokenAmountBaseUnits,
+        pricingVersion: paymentPackage.pricingVersion
+    };
+};
+
+module.exports = {
+    toSafeUser,
+    toPromptDto,
+    toBotRunDto,
+    toPaymentIntentDto,
+    toWalletDto,
+    toPaymentPackageDto
+};

@@ -59,7 +59,7 @@ const makeIntent = (overrides = {}) => ({
     ...overrides
 });
 
-const createApp = (paymentLifecycleService) => {
+const createApp = (paymentLifecycleService, dependencies) => {
     const app = express();
     app.use(express.json());
     app.use((req, res, next) => {
@@ -68,7 +68,7 @@ const createApp = (paymentLifecycleService) => {
         if (userId) req.user = { _id: userId, id: userId };
         next();
     });
-    app.use("/api/payments", createPaymentRoutes(paymentLifecycleService));
+    app.use("/api/payments", createPaymentRoutes(paymentLifecycleService, dependencies));
     app.use(errorHandler);
     return app;
 };
@@ -115,6 +115,33 @@ const createFakeLifecycle = () => {
     };
     return service;
 };
+
+const createFakePaymentDependencies = () => ({
+    walletService: {
+        async getWallet(args) {
+            return {
+                _id: "wallet-1",
+                userId: args.userId,
+                balance: 1200,
+                reserved: 250,
+                unit: "AI_CREDIT",
+                secret: "not-for-client"
+            };
+        }
+    },
+    paymentPricingService: {
+        listPackageSnapshots() {
+            return [{
+                packageId: "starter_credits",
+                creditAmount: 750,
+                expectedUsdAmountMinor: 500,
+                expectedTokenAmountBaseUnits: "5000000",
+                pricingVersion: "pricing-v1",
+                internalRate: "not-for-client"
+            }];
+        }
+    }
+});
 
 const createMemoryPaymentIntentModel = (initialIntents = []) => {
     const intents = new Map(initialIntents.map(intent => [String(intent._id), clone(intent)]));
@@ -178,9 +205,39 @@ const createLifecycleHarness = ({ intent = makeIntent(), verifierResult, settlem
 test("payment API requires authentication", async () => {
     const app = createApp(createFakeLifecycle());
 
+    assert.equal((await request(app, { path: "/api/payments/packages" })).status, 401);
+    assert.equal((await request(app, { path: "/api/payments/wallet" })).status, 401);
     assert.equal((await request(app, { method: "POST", path: "/api/payments/intents", body: {} })).status, 401);
     assert.equal((await request(app, { path: `/api/payments/intents/${intentId}` })).status, 401);
     assert.equal((await request(app, { method: "POST", path: `/api/payments/intents/${intentId}/verify`, body: {} })).status, 401);
+});
+
+test("payment API lists packages and wallet DTO for authenticated user", async () => {
+    const app = createApp(createFakeLifecycle(), createFakePaymentDependencies());
+
+    const packages = await request(app, { path: "/api/payments/packages", userId: userA });
+    const wallet = await request(app, { path: "/api/payments/wallet", userId: userA });
+
+    assert.equal(packages.status, 200);
+    assert.deepEqual(packages.body.packages, [{
+        packageId: "starter_credits",
+        creditAmount: 750,
+        expectedUsdAmountMinor: 500,
+        expectedTokenAmountBaseUnits: "5000000",
+        pricingVersion: "pricing-v1"
+    }]);
+    assert.equal(packages.body.packages[0].internalRate, undefined);
+
+    assert.equal(wallet.status, 200);
+    assert.deepEqual(wallet.body.wallet, {
+        id: "wallet-1",
+        balance: 1200,
+        reserved: 250,
+        available: 950,
+        unit: "AI_CREDIT"
+    });
+    assert.equal(wallet.body.wallet.userId, undefined);
+    assert.equal(wallet.body.wallet.secret, undefined);
 });
 
 test("payment API create validates input and sends only backend-safe arguments to lifecycle", async () => {
