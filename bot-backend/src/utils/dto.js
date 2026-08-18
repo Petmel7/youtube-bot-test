@@ -44,4 +44,36 @@ const toBotRunDto = (run) => {
     };
 };
 
-module.exports = { toSafeUser, toPromptDto, toBotRunDto };
+const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
+    if (!intent) return null;
+
+    return {
+        id: String(intent._id || intent.id),
+        status: intent.status,
+        packageId: intent.packageId,
+        chainId: intent.chainId,
+        token: {
+            address: intent.tokenAddress,
+            symbol: intent.tokenSymbol,
+            decimals: intent.tokenDecimals
+        },
+        recipientAddress: intent.recipientAddress,
+        expectedTokenAmountBaseUnits: intent.expectedTokenAmountBaseUnits,
+        expectedUsdAmountMinor: intent.expectedUsdAmountMinor,
+        creditAmount: intent.creditAmount,
+        pricingVersion: intent.pricingVersion,
+        txHash: intent.txHash || null,
+        verifiedTokenAmountBaseUnits: intent.verifiedTokenAmountBaseUnits || null,
+        confirmationCount: intent.confirmationCount ?? null,
+        requiredConfirmations: requiredConfirmations ?? null,
+        expiresAt: intent.expiresAt || null,
+        confirmedAt: intent.confirmedAt || null,
+        credited: Boolean(intent.creditedTransactionId),
+        failureCode: intent.failureCode || null,
+        failureReason: intent.failureReason || null,
+        createdAt: intent.createdAt,
+        updatedAt: intent.updatedAt
+    };
+};
+
+module.exports = { toSafeUser, toPromptDto, toBotRunDto, toPaymentIntentDto };

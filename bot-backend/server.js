@@ -21,6 +21,7 @@ const botRoutes = require("./src/routes/botRoutes");
 const userRoutes = require("./src/routes/userRoutes");
 const userPromptRoutes = require("./src/routes/userPromptRoutes");
 const youtubeRoutes = require("./src/routes/youtubeRoutes");
+const paymentRoutes = require("./src/routes/paymentRoutes");
 
 // ✅ Ініціалізація додатку
 const app = express();
@@ -47,6 +48,7 @@ app.use("/bot", botRoutes);
 app.use("/user", userRoutes);
 app.use("/user-prompt", userPromptRoutes);
 app.use("/youtube", youtubeRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use(errorHandler);
 
 // ✅ Запуск сервера

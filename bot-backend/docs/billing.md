@@ -89,3 +89,13 @@ Settlement credits only the frozen `PaymentIntent.creditAmount`. For `CONFIRMED_
 Payment CREDIT ledger snapshots must reflect the wallet mutation's serialized balance transition: `balanceAfter = balanceBefore + amount`. The balance increment uses atomic `$inc`; settlement does not overwrite or recalculate `reserved`.
 
 The gated real-MongoDB settlement integration test requires `PAYMENT_SETTLEMENT_INTEGRATION_MONGO_URI` to point at an explicit test/integration database backed by a transaction-capable topology. Normal `npm test` skips this live integration coverage when the variable is not configured.
+
+## Phase 3D Payment API Lifecycle
+
+Authenticated users create payment intents with `POST /api/payments/intents`. The request supplies a backend package ID plus an opaque `Idempotency-Key`; pricing, token amount, credit amount, chain, token contract, recipient, expiry, and pricing version all come from backend configuration and the stored package snapshot.
+
+Clients read lifecycle state with `GET /api/payments/intents/:id`. Lookups are scoped to the authenticated user, so one user cannot read or verify another user's intent.
+
+After sending Base USDC, the client submits only the canonical transaction hash to `POST /api/payments/intents/:id/verify`. The backend stores the hash on the user's intent, runs the verifier, persists verifier-derived metadata, maps the result into the existing `PaymentIntent` statuses, and calls settlement only for `CONFIRMED` or `CONFIRMED_OVERPAID`.
+
+Insufficient confirmations remain `CONFIRMING`; underpaid and rejected payments do not settle. Successful settlement credits exactly the frozen `PaymentIntent.creditAmount`, and overpayment remains metadata only.

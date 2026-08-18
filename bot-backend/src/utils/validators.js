@@ -4,6 +4,8 @@ const MAX_PROMPT_LENGTH = 1200;
 const MAX_THEME_LENGTH = 120;
 const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,80}$/;
+const PAYMENT_PACKAGE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const EVM_TX_HASH_RE = /^0x[a-f0-9]{64}$/;
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -61,6 +63,30 @@ const validateIdempotencyKey = (key) => {
     return value;
 };
 
+const validatePaymentPackageId = (packageId) => {
+    const value = normalizeString(packageId, "packageId", 80);
+    if (!PAYMENT_PACKAGE_ID_RE.test(value)) {
+        throw unprocessable("INVALID_PAYMENT_PACKAGE", "Invalid payment package");
+    }
+    return value;
+};
+
+const validatePaymentIntentId = (id) => {
+    const value = normalizeString(id, "paymentIntentId", 64);
+    if (!/^[a-f0-9]{24}$/i.test(value)) {
+        throw unprocessable("INVALID_PAYMENT_INTENT_ID", "Invalid payment intent ID");
+    }
+    return value;
+};
+
+const validatePaymentTxHash = (txHash) => {
+    const value = normalizeString(txHash, "txHash", 66);
+    if (!EVM_TX_HASH_RE.test(value)) {
+        throw unprocessable("INVALID_PAYMENT_TX_HASH", "Invalid payment transaction hash");
+    }
+    return value;
+};
+
 module.exports = {
     assertObjectBody,
     validateVideoId,
@@ -68,5 +94,8 @@ module.exports = {
     validateChannelTheme,
     validateGender,
     validateIdempotencyKey,
+    validatePaymentIntentId,
+    validatePaymentPackageId,
+    validatePaymentTxHash,
     MAX_PROMPT_LENGTH
 };
