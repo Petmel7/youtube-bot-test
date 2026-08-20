@@ -53,6 +53,7 @@ const makeIntent = (overrides = {}) => ({
     tokenAddress: baseUsdcAddress,
     tokenDecimals: 6,
     recipientAddress: treasuryAddress,
+    payerAddress: senderAddress,
     expectedTokenAmountBaseUnits: "5000000",
     txHash,
     ...overrides
@@ -167,6 +168,7 @@ test("PaymentVerifier rejects wrong provider network and frontend cannot overrid
         tokenAddress: baseUsdcAddress,
         tokenDecimals: 6,
         recipientAddress: treasuryAddress,
+        payerAddress: senderAddress,
         fromAddress: null,
         verifiedTokenAmountBaseUnits: null,
         expectedTokenAmountBaseUnits: "5000000",
@@ -255,6 +257,16 @@ test("PaymentVerifier rejects no matching, ambiguous, and wrong-recipient transf
         provider: makeProvider({ receipt: makeReceipt({ logs: [makeTransferLog(), makeTransferLog({ value: 6000000n })] }) })
     });
     assert.equal(ambiguous.code, PAYMENT_VERIFICATION_CODES.TRANSFER_AMBIGUOUS);
+});
+
+test("PaymentVerifier rejects transfers from a wallet other than bound payer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({ payerAddress: otherAddress })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.REJECTED);
+    assert.equal(result.code, PAYMENT_VERIFICATION_CODES.WRONG_PAYER);
+    assert.equal(result.fromAddress, senderAddress);
 });
 
 test("PaymentVerifier rejects frozen recipient mismatch and frontend cannot override recipient", async () => {
@@ -385,6 +397,7 @@ test("PaymentVerifier VERIFIED result contains backend-derived fields", async ()
         tokenAddress: baseUsdcAddress,
         tokenDecimals: 6,
         recipientAddress: treasuryAddress,
+        payerAddress: senderAddress,
         fromAddress: senderAddress,
         verifiedTokenAmountBaseUnits: "5000000",
         expectedTokenAmountBaseUnits: "5000000",

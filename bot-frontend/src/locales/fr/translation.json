@@ -48,7 +48,9 @@
             "load": "Impossible de charger le portefeuille.",
             "create": "Impossible de créer le paiement.",
             "verify": "Impossible de vérifier le paiement.",
-            "txHash": "Entrez un hash de transaction valide."
+            "txHash": "Entrez un hash de transaction valide.",
+            "walletProvider": "Aucun portefeuille de navigateur trouvé.",
+            "walletAccount": "Aucun compte de portefeuille sélectionné."
         },
         "fields": {
             "chainId": "ID de chaîne",
@@ -56,6 +58,7 @@
             "decimals": "décimales",
             "tokenAddress": "Adresse du token",
             "recipient": "Destinataire",
+            "payer": "Portefeuille payeur",
             "tokenAmount": "Montant du token",
             "baseUnits": "Unités de base",
             "usd": "USD",

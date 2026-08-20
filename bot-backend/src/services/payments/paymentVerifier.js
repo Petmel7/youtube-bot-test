@@ -19,6 +19,7 @@ const PAYMENT_VERIFICATION_CODES = Object.freeze({
     RECEIPT_NOT_FOUND: "PAYMENT_RECEIPT_NOT_FOUND",
     TX_REVERTED: "PAYMENT_TRANSACTION_REVERTED",
     WRONG_TOKEN: "PAYMENT_WRONG_TOKEN",
+    WRONG_PAYER: "PAYMENT_WRONG_PAYER",
     TRANSFER_NOT_FOUND: "PAYMENT_TRANSFER_NOT_FOUND",
     TRANSFER_AMBIGUOUS: "PAYMENT_TRANSFER_AMBIGUOUS",
     WRONG_RECIPIENT: "PAYMENT_WRONG_RECIPIENT",
@@ -56,6 +57,7 @@ const createResult = ({
     tokenAddress: intent?.tokenAddress || config.tokenAddress,
     tokenDecimals: intent?.tokenDecimals ?? config.tokenDecimals,
     recipientAddress: intent?.recipientAddress || config.treasuryAddress,
+    payerAddress: intent?.payerAddress || null,
     fromAddress,
     verifiedTokenAmountBaseUnits,
     expectedTokenAmountBaseUnits: intent?.expectedTokenAmountBaseUnits || null,
@@ -101,6 +103,7 @@ const createPaymentVerifier = ({
             const intentTokenAddress = normalizeEvmAddress(paymentIntent.tokenAddress);
             const configuredTreasuryAddress = normalizeEvmAddress(config.treasuryAddress);
             const intentRecipientAddress = normalizeEvmAddress(paymentIntent.recipientAddress);
+            const intentPayerAddress = normalizeEvmAddress(paymentIntent.payerAddress);
             const supportedNetwork = getSupportedPaymentNetwork(config.chainId);
 
             if (!supportedNetwork || paymentIntent.chainId !== config.chainId) {
@@ -190,6 +193,10 @@ const createPaymentVerifier = ({
                 fromAddress: transfer.from,
                 verifiedTokenAmountBaseUnits
             };
+
+            if (!intentPayerAddress || transfer.from !== intentPayerAddress) {
+                return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_PAYER, transferContext);
+            }
 
             if (confirmationCount < config.confirmations) {
                 return createResult({

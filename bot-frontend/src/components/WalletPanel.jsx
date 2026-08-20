@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaCheckCircle, FaCopy, FaRedoAlt } from "react-icons/fa";
 import {
+    createPayerChallenge,
     createPaymentIntent,
     fetchPaymentIntent,
     fetchPaymentPackages,
@@ -53,6 +54,7 @@ const WalletPanel = () => {
     const [selectedPackageId, setSelectedPackageId] = useState("");
     const [intent, setIntent] = useState(null);
     const [txHash, setTxHash] = useState("");
+    const [payerAddress, setPayerAddress] = useState("");
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState("");
@@ -131,8 +133,28 @@ const WalletPanel = () => {
         setError("");
         setNotice("");
         try {
-            const nextIntent = await createPaymentIntent(selectedPackage.packageId);
+            if (!window.ethereum?.request) {
+                throw new Error(t("wallet.errors.walletProvider"));
+            }
+
+            const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+            const selectedAddress = accounts?.[0];
+            if (!selectedAddress) {
+                throw new Error(t("wallet.errors.walletAccount"));
+            }
+
+            const challenge = await createPayerChallenge(selectedAddress);
+            const signature = await window.ethereum.request({
+                method: "personal_sign",
+                params: [challenge.message, challenge.payerAddress]
+            });
+            const nextIntent = await createPaymentIntent({
+                packageId: selectedPackage.packageId,
+                payerChallengeId: challenge.id,
+                signature
+            });
             setIntent(nextIntent);
+            setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
             setTxHash(nextIntent.txHash || "");
         } catch (createError) {
             setError(createError.message || t("wallet.errors.create"));
@@ -238,6 +260,7 @@ const WalletPanel = () => {
                             <FieldRow label={t("wallet.fields.token")} value={`${intent.token?.symbol || ""} (${intent.token?.decimals ?? "-"} ${t("wallet.fields.decimals")})`} />
                             <FieldRow label={t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
                             <FieldRow label={t("wallet.fields.recipient")} value={intent.recipientAddress} copyable onCopy={copyValue} />
+                            <FieldRow label={t("wallet.fields.payer")} value={intent.payerAddress || payerAddress} copyable onCopy={copyValue} />
                             <FieldRow label={t("wallet.fields.tokenAmount")} value={`${tokenAmount} ${intent.token?.symbol || ""}`.trim()} />
                             <FieldRow label={t("wallet.fields.baseUnits")} value={intent.expectedTokenAmountBaseUnits} copyable onCopy={copyValue} />
                             <FieldRow label={t("wallet.fields.usd")} value={formatUsdMinor(intent.expectedUsdAmountMinor)} />

@@ -16,6 +16,8 @@ const userId = "64b000000000000000000001";
 const otherUserId = "64b000000000000000000002";
 const txHash = `0x${"a".repeat(64)}`;
 const otherTxHash = `0x${"b".repeat(64)}`;
+const payerAddress = "0x2222222222222222222222222222222222222222";
+const payerChallengeId = "65f000000000000000000001";
 
 const clone = (value) => {
     if (!value) return null;
@@ -53,6 +55,8 @@ const createPaymentIntent = (overrides = {}) => ({
     expectedUsdAmountMinor: 500,
     creditAmount: 750,
     pricingVersion: "pricing-v1",
+    payerAddress,
+    payerChallengeId,
     status: "CONFIRMED",
     txHash,
     fromAddress: "0x2222222222222222222222222222222222222222",

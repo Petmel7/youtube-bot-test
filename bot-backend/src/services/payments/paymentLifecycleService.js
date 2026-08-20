@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const PaymentIntent = require("../../models/PaymentIntent");
 const { paymentConfig } = require("../../config/config");
 const { conflict, notFound, unavailable } = require("../../utils/errors");
@@ -6,10 +7,10 @@ const paymentSettlementService = require("./paymentSettlementService");
 const { createPaymentVerifier, PAYMENT_OUTCOMES } = require("./paymentVerifier");
 
 const addSession = (query, session) => session ? query.session(session) : query;
+const isDuplicateKey = (error) => error?.code === 11000;
 
 const terminalStatuses = new Set(["UNDERPAID", "EXPIRED", "FAILED", "REJECTED", "CANCELLED"]);
 const settlementStatuses = new Set(["CONFIRMED", "CONFIRMED_OVERPAID"]);
-const retryableStatuses = new Set(["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING"]);
 
 const statusForOutcome = (outcome) => {
     if (outcome === PAYMENT_OUTCOMES.PENDING) return "SUBMITTED";
@@ -40,6 +41,7 @@ const createPaymentLifecycleService = ({
     paymentVerifier = createPaymentVerifier(),
     settlementService = paymentSettlementService,
     config = paymentConfig,
+    withTransaction = (callback) => mongoose.connection.transaction(callback),
     now = () => new Date()
 } = {}) => {
     const intentService = paymentIntentService || createPaymentIntentService({ PaymentIntentModel });
@@ -62,10 +64,18 @@ const createPaymentLifecycleService = ({
         return expired || intent;
     };
 
-    const createIntent = async ({ userId, packageId, idempotencyKey }) => {
-        const result = await intentService.createPaymentIntent({ userId, packageId, idempotencyKey });
-        return { intent: result.intent, created: result.created };
-    };
+    const createIntent = async ({ userId, packageId, idempotencyKey, payerChallengeId, signature }) => (
+        withTransaction(async (session) => {
+            const result = await intentService.createPaymentIntent({
+                userId,
+                packageId,
+                idempotencyKey,
+                payerChallengeId,
+                signature
+            }, { session });
+            return { intent: result.intent, created: result.created };
+        })
+    );
 
     const getIntent = async ({ userId, paymentIntentId }) => {
         const intent = await findOwnedIntent({ userId, paymentIntentId });
@@ -76,45 +86,13 @@ const createPaymentLifecycleService = ({
         return { intent: await expireIfNeeded(intent) };
     };
 
-    const associateTxHash = async ({ intent, txHash }) => {
-        if (intent.txHash && intent.txHash !== txHash) {
-            throw conflict("PAYMENT_TX_HASH_CONFLICT", "Payment intent already has a different transaction hash");
-        }
-
-        if (intent.txHash === txHash) {
-            return intent;
-        }
-
-        try {
-            const updated = await PaymentIntentModel.findOneAndUpdate(
-                { _id: intent._id, userId: intent.userId, txHash: null },
-                { $set: { txHash, status: "VERIFYING", failureCode: null, failureReason: null } },
-                { new: true }
-            );
-
-            if (!updated) {
-                const latest = await findOwnedIntent({ userId: intent.userId, paymentIntentId: intent._id });
-                if (latest?.txHash === txHash) {
-                    return latest;
-                }
-                throw conflict("PAYMENT_TX_HASH_CONFLICT", "Payment transaction hash could not be associated");
-            }
-
-            return updated;
-        } catch (error) {
-            if (error.code === 11000) {
-                throw conflict("PAYMENT_DUPLICATE_TX", "Payment transaction hash is already associated");
-            }
-            throw error;
-        }
-    };
-
     const persistVerificationResult = async ({ intent, result }) => {
         const status = statusForOutcome(result.outcome);
         const failure = failureForOutcome(result);
+        const isSettlementEligible = settlementStatuses.has(status);
         const update = {
             status,
-            txHash: result.txHash || intent.txHash,
+            candidateTxHash: result.txHash || intent.candidateTxHash || null,
             fromAddress: result.fromAddress || null,
             firstSeenBlock: result.firstSeenBlock ?? null,
             confirmedBlock: result.confirmedBlock ?? null,
@@ -125,15 +103,38 @@ const createPaymentLifecycleService = ({
             failureReason: failure.failureReason
         };
 
-        if (settlementStatuses.has(status)) {
+        if (isSettlementEligible) {
+            update.txHash = result.txHash;
             update.confirmedAt = intent.confirmedAt || now();
         }
 
-        return PaymentIntentModel.findOneAndUpdate(
-            { _id: intent._id, userId: intent.userId },
-            { $set: update },
-            { new: true }
-        );
+        try {
+            const updatedIntent = await PaymentIntentModel.findOneAndUpdate(
+                {
+                    _id: intent._id,
+                    userId: intent.userId,
+                    ...(isSettlementEligible ? { txHash: null } : {})
+                },
+                { $set: update },
+                { new: true }
+            );
+
+            if (updatedIntent || !isSettlementEligible) {
+                return updatedIntent;
+            }
+
+            const currentIntent = await findOwnedIntent({ userId: intent.userId, paymentIntentId: intent._id });
+            if (currentIntent?.txHash === result.txHash && settlementStatuses.has(currentIntent.status)) {
+                return currentIntent;
+            }
+
+            return null;
+        } catch (error) {
+            if (isDuplicateKey(error)) {
+                throw conflict("PAYMENT_DUPLICATE_TX", "Payment transaction hash is already associated");
+            }
+            throw error;
+        }
     };
 
     const verifyIntent = async ({ userId, paymentIntentId, txHash }) => {
@@ -154,15 +155,23 @@ const createPaymentLifecycleService = ({
             return { intent, settlement: null };
         }
 
-        if (terminalStatuses.has(intent.status) && !retryableStatuses.has(intent.status)) {
-            if (intent.txHash === txHash) {
-                return { intent, settlement: null };
-            }
-            throw conflict("PAYMENT_NOT_VERIFIABLE", "Payment intent is not eligible for verification");
+        if (intent.txHash && intent.txHash !== txHash) {
+            throw conflict("PAYMENT_TX_HASH_CONFLICT", "Payment intent already has a different transaction hash");
         }
 
-        intent = await associateTxHash({ intent, txHash });
-        const verification = await paymentVerifier.verifyPaymentIntent(intent);
+        if (intent.txHash === txHash && settlementStatuses.has(intent.status)) {
+            const settlement = await settlementService.settlePaymentIntent({ paymentIntentId: intent._id, userId });
+            const settledIntent = await findOwnedIntent({ userId, paymentIntentId: intent._id });
+            return { intent: settledIntent || intent, settlement };
+        }
+
+        if (terminalStatuses.has(intent.status) && intent.txHash) {
+            return { intent, settlement: null };
+        }
+
+        const baseIntent = typeof intent.toObject === "function" ? intent.toObject() : { ...intent };
+        const verificationIntent = { ...baseIntent, txHash };
+        const verification = await paymentVerifier.verifyPaymentIntent(verificationIntent);
 
         if (verification.retryable && verification.outcome === PAYMENT_OUTCOMES.REJECTED) {
             throw unavailable("PAYMENT_PROVIDER_FAILURE", "Payment verification provider is temporarily unavailable");

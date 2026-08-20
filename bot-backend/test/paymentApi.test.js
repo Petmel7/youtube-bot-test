@@ -11,6 +11,9 @@ const { PAYMENT_OUTCOMES } = require("../src/services/payments/paymentVerifier")
 const userA = "64d000000000000000000001";
 const userB = "64d000000000000000000002";
 const intentId = "65e000000000000000000001";
+const payerChallengeId = "65f000000000000000000001";
+const payerAddress = "0x2222222222222222222222222222222222222222";
+const signature = `0x${"a".repeat(130)}`;
 const txHash = `0x${"a".repeat(64)}`;
 
 const query = (value) => ({
@@ -42,7 +45,10 @@ const makeIntent = (overrides = {}) => ({
     expectedUsdAmountMinor: 500,
     creditAmount: 750,
     pricingVersion: "pricing-v1",
+    payerAddress,
+    payerChallengeId,
     status: "PENDING",
+    candidateTxHash: null,
     txHash: null,
     fromAddress: null,
     firstSeenBlock: null,
@@ -140,6 +146,18 @@ const createFakePaymentDependencies = () => ({
                 internalRate: "not-for-client"
             }];
         }
+    },
+    payerChallengeService: {
+        async createChallenge(args) {
+            return {
+                challenge: {
+                    _id: payerChallengeId,
+                    payerAddress: args.payerAddress.toLowerCase(),
+                    message: `YouTube Bot\nBind this wallet as payer for YouTube Bot credit purchase\nUser ID: ${args.userId}`,
+                    expiresAt: new Date("2026-08-18T12:10:00.000Z")
+                }
+            };
+        }
     }
 });
 
@@ -176,7 +194,9 @@ const createLifecycleHarness = ({ intent = makeIntent(), verifierResult, settlem
                     _id: `65e00000000000000000000${PaymentIntentModel.intents.size + 2}`,
                     userId: args.userId,
                     packageId: args.packageId,
-                    idempotencyKey: args.idempotencyKey
+                    idempotencyKey: args.idempotencyKey,
+                    payerChallengeId: args.payerChallengeId,
+                    payerAddress
                 });
                 PaymentIntentModel.intents.set(String(created._id), created);
                 return { intent: clone(created), created: true };
@@ -197,6 +217,7 @@ const createLifecycleHarness = ({ intent = makeIntent(), verifierResult, settlem
             }
         },
         config: { confirmations: 12 },
+        withTransaction: async (callback) => callback("session"),
         now: () => new Date("2026-08-18T12:00:00.000Z")
     });
     return { service, PaymentIntentModel, verifierCalls, settlementCalls };
@@ -207,9 +228,26 @@ test("payment API requires authentication", async () => {
 
     assert.equal((await request(app, { path: "/api/payments/packages" })).status, 401);
     assert.equal((await request(app, { path: "/api/payments/wallet" })).status, 401);
+    assert.equal((await request(app, { method: "POST", path: "/api/payments/payer-challenges", body: {} })).status, 401);
     assert.equal((await request(app, { method: "POST", path: "/api/payments/intents", body: {} })).status, 401);
     assert.equal((await request(app, { path: `/api/payments/intents/${intentId}` })).status, 401);
     assert.equal((await request(app, { method: "POST", path: `/api/payments/intents/${intentId}/verify`, body: {} })).status, 401);
+});
+
+test("payment API creates payer challenge for authenticated user", async () => {
+    const app = createApp(createFakeLifecycle(), createFakePaymentDependencies());
+    const response = await request(app, {
+        method: "POST",
+        path: "/api/payments/payer-challenges",
+        userId: userA,
+        headers: { "X-CSRF-Protection": "1" },
+        body: { payerAddress: "0x2222222222222222222222222222222222222222" }
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal(response.body.challenge.id, payerChallengeId);
+    assert.equal(response.body.challenge.payerAddress, payerAddress);
+    assert.equal(response.body.challenge.message.includes(userA), true);
 });
 
 test("payment API lists packages and wallet DTO for authenticated user", async () => {
@@ -250,6 +288,8 @@ test("payment API create validates input and sends only backend-safe arguments t
         headers: { "X-CSRF-Protection": "1", "Idempotency-Key": "client-key-123456" },
         body: {
             packageId: "starter_credits",
+            payerChallengeId,
+            signature,
             creditAmount: 999999,
             chainId: 1,
             recipientAddress: "0x0000000000000000000000000000000000000000"
@@ -259,16 +299,23 @@ test("payment API create validates input and sends only backend-safe arguments t
     assert.equal(response.status, 201);
     assert.equal(response.body.success, true);
     assert.equal(response.body.intent.creditAmount, 750);
+    assert.equal(response.body.intent.payerAddress, payerAddress);
     assert.equal(response.body.intent.token.symbol, "USDC");
     assert.equal(response.body.intent.requiredConfirmations, 12);
     assert.deepEqual(lifecycle.calls[0], {
         method: "createIntent",
-        args: { userId: userA, packageId: "starter_credits", idempotencyKey: "client-key-123456" }
+        args: { userId: userA, packageId: "starter_credits", idempotencyKey: "client-key-123456", payerChallengeId, signature }
     });
 });
 
 test("payment API write endpoints require write header", async () => {
     const app = createApp(createFakeLifecycle());
+    const challengeResponse = await request(app, {
+        method: "POST",
+        path: "/api/payments/payer-challenges",
+        userId: userA,
+        body: { payerAddress }
+    });
     const response = await request(app, {
         method: "POST",
         path: "/api/payments/intents",
@@ -277,6 +324,8 @@ test("payment API write endpoints require write header", async () => {
         body: { packageId: "starter_credits" }
     });
 
+    assert.equal(challengeResponse.status, 403);
+    assert.equal(challengeResponse.body.error.code, "CSRF_HEADER_REQUIRED");
     assert.equal(response.status, 403);
     assert.equal(response.body.error.code, "CSRF_HEADER_REQUIRED");
 });
@@ -381,6 +430,47 @@ test("payment lifecycle maps confirming and underpaid outcomes without settlemen
     assert.equal(underpaid.settlementCalls.length, 0);
 });
 
+test("payment lifecycle does not globally claim txHash for rejected or underpaid attempts", async () => {
+    const rejected = createLifecycleHarness({
+        verifierResult: {
+            outcome: PAYMENT_OUTCOMES.REJECTED,
+            code: "PAYMENT_WRONG_PAYER",
+            txHash,
+            confirmationCount: 12,
+            confirmedBlock: 100,
+            firstSeenBlock: 100,
+            transactionStatus: "SUCCESS",
+            verifiedTokenAmountBaseUnits: "5000000",
+            fromAddress: "0x3333333333333333333333333333333333333333"
+        }
+    });
+    const rejectedResult = await rejected.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
+    const rejectedDoc = rejected.PaymentIntentModel.intents.get(intentId);
+    assert.equal(rejectedResult.intent.status, "REJECTED");
+    assert.equal(rejectedDoc.candidateTxHash, txHash);
+    assert.equal(rejectedDoc.txHash, null);
+    assert.equal(rejected.settlementCalls.length, 0);
+
+    const underpaid = createLifecycleHarness({
+        verifierResult: {
+            outcome: PAYMENT_OUTCOMES.UNDERPAID,
+            code: "PAYMENT_UNDERPAID",
+            txHash,
+            confirmationCount: 12,
+            confirmedBlock: 100,
+            firstSeenBlock: 100,
+            transactionStatus: "SUCCESS",
+            verifiedTokenAmountBaseUnits: "1000000"
+        }
+    });
+    const underpaidResult = await underpaid.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
+    const underpaidDoc = underpaid.PaymentIntentModel.intents.get(intentId);
+    assert.equal(underpaidResult.intent.status, "UNDERPAID");
+    assert.equal(underpaidDoc.candidateTxHash, txHash);
+    assert.equal(underpaidDoc.txHash, null);
+    assert.equal(underpaid.settlementCalls.length, 0);
+});
+
 test("payment lifecycle settles exact and overpaid confirmed outcomes only", async () => {
     const exact = createLifecycleHarness({
         verifierResult: {
@@ -396,6 +486,7 @@ test("payment lifecycle settles exact and overpaid confirmed outcomes only", asy
     });
     const exactResult = await exact.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
     assert.equal(exactResult.intent.status, "CONFIRMED");
+    assert.equal(exact.PaymentIntentModel.intents.get(intentId).txHash, txHash);
     assert.equal(exact.settlementCalls.length, 1);
 
     const overpaid = createLifecycleHarness({

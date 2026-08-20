@@ -1,8 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const { Wallet: EthersWallet } = require("ethers");
 
 const PaymentIntent = require("../src/models/PaymentIntent");
+const PaymentPayerChallenge = require("../src/models/PaymentPayerChallenge");
 const { normalizeEvmAddress } = require("../src/utils/evmAddress");
 const { validatePaymentConfig } = require("../src/config/validateEnv");
 const {
@@ -10,10 +12,17 @@ const {
     parsePaymentPackages
 } = require("../src/services/billing/paymentPricingService");
 const { createPaymentIntentService } = require("../src/services/billing/paymentIntentService");
+const {
+    buildChallengeMessage,
+    createPaymentPayerChallengeService
+} = require("../src/services/payments/paymentPayerChallengeService");
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
+const payerAddress = "0x2222222222222222222222222222222222222222";
+const payerChallengeId = new mongoose.Types.ObjectId();
+const validSignature = `0x${"a".repeat(130)}`;
 const validPackagesJson = JSON.stringify([
     {
         packageId: "starter_credits",
@@ -56,6 +65,8 @@ const validPaymentIntentDocument = (overrides = {}) => ({
     expectedUsdAmountMinor: 500,
     creditAmount: 750,
     pricingVersion: "pricing-v1",
+    payerAddress,
+    payerChallengeId,
     expiresAt: new Date("2026-08-17T10:30:00.000Z"),
     ...overrides
 });
@@ -111,6 +122,57 @@ const createFakePaymentIntentModel = () => {
     };
 
     return model;
+};
+
+const createFakePayerChallengeService = () => ({
+    calls: [],
+    async verifyAndUseChallenge(args) {
+        this.calls.push(args);
+        return {
+            payerAddress,
+            challenge: { _id: args.payerChallengeId }
+        };
+    }
+});
+
+const createFakeChallengeModel = (initialChallenges = []) => {
+    const challenges = new Map(initialChallenges.map(challenge => [String(challenge._id), clone(challenge)]));
+
+    return {
+        challenges,
+        async create(entries) {
+            return entries.map((entry, index) => {
+                const doc = {
+                    _id: entry._id || new mongoose.Types.ObjectId(`64f00000000000000000000${index + 1}`),
+                    ...entry,
+                    createdAt: new Date("2026-08-17T10:00:00.000Z"),
+                    updatedAt: new Date("2026-08-17T10:00:00.000Z")
+                };
+                challenges.set(String(doc._id), doc);
+                return clone(doc);
+            });
+        },
+        findOne(filter) {
+            const found = [...challenges.values()].find((challenge) => {
+                if (filter._id && String(challenge._id) !== String(filter._id)) return false;
+                if (filter.userId && String(challenge.userId) !== String(filter.userId)) return false;
+                return true;
+            });
+            return query(clone(found));
+        },
+        findOneAndUpdate(filter, update, options = {}) {
+            const found = [...challenges.values()].find((challenge) => {
+                if (filter._id && String(challenge._id) !== String(filter._id)) return false;
+                if (filter.userId && String(challenge.userId) !== String(filter.userId)) return false;
+                if (filter.usedAt === null && challenge.usedAt !== null && challenge.usedAt !== undefined) return false;
+                if (filter.expiresAt?.$gt && challenge.expiresAt.getTime() <= filter.expiresAt.$gt.getTime()) return false;
+                return true;
+            });
+            if (!found) return query(null);
+            if (update.$set) Object.assign(found, update.$set);
+            return query(options.new ? clone(found) : clone({ ...found, ...update.$set }));
+        }
+    };
 };
 
 test("payment config validation accepts valid Base USDC config", () => {
@@ -235,6 +297,85 @@ test("payment pricing preserves canonical token amount strings without floating-
     assert.equal(packages[0].expectedTokenAmountBaseUnits, "123456789012345678901234567890");
 });
 
+test("payment payer challenge verifies signature, expiry, and one-time use", async () => {
+    const wallet = EthersWallet.createRandom();
+    const normalizedAddress = normalizeEvmAddress(wallet.address);
+    const userId = new mongoose.Types.ObjectId();
+    const now = new Date("2026-08-17T10:00:00.000Z");
+    const ChallengeModel = createFakeChallengeModel();
+    const service = createPaymentPayerChallengeService({
+        ChallengeModel,
+        now: () => now,
+        randomBytes: () => Buffer.from("123456789012345678901234")
+    });
+
+    const { challenge } = await service.createChallenge({ userId, payerAddress: wallet.address });
+    assert.equal(challenge.payerAddress, normalizedAddress);
+    assert.equal(challenge.message.includes("Bind this wallet as payer for YouTube Bot credit purchase"), true);
+    assert.equal(challenge.message.includes(String(userId)), true);
+
+    const signature = await wallet.signMessage(challenge.message);
+    const verified = await service.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(challenge._id),
+        signature
+    });
+
+    assert.equal(verified.payerAddress, normalizedAddress);
+    assert.equal(ChallengeModel.challenges.get(String(challenge._id)).usedAt.toISOString(), now.toISOString());
+    await assert.rejects(() => service.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(challenge._id),
+        signature
+    }), { code: "PAYER_CHALLENGE_USED" });
+
+    const otherWallet = EthersWallet.createRandom();
+    const expiredAt = new Date("2026-08-17T09:59:59.000Z");
+    const expiredChallenge = {
+        _id: new mongoose.Types.ObjectId(),
+        userId,
+        payerAddress: normalizeEvmAddress(otherWallet.address),
+        nonce: "expired",
+        expiresAt: expiredAt,
+        usedAt: null
+    };
+    expiredChallenge.message = buildChallengeMessage({
+        userId,
+        payerAddress: expiredChallenge.payerAddress,
+        nonce: expiredChallenge.nonce,
+        expiresAt: expiredChallenge.expiresAt
+    });
+    ChallengeModel.challenges.set(String(expiredChallenge._id), expiredChallenge);
+    const expiredSignature = await otherWallet.signMessage(expiredChallenge.message);
+    await assert.rejects(() => service.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(expiredChallenge._id),
+        signature: expiredSignature
+    }), { code: "PAYER_CHALLENGE_EXPIRED" });
+
+    const invalidChallenge = {
+        _id: new mongoose.Types.ObjectId(),
+        userId,
+        payerAddress: normalizedAddress,
+        nonce: "invalid",
+        expiresAt: new Date("2026-08-17T10:05:00.000Z"),
+        usedAt: null
+    };
+    invalidChallenge.message = buildChallengeMessage({
+        userId,
+        payerAddress: invalidChallenge.payerAddress,
+        nonce: invalidChallenge.nonce,
+        expiresAt: invalidChallenge.expiresAt
+    });
+    ChallengeModel.challenges.set(String(invalidChallenge._id), invalidChallenge);
+    const invalidSignature = await otherWallet.signMessage(invalidChallenge.message);
+    await assert.rejects(() => service.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(invalidChallenge._id),
+        signature: invalidSignature
+    }), { code: "INVALID_PAYER_SIGNATURE" });
+});
+
 test("payment intent creation stores backend-owned immutable snapshot and expiration", async () => {
     const PaymentIntentModel = createFakePaymentIntentModel();
     const pricingService = createPaymentPricingService({
@@ -244,6 +385,7 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     const service = createPaymentIntentService({
         PaymentIntentModel,
         pricingService,
+        payerChallengeService: createFakePayerChallengeService(),
         config: validPaymentConfig({ pricingVersion: "pricing-v1" }),
         now: () => new Date("2026-08-17T10:00:00.000Z")
     });
@@ -251,7 +393,9 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     const result = await service.createPaymentIntent({
         userId: "64b000000000000000000000",
         packageId: "starter_credits",
-        idempotencyKey: "idem-1"
+        idempotencyKey: "idem-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
     });
 
     assert.equal(result.created, true);
@@ -261,10 +405,42 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     assert.equal(result.intent.tokenDecimals, 6);
     assert.equal(result.intent.recipientAddress, treasuryAddress);
     assert.equal(result.intent.creditAmount, 750);
+    assert.equal(result.intent.payerAddress, payerAddress);
+    assert.equal(String(result.intent.payerChallengeId), String(payerChallengeId));
     assert.equal(result.intent.expectedUsdAmountMinor, 500);
     assert.equal(result.intent.expectedTokenAmountBaseUnits, "5000000");
     assert.equal(result.intent.pricingVersion, "pricing-v1");
     assert.equal(result.intent.expiresAt.toISOString(), "2026-08-17T10:30:00.000Z");
+});
+
+test("payment intent creation rejects invalid payer proof before creating intent", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const pricingService = createPaymentPricingService({
+        packagesJson: validPackagesJson,
+        pricingVersion: "pricing-v1"
+    });
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService,
+        payerChallengeService: {
+            async verifyAndUseChallenge() {
+                const error = new Error("invalid signature");
+                error.code = "INVALID_PAYER_SIGNATURE";
+                throw error;
+            }
+        },
+        config: validPaymentConfig({ pricingVersion: "pricing-v1" }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    await assert.rejects(() => service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "starter_credits",
+        idempotencyKey: "idem-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    }), { code: "INVALID_PAYER_SIGNATURE" });
+    assert.equal(PaymentIntentModel.intents.length, 0);
 });
 
 test("payment intent creation is idempotent by user and idempotency key", async () => {
@@ -276,14 +452,15 @@ test("payment intent creation is idempotent by user and idempotency key", async 
     const service = createPaymentIntentService({
         PaymentIntentModel,
         pricingService,
+        payerChallengeService: createFakePayerChallengeService(),
         config: validPaymentConfig({ pricingVersion: "pricing-v1" }),
         now: () => new Date("2026-08-17T10:00:00.000Z")
     });
 
-    const first = await service.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "same-key" });
+    const first = await service.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "same-key", payerChallengeId: String(payerChallengeId), signature: validSignature });
     const duplicate = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", idempotencyKey: "same-key" });
-    const differentKey = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", idempotencyKey: "other-key" });
-    const differentUser = await service.createPaymentIntent({ userId: "user-2", packageId: "starter_credits", idempotencyKey: "same-key" });
+    const differentKey = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", idempotencyKey: "other-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
+    const differentUser = await service.createPaymentIntent({ userId: "user-2", packageId: "starter_credits", idempotencyKey: "same-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
 
     assert.equal(first.created, true);
     assert.equal(duplicate.created, false);
@@ -298,10 +475,11 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
     const serviceV1 = createPaymentIntentService({
         PaymentIntentModel,
         pricingService: createPaymentPricingService({ packagesJson: validPackagesJson, pricingVersion: "pricing-v1" }),
+        payerChallengeService: createFakePayerChallengeService(),
         config: validPaymentConfig({ pricingVersion: "pricing-v1" }),
         now: () => new Date("2026-08-17T10:00:00.000Z")
     });
-    const first = await serviceV1.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-1" });
+    const first = await serviceV1.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-1", payerChallengeId: String(payerChallengeId), signature: validSignature });
 
     const serviceV2 = createPaymentIntentService({
         PaymentIntentModel,
@@ -311,10 +489,11 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
             ]),
             pricingVersion: "pricing-v2"
         }),
+        payerChallengeService: createFakePayerChallengeService(),
         config: validPaymentConfig({ pricingVersion: "pricing-v2" }),
         now: () => new Date("2026-08-17T11:00:00.000Z")
     });
-    const second = await serviceV2.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-2" });
+    const second = await serviceV2.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-2", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
 
     assert.equal(first.intent.creditAmount, 750);
     assert.equal(first.intent.expectedTokenAmountBaseUnits, "5000000");
@@ -342,6 +521,9 @@ test("PaymentIntent schema has required states, immutability, validation, and in
     assert.equal(PaymentIntent.schema.path("chainId").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("expectedTokenAmountBaseUnits").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("creditAmount").options.immutable, true);
+    assert.equal(PaymentIntent.schema.path("payerAddress").options.immutable, true);
+    assert.equal(PaymentIntent.schema.path("payerChallengeId").options.immutable, true);
+    assert(PaymentIntent.schema.path("candidateTxHash"));
 
     const intent = new PaymentIntent(validPaymentIntentDocument());
     await intent.validate();
@@ -352,6 +534,7 @@ test("PaymentIntent schema has required states, immutability, validation, and in
 
     const indexes = PaymentIntent.schema.indexes();
     assert(indexes.some(([fields, options]) => fields.userId === 1 && fields.idempotencyKey === 1 && options.unique === true));
+    assert(indexes.some(([fields]) => fields.userId === 1 && fields.payerAddress === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields, options]) => fields.chainId === 1 && fields.txHash === 1 && options.unique === true && options.partialFilterExpression?.txHash?.$type === "string"));
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.updatedAt === 1));

@@ -6,6 +6,7 @@ const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,80}$/;
 const PAYMENT_PACKAGE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const EVM_TX_HASH_RE = /^0x[a-f0-9]{64}$/;
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -87,6 +88,30 @@ const validatePaymentTxHash = (txHash) => {
     return value;
 };
 
+const validateEvmAddress = (address, field = "payerAddress") => {
+    const value = normalizeString(address, field, 42);
+    if (!EVM_ADDRESS_RE.test(value)) {
+        throw unprocessable("INVALID_EVM_ADDRESS", "Invalid EVM address");
+    }
+    return value;
+};
+
+const validatePaymentPayerChallengeId = (id) => {
+    const value = normalizeString(id, "payerChallengeId", 64);
+    if (!/^[a-f0-9]{24}$/i.test(value)) {
+        throw unprocessable("INVALID_PAYER_CHALLENGE", "Invalid payer challenge");
+    }
+    return value;
+};
+
+const validatePaymentSignature = (signature) => {
+    const value = normalizeString(signature, "signature", 512);
+    if (!/^0x[a-fA-F0-9]{130}$/.test(value)) {
+        throw unprocessable("INVALID_PAYER_SIGNATURE", "Invalid payer signature");
+    }
+    return value;
+};
+
 module.exports = {
     assertObjectBody,
     validateVideoId,
@@ -97,5 +122,8 @@ module.exports = {
     validatePaymentIntentId,
     validatePaymentPackageId,
     validatePaymentTxHash,
+    validateEvmAddress,
+    validatePaymentPayerChallengeId,
+    validatePaymentSignature,
     MAX_PROMPT_LENGTH
 };

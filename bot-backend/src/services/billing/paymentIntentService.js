@@ -2,22 +2,30 @@ const PaymentIntent = require("../../models/PaymentIntent");
 const { paymentConfig } = require("../../config/config");
 const { conflict } = require("../../utils/errors");
 const { createPaymentPricingService } = require("./paymentPricingService");
+const paymentPayerChallengeService = require("../payments/paymentPayerChallengeService");
 
 const addSession = (query, session) => session ? query.session(session) : query;
 
 const createPaymentIntentService = ({
     PaymentIntentModel = PaymentIntent,
     pricingService = createPaymentPricingService(),
+    payerChallengeService = paymentPayerChallengeService,
     config = paymentConfig,
     now = () => new Date()
 } = {}) => {
-    const createPaymentIntent = async ({ userId, packageId, idempotencyKey }, { session } = {}) => {
+    const createPaymentIntent = async ({ userId, packageId, idempotencyKey, payerChallengeId, signature }, { session } = {}) => {
         const existing = await addSession(PaymentIntentModel.findOne({ userId, idempotencyKey }), session);
         if (existing) {
             return { intent: existing, created: false };
         }
 
         const packageSnapshot = pricingService.getPackageSnapshot(packageId);
+        const payerProof = await payerChallengeService.verifyAndUseChallenge({
+            userId,
+            payerChallengeId,
+            signature
+        }, { session });
+
         const createdAt = now();
         const expiresAt = new Date(createdAt.getTime() + (config.intentTtlMinutes * 60 * 1000));
         const doc = {
@@ -33,6 +41,8 @@ const createPaymentIntentService = ({
             expectedUsdAmountMinor: packageSnapshot.expectedUsdAmountMinor,
             creditAmount: packageSnapshot.creditAmount,
             pricingVersion: packageSnapshot.pricingVersion,
+            payerAddress: payerProof.payerAddress,
+            payerChallengeId: payerProof.challenge._id,
             expiresAt
         };
 

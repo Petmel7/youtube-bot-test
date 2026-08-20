@@ -62,6 +62,8 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
         expectedUsdAmountMinor: intent.expectedUsdAmountMinor,
         creditAmount: intent.creditAmount,
         pricingVersion: intent.pricingVersion,
+        payerAddress: intent.payerAddress || null,
+        candidateTxHash: intent.candidateTxHash || null,
         txHash: intent.txHash || null,
         verifiedTokenAmountBaseUnits: intent.verifiedTokenAmountBaseUnits || null,
         confirmationCount: intent.confirmationCount ?? null,
@@ -73,6 +75,17 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
         failureReason: intent.failureReason || null,
         createdAt: intent.createdAt,
         updatedAt: intent.updatedAt
+    };
+};
+
+const toPaymentPayerChallengeDto = (challenge) => {
+    if (!challenge) return null;
+
+    return {
+        id: String(challenge._id || challenge.id),
+        payerAddress: challenge.payerAddress,
+        message: challenge.message,
+        expiresAt: challenge.expiresAt
     };
 };
 
@@ -108,6 +121,7 @@ module.exports = {
     toPromptDto,
     toBotRunDto,
     toPaymentIntentDto,
+    toPaymentPayerChallengeDto,
     toWalletDto,
     toPaymentPackageDto
 };

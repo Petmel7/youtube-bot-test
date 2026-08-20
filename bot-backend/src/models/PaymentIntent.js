@@ -116,6 +116,8 @@ const paymentIntentSchema = new mongoose.Schema({
     expectedUsdAmountMinor: { ...immutableNumber, validate: positiveSafeInteger },
     creditAmount: { ...immutableNumber, validate: positiveSafeInteger },
     pricingVersion: immutableString,
+    payerAddress: { ...immutableString, match: evmAddressPattern },
+    payerChallengeId: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentPayerChallenge", required: true, immutable: true },
 
     status: {
         type: String,
@@ -123,6 +125,7 @@ const paymentIntentSchema = new mongoose.Schema({
         default: "PENDING",
         required: true
     },
+    candidateTxHash: { ...nullableString, match: txHashPattern },
     txHash: { ...nullableString, match: txHashPattern },
     fromAddress: { ...nullableString, match: evmAddressPattern },
     firstSeenBlock: { ...nullableNumber, validate: nonNegativeInteger },
@@ -143,6 +146,7 @@ const paymentIntentSchema = new mongoose.Schema({
 });
 
 paymentIntentSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true });
+paymentIntentSchema.index({ userId: 1, payerAddress: 1, createdAt: -1 });
 paymentIntentSchema.index(
     { chainId: 1, txHash: 1 },
     { unique: true, partialFilterExpression: { txHash: { $type: "string" } } }

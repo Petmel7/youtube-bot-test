@@ -48,7 +48,9 @@
             "load": "Wallet-Daten konnten nicht geladen werden.",
             "create": "Zahlung konnte nicht erstellt werden.",
             "verify": "Zahlung konnte nicht geprüft werden.",
-            "txHash": "Gib einen gültigen Transaktionshash ein."
+            "txHash": "Gib einen gültigen Transaktionshash ein.",
+            "walletProvider": "Keine Browser-Wallet gefunden.",
+            "walletAccount": "Kein Wallet-Konto ausgewählt."
         },
         "fields": {
             "chainId": "Chain-ID",
@@ -56,6 +58,7 @@
             "decimals": "Dezimalstellen",
             "tokenAddress": "Token-Adresse",
             "recipient": "Empfänger",
+            "payer": "Zahler-Wallet",
             "tokenAmount": "Token-Betrag",
             "baseUnits": "Basiseinheiten",
             "usd": "USD",

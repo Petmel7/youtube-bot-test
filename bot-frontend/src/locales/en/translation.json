@@ -48,7 +48,9 @@
             "load": "Could not load wallet data.",
             "create": "Could not create payment.",
             "verify": "Could not verify payment.",
-            "txHash": "Enter a valid transaction hash."
+            "txHash": "Enter a valid transaction hash.",
+            "walletProvider": "No browser wallet found.",
+            "walletAccount": "No wallet account selected."
         },
         "fields": {
             "chainId": "Chain ID",
@@ -56,6 +58,7 @@
             "decimals": "decimals",
             "tokenAddress": "Token address",
             "recipient": "Recipient",
+            "payer": "Payer wallet",
             "tokenAmount": "Token amount",
             "baseUnits": "Base units",
             "usd": "USD",

@@ -1,12 +1,16 @@
 const defaultPaymentLifecycleService = require("../services/payments/paymentLifecycleService");
 const defaultWalletService = require("../services/billing/walletService");
 const { createPaymentPricingService } = require("../services/billing/paymentPricingService");
-const { toPaymentIntentDto, toPaymentPackageDto, toWalletDto } = require("../utils/dto");
+const paymentPayerChallengeService = require("../services/payments/paymentPayerChallengeService");
+const { toPaymentIntentDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toWalletDto } = require("../utils/dto");
 const {
     assertObjectBody,
+    validateEvmAddress,
     validateIdempotencyKey,
     validatePaymentIntentId,
     validatePaymentPackageId,
+    validatePaymentPayerChallengeId,
+    validatePaymentSignature,
     validatePaymentTxHash
 } = require("../utils/validators");
 
@@ -25,6 +29,7 @@ const createPaymentController = (
     paymentLifecycleService = defaultPaymentLifecycleService,
     {
         walletService = defaultWalletService,
+        payerChallengeService = paymentPayerChallengeService,
         paymentPricingService = null
     } = {}
 ) => {
@@ -48,15 +53,34 @@ const createPaymentController = (
         });
     };
 
+    const createPayerChallengeController = async (req, res) => {
+        assertObjectBody(req.body);
+
+        const payerAddress = validateEvmAddress(req.body.payerAddress);
+        const { challenge } = await payerChallengeService.createChallenge({
+            userId: getUserId(req),
+            payerAddress
+        });
+
+        res.status(201).json({
+            success: true,
+            challenge: toPaymentPayerChallengeDto(challenge)
+        });
+    };
+
     const createPaymentIntentController = async (req, res) => {
         assertObjectBody(req.body);
 
         const packageId = validatePaymentPackageId(req.body.packageId);
+        const payerChallengeId = validatePaymentPayerChallengeId(req.body.payerChallengeId);
+        const signature = validatePaymentSignature(req.body.signature);
         const idempotencyKey = validateIdempotencyKey(req.get("Idempotency-Key") || req.body.idempotencyKey);
         const { intent, created } = await paymentLifecycleService.createIntent({
             userId: getUserId(req),
             packageId,
-            idempotencyKey
+            idempotencyKey,
+            payerChallengeId,
+            signature
         });
 
         res.status(created ? 201 : 200).json({
@@ -105,6 +129,7 @@ const createPaymentController = (
     return {
         getPaymentPackagesController,
         getWalletController,
+        createPayerChallengeController,
         createPaymentIntentController,
         getPaymentIntentController,
         verifyPaymentIntentController

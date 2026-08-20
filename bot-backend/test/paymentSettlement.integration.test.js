@@ -39,6 +39,8 @@ const createIntentDocument = ({ userId, paymentIntentId = new mongoose.Types.Obj
     expectedUsdAmountMinor: 500,
     creditAmount,
     pricingVersion: "integration-test",
+    payerAddress: `0x${"e".repeat(40)}`,
+    payerChallengeId: new mongoose.Types.ObjectId(),
     status: "CONFIRMED",
     txHash,
     fromAddress: `0x${"d".repeat(40)}`,
