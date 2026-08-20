@@ -350,6 +350,8 @@ test("confirmed payment settles once and credits only PaymentIntent.creditAmount
     const wallet = state.wallets.get(userId);
 
     assert.equal(result.created, true);
+    assert.equal(result.wallet.userId, undefined);
+    assert.equal(result.transaction.idempotencyKey, undefined);
     assert.equal(wallet.balance, 850);
     assert.equal(wallet.reserved, 25);
     assert.equal(transaction.amount, 750);

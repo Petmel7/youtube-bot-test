@@ -2,7 +2,7 @@ const defaultPaymentLifecycleService = require("../services/payments/paymentLife
 const defaultWalletService = require("../services/billing/walletService");
 const { createPaymentPricingService } = require("../services/billing/paymentPricingService");
 const paymentPayerChallengeService = require("../services/payments/paymentPayerChallengeService");
-const { toPaymentIntentDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toWalletDto } = require("../utils/dto");
+const { toPaymentIntentDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toPaymentSettlementDto, toWalletDto } = require("../utils/dto");
 const {
     assertObjectBody,
     validateEvmAddress,
@@ -122,7 +122,7 @@ const createPaymentController = (
             intent: toPaymentIntentDto(intent, {
                 requiredConfirmations: paymentLifecycleService.requiredConfirmations
             }),
-            settlement: settlement || null
+            settlement: toPaymentSettlementDto(settlement)
         });
     };
 

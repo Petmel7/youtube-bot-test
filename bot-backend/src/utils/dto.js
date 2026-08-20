@@ -104,6 +104,36 @@ const toWalletDto = (wallet) => {
     };
 };
 
+const toPaymentSettlementDto = (settlement) => {
+    if (!settlement) return null;
+
+    return {
+        settled: Boolean(settlement.settled),
+        created: Boolean(settlement.created),
+        paymentIntent: settlement.paymentIntent ? {
+            id: settlement.paymentIntent.id,
+            status: settlement.paymentIntent.status,
+            creditedTransactionId: settlement.paymentIntent.creditedTransactionId,
+            overpaidAmountBaseUnits: settlement.paymentIntent.overpaidAmountBaseUnits || null,
+            confirmedAt: settlement.paymentIntent.confirmedAt || null
+        } : null,
+        wallet: settlement.wallet ? {
+            id: settlement.wallet.id,
+            balance: settlement.wallet.balance,
+            reserved: settlement.wallet.reserved,
+            unit: settlement.wallet.unit
+        } : null,
+        transaction: settlement.transaction ? {
+            id: settlement.transaction.id,
+            type: settlement.transaction.type,
+            amount: settlement.transaction.amount,
+            paymentIntentId: settlement.transaction.paymentIntentId,
+            chainId: settlement.transaction.chainId,
+            txHash: settlement.transaction.txHash
+        } : null
+    };
+};
+
 const toPaymentPackageDto = (paymentPackage) => {
     if (!paymentPackage) return null;
 
@@ -123,5 +153,6 @@ module.exports = {
     toPaymentIntentDto,
     toPaymentPayerChallengeDto,
     toWalletDto,
+    toPaymentSettlementDto,
     toPaymentPackageDto
 };

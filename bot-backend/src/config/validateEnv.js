@@ -12,7 +12,7 @@ const {
     aiEstimatedInputCharsPerToken
 } = require("./config");
 const { isValidEvmAddress, normalizeEvmAddress } = require("../utils/evmAddress");
-const { BASE_MAINNET_CHAIN_ID, getSupportedPaymentNetwork } = require("./paymentNetworks");
+const { BASE_MAINNET_CHAIN_ID, getSupportedPaymentNetworkByName } = require("./paymentNetworks");
 const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
 
 const requiredEnv = [
@@ -83,9 +83,25 @@ const validatePaymentConfig = (config, options = {}) => {
     const {
         nodeEnv = process.env.NODE_ENV
     } = normalizeValidationOptions(options);
-    const supportedNetwork = getSupportedPaymentNetwork(config.chainId);
+    const supportedNetwork = getSupportedPaymentNetworkByName(config.network);
 
-    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || !supportedNetwork) {
+    if (!supportedNetwork) {
+        throw new Error("Invalid PAYMENT_NETWORK configuration");
+    }
+
+    if (nodeEnv === "production" && config.network !== "base-mainnet") {
+        throw new Error("Invalid PAYMENT_NETWORK configuration");
+    }
+
+    if (!supportedNetwork.production && config.allowTestnetPayments !== true) {
+        throw new Error("Invalid ALLOW_TESTNET_PAYMENTS configuration");
+    }
+
+    if (!supportedNetwork.production && !["development", "test", "local"].includes(nodeEnv)) {
+        throw new Error("Invalid NODE_ENV configuration for testnet payments");
+    }
+
+    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || config.chainId !== supportedNetwork.chainId) {
         throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
     }
 
@@ -121,6 +137,14 @@ const validatePaymentConfig = (config, options = {}) => {
 
     if (!Number.isInteger(config.confirmations) || config.confirmations < 1) {
         throw new Error("Invalid PAYMENT_CONFIRMATIONS configuration");
+    }
+
+    if (!Number.isInteger(config.verifyThrottleWindowMs) || config.verifyThrottleWindowMs < 1000) {
+        throw new Error("Invalid PAYMENT_VERIFY_THROTTLE_WINDOW_MS configuration");
+    }
+
+    if (!Number.isInteger(config.verifyThrottleMax) || config.verifyThrottleMax < 1) {
+        throw new Error("Invalid PAYMENT_VERIFY_THROTTLE_MAX configuration");
     }
 
     if (!Number.isInteger(config.intentTtlMinutes) || config.intentTtlMinutes <= 0) {

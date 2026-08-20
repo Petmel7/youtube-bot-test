@@ -110,7 +110,6 @@ const toSettlementDto = ({ intent, wallet, transaction, created }) => ({
     },
     wallet: {
         id: String(wallet._id),
-        userId: String(wallet.userId),
         balance: wallet.balance,
         reserved: wallet.reserved,
         unit: wallet.unit
@@ -119,7 +118,6 @@ const toSettlementDto = ({ intent, wallet, transaction, created }) => ({
         id: String(transaction._id),
         type: transaction.type,
         amount: transaction.amount,
-        idempotencyKey: transaction.idempotencyKey,
         paymentIntentId: String(transaction.paymentIntentId),
         chainId: transaction.chainId,
         txHash: transaction.txHash

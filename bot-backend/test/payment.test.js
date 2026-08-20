@@ -39,6 +39,8 @@ const validPackagesJson = JSON.stringify([
 ]);
 
 const validPaymentConfig = (overrides = {}) => ({
+    network: "base-mainnet",
+    allowTestnetPayments: false,
     chainId: 8453,
     rpcUrl: "https://base.example.invalid/rpc",
     tokenAddress: baseUsdcAddress,
@@ -46,6 +48,8 @@ const validPaymentConfig = (overrides = {}) => ({
     tokenDecimals: 6,
     treasuryAddress,
     confirmations: 60,
+    verifyThrottleWindowMs: 60000,
+    verifyThrottleMax: 10,
     intentTtlMinutes: 30,
     pricingVersion: "phase3a-test-v1",
     packagesJson: validPackagesJson,
@@ -175,13 +179,15 @@ const createFakeChallengeModel = (initialChallenges = []) => {
     };
 };
 
-test("payment config validation accepts valid Base USDC config", () => {
+test("payment config validation accepts production Base mainnet USDC config", () => {
     assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "production" }));
     assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "development" }));
 });
 
-test("payment config validation accepts Base Sepolia only outside production", () => {
+test("payment config validation accepts Base Sepolia only with explicit non-production opt-in", () => {
     const sepoliaConfig = validPaymentConfig({
+        network: "base-sepolia",
+        allowTestnetPayments: true,
         chainId: 84532,
         rpcUrl: "https://sepolia.base.org",
         tokenAddress: baseSepoliaUsdcAddress
@@ -189,7 +195,18 @@ test("payment config validation accepts Base Sepolia only outside production", (
 
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "development" }));
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "test" }));
-    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production" }), /PAYMENT_CHAIN_ID/);
+    assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "local" }));
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production" }), /PAYMENT_NETWORK/);
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: undefined }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig({
+        ...sepoliaConfig,
+        allowTestnetPayments: false
+    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
+});
+
+test("payment config validation rejects unknown payment network", () => {
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({ network: "base-goerli" }), { nodeEnv: "development" }), /PAYMENT_NETWORK/);
 });
 
 test("payment config validation rejects invalid chain ID", () => {
@@ -210,13 +227,22 @@ test("payment config validation rejects non-Base-USDC token address", () => {
 
 test("payment config validation rejects supported chain and token mismatches", () => {
     assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        network: "base-sepolia",
+        allowTestnetPayments: true,
         chainId: 84532,
         tokenAddress: baseUsdcAddress
     }), { nodeEnv: "development" }), /PAYMENT_TOKEN_ADDRESS/);
     assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        network: "base-mainnet",
         chainId: 8453,
         tokenAddress: baseSepoliaUsdcAddress
     }), { nodeEnv: "development" }), /PAYMENT_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        network: "base-sepolia",
+        allowTestnetPayments: true,
+        chainId: 8453,
+        tokenAddress: baseSepoliaUsdcAddress
+    }), { nodeEnv: "development" }), /PAYMENT_CHAIN_ID/);
 });
 
 test("payment config validation rejects wrong token decimals", () => {

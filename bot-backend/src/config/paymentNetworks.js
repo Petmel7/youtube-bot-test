@@ -9,6 +9,7 @@ const baseSepoliaUsdcAddress = normalizeEvmAddress("0x036CbD53842c5426634e792954
 const supportedPaymentNetworks = Object.freeze({
     baseMainnet: Object.freeze({
         key: "baseMainnet",
+        envName: "base-mainnet",
         name: "Base mainnet",
         chainId: BASE_MAINNET_CHAIN_ID,
         tokenAddress: baseMainnetUsdcAddress,
@@ -16,6 +17,7 @@ const supportedPaymentNetworks = Object.freeze({
     }),
     baseSepolia: Object.freeze({
         key: "baseSepolia",
+        envName: "base-sepolia",
         name: "Base Sepolia",
         chainId: BASE_SEPOLIA_CHAIN_ID,
         tokenAddress: baseSepoliaUsdcAddress,
@@ -26,8 +28,12 @@ const supportedPaymentNetworks = Object.freeze({
 const supportedPaymentNetworksByChainId = new Map(
     Object.values(supportedPaymentNetworks).map(network => [network.chainId, network])
 );
+const supportedPaymentNetworksByEnvName = new Map(
+    Object.values(supportedPaymentNetworks).map(network => [network.envName, network])
+);
 
 const getSupportedPaymentNetwork = (chainId) => supportedPaymentNetworksByChainId.get(chainId) || null;
+const getSupportedPaymentNetworkByName = (networkName) => supportedPaymentNetworksByEnvName.get(networkName) || null;
 
 const getExpectedPaymentTokenAddress = (chainId) => getSupportedPaymentNetwork(chainId)?.tokenAddress || null;
 
@@ -38,5 +44,6 @@ module.exports = {
     baseSepoliaUsdcAddress,
     supportedPaymentNetworks,
     getSupportedPaymentNetwork,
+    getSupportedPaymentNetworkByName,
     getExpectedPaymentTokenAddress
 };

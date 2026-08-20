@@ -4,6 +4,7 @@ const express = require("express");
 
 const { createPaymentRoutes } = require("../src/routes/paymentRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
+const { createPaymentVerifyThrottle } = require("../src/middleware/paymentVerifyThrottle");
 const { notFound } = require("../src/utils/errors");
 const { createPaymentLifecycleService } = require("../src/services/payments/paymentLifecycleService");
 const { PAYMENT_OUTCOMES } = require("../src/services/payments/paymentVerifier");
@@ -116,7 +117,29 @@ const createFakeLifecycle = () => {
         async verifyIntent(args) {
             calls.push({ method: "verifyIntent", args });
             if (args.userId !== userA) throw notFound("PAYMENT_INTENT_NOT_FOUND", "Payment intent was not found");
-            return { intent: { ...intent, status: "CONFIRMED", txHash: args.txHash }, settlement: { settled: true } };
+            return {
+                intent: { ...intent, status: "CONFIRMED", txHash: args.txHash },
+                settlement: {
+                    settled: true,
+                    created: true,
+                    wallet: {
+                        id: "wallet-1",
+                        userId: args.userId,
+                        balance: 1950,
+                        reserved: 0,
+                        unit: "AI_CREDIT"
+                    },
+                    transaction: {
+                        id: "tx-1",
+                        type: "CREDIT",
+                        amount: 750,
+                        idempotencyKey: "payment:intent-1:credit",
+                        paymentIntentId: intentId,
+                        chainId: 8453,
+                        txHash: args.txHash
+                    }
+                }
+            };
         }
     };
     return service;
@@ -375,7 +398,37 @@ test("payment API verify accepts canonical txHash and returns settlement state",
     assert.equal(response.status, 200);
     assert.equal(response.body.intent.txHash, txHash);
     assert.equal(response.body.intent.creditAmount, 750);
+    assert.equal(response.body.settlement.settled, true);
+    assert.equal(response.body.settlement.wallet.balance, 1950);
+    assert.equal(response.body.settlement.wallet.userId, undefined);
+    assert.equal(response.body.settlement.transaction.txHash, txHash);
+    assert.equal(response.body.settlement.transaction.idempotencyKey, undefined);
     assert.deepEqual(lifecycle.calls[0].args, { userId: userA, paymentIntentId: intentId, txHash });
+});
+
+test("payment API verify throttling returns 429 before lifecycle/provider work", async () => {
+    const lifecycle = createFakeLifecycle();
+    const verifyThrottleMiddleware = createPaymentVerifyThrottle({
+        windowMs: 60000,
+        max: 2,
+        now: () => Date.parse("2026-08-18T12:00:00.000Z")
+    });
+    const app = createApp(lifecycle, { verifyThrottleMiddleware });
+    const requestOptions = {
+        method: "POST",
+        path: `/api/payments/intents/${intentId}/verify`,
+        userId: userA,
+        headers: { "X-CSRF-Protection": "1" },
+        body: { txHash }
+    };
+
+    assert.equal((await request(app, requestOptions)).status, 200);
+    assert.equal((await request(app, requestOptions)).status, 200);
+    const throttled = await request(app, requestOptions);
+
+    assert.equal(throttled.status, 429);
+    assert.equal(throttled.body.error.code, "PAYMENT_VERIFY_RATE_LIMITED");
+    assert.equal(lifecycle.calls.filter(call => call.method === "verifyIntent").length, 2);
 });
 
 test("payment lifecycle create is idempotent by user and idempotency key", async () => {
