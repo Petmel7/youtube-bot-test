@@ -74,6 +74,7 @@
             "confirmed": "Підтверджено",
             "confirmed_overpaid": "Підтверджено з переплатою",
             "underpaid": "Недоплата",
+            "manual_review_required": "Потрібна ручна перевірка",
             "expired": "Прострочено",
             "rejected": "Відхилено",
             "failed": "Помилка",

@@ -194,6 +194,15 @@ const createMemoryPaymentIntentModel = (initialIntents = []) => {
         findOneAndUpdate(filter, update, options = {}) {
             const found = [...intents.values()].find(intent => matches(intent, filter));
             if (!found) return query(null);
+            if (update.$set?.txHash && [...intents.values()].some(intent => (
+                String(intent._id) !== String(found._id) &&
+                intent.chainId === found.chainId &&
+                intent.txHash === update.$set.txHash
+            ))) {
+                const error = new Error("duplicate key");
+                error.code = 11000;
+                throw error;
+            }
             if (update.$set) Object.assign(found, update.$set);
             return query(options.new ? clone(found) : clone({ ...found, ...update.$set }));
         }
@@ -479,11 +488,14 @@ test("payment lifecycle maps confirming and underpaid outcomes without settlemen
         }
     });
     const underpaidResult = await underpaid.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
-    assert.equal(underpaidResult.intent.status, "UNDERPAID");
+    assert.equal(underpaidResult.intent.status, "MANUAL_REVIEW_REQUIRED");
+    assert.equal(underpaidResult.intent.txHash, txHash);
+    assert.equal(underpaidResult.intent.failureCode, "PAYMENT_UNDERPAID");
+    assert.match(underpaidResult.intent.failureReason, /manual review/i);
     assert.equal(underpaid.settlementCalls.length, 0);
 });
 
-test("payment lifecycle does not globally claim txHash for rejected or underpaid attempts", async () => {
+test("payment lifecycle leaves rejected txHash unclaimed but records verified underpayment for review", async () => {
     const rejected = createLifecycleHarness({
         verifierResult: {
             outcome: PAYMENT_OUTCOMES.REJECTED,
@@ -518,10 +530,76 @@ test("payment lifecycle does not globally claim txHash for rejected or underpaid
     });
     const underpaidResult = await underpaid.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
     const underpaidDoc = underpaid.PaymentIntentModel.intents.get(intentId);
-    assert.equal(underpaidResult.intent.status, "UNDERPAID");
+    assert.equal(underpaidResult.intent.status, "MANUAL_REVIEW_REQUIRED");
     assert.equal(underpaidDoc.candidateTxHash, txHash);
-    assert.equal(underpaidDoc.txHash, null);
+    assert.equal(underpaidDoc.txHash, txHash);
+    assert.equal(underpaidDoc.failureCode, "PAYMENT_UNDERPAID");
+    assert.match(underpaidDoc.failureReason, /manual review/i);
     assert.equal(underpaid.settlementCalls.length, 0);
+});
+
+test("payment lifecycle prevents an underpaid txHash from crediting another user", async () => {
+    const secondIntentId = "65e000000000000000000002";
+    const harness = createLifecycleHarness({
+        verifierResult: {
+            outcome: PAYMENT_OUTCOMES.UNDERPAID,
+            code: "PAYMENT_UNDERPAID",
+            txHash,
+            confirmationCount: 12,
+            confirmedBlock: 100,
+            firstSeenBlock: 100,
+            transactionStatus: "SUCCESS",
+            verifiedTokenAmountBaseUnits: "1000000"
+        }
+    });
+    harness.PaymentIntentModel.intents.set(secondIntentId, makeIntent({
+        _id: secondIntentId,
+        userId: userB,
+        idempotencyKey: "other-key-123456"
+    }));
+
+    const underpaidResult = await harness.service.verifyIntent({ userId: userA, paymentIntentId: intentId, txHash });
+    assert.equal(underpaidResult.intent.status, "MANUAL_REVIEW_REQUIRED");
+    assert.equal(underpaidResult.intent.txHash, txHash);
+
+    harness.service = createPaymentLifecycleService({
+        PaymentIntentModel: harness.PaymentIntentModel,
+        paymentIntentService: {
+            async createPaymentIntent() {
+                throw new Error("not used");
+            }
+        },
+        paymentVerifier: {
+            async verifyPaymentIntent(paymentIntent) {
+                harness.verifierCalls.push(clone(paymentIntent));
+                return {
+                    outcome: PAYMENT_OUTCOMES.VERIFIED,
+                    code: "PAYMENT_VERIFIED",
+                    txHash,
+                    confirmationCount: 12,
+                    confirmedBlock: 100,
+                    firstSeenBlock: 100,
+                    transactionStatus: "SUCCESS",
+                    verifiedTokenAmountBaseUnits: "5000000"
+                };
+            }
+        },
+        settlementService: {
+            async settlePaymentIntent(args) {
+                harness.settlementCalls.push(args);
+                return { settled: true };
+            }
+        },
+        config: { confirmations: 12 },
+        withTransaction: async (callback) => callback("session"),
+        now: () => new Date("2026-08-18T12:00:00.000Z")
+    });
+
+    await assert.rejects(
+        () => harness.service.verifyIntent({ userId: userB, paymentIntentId: secondIntentId, txHash }),
+        { code: "PAYMENT_DUPLICATE_TX" }
+    );
+    assert.equal(harness.settlementCalls.length, 0);
 });
 
 test("payment lifecycle settles exact and overpaid confirmed outcomes only", async () => {

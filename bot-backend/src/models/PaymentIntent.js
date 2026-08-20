@@ -14,6 +14,7 @@ const paymentIntentStatuses = [
     "CONFIRMED",
     "CONFIRMED_OVERPAID",
     "UNDERPAID",
+    "MANUAL_REVIEW_REQUIRED",
     "EXPIRED",
     "FAILED",
     "REJECTED",

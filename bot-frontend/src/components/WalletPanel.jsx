@@ -30,7 +30,7 @@ const formatTokenAmount = (baseUnits, decimals) => {
 
 const statusTone = (status) => {
     if (settlementStatuses.has(status)) return styles.success;
-    if (["UNDERPAID", "EXPIRED", "REJECTED", "FAILED", "CANCELLED"].includes(status)) return styles.danger;
+    if (["UNDERPAID", "MANUAL_REVIEW_REQUIRED", "EXPIRED", "REJECTED", "FAILED", "CANCELLED"].includes(status)) return styles.danger;
     if (pendingStatuses.has(status)) return styles.pending;
     return "";
 };

@@ -74,6 +74,7 @@
             "confirmed": "Bestätigt",
             "confirmed_overpaid": "Bestätigt mit Überzahlung",
             "underpaid": "Unterbezahlt",
+            "manual_review_required": "Manuelle Prüfung erforderlich",
             "expired": "Abgelaufen",
             "rejected": "Abgelehnt",
             "failed": "Fehlgeschlagen",

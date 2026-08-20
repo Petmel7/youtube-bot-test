@@ -74,6 +74,7 @@
             "confirmed": "Confirmé",
             "confirmed_overpaid": "Confirmé avec trop-payé",
             "underpaid": "Paiement insuffisant",
+            "manual_review_required": "Examen manuel requis",
             "expired": "Expiré",
             "rejected": "Rejeté",
             "failed": "Échoué",

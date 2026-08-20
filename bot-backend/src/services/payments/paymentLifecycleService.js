@@ -9,15 +9,16 @@ const { createPaymentVerifier, PAYMENT_OUTCOMES } = require("./paymentVerifier")
 const addSession = (query, session) => session ? query.session(session) : query;
 const isDuplicateKey = (error) => error?.code === 11000;
 
-const terminalStatuses = new Set(["UNDERPAID", "EXPIRED", "FAILED", "REJECTED", "CANCELLED"]);
+const terminalStatuses = new Set(["UNDERPAID", "MANUAL_REVIEW_REQUIRED", "EXPIRED", "FAILED", "REJECTED", "CANCELLED"]);
 const settlementStatuses = new Set(["CONFIRMED", "CONFIRMED_OVERPAID"]);
+const canonicalTxClaimStatuses = new Set([...settlementStatuses, "MANUAL_REVIEW_REQUIRED"]);
 
 const statusForOutcome = (outcome) => {
     if (outcome === PAYMENT_OUTCOMES.PENDING) return "SUBMITTED";
     if (outcome === PAYMENT_OUTCOMES.CONFIRMING) return "CONFIRMING";
     if (outcome === PAYMENT_OUTCOMES.VERIFIED) return "CONFIRMED";
     if (outcome === PAYMENT_OUTCOMES.OVERPAID) return "CONFIRMED_OVERPAID";
-    if (outcome === PAYMENT_OUTCOMES.UNDERPAID) return "UNDERPAID";
+    if (outcome === PAYMENT_OUTCOMES.UNDERPAID) return "MANUAL_REVIEW_REQUIRED";
     if (outcome === PAYMENT_OUTCOMES.REJECTED) return "REJECTED";
     return "FAILED";
 };
@@ -25,6 +26,13 @@ const statusForOutcome = (outcome) => {
 const failureForOutcome = (result) => {
     if ([PAYMENT_OUTCOMES.PENDING, PAYMENT_OUTCOMES.CONFIRMING, PAYMENT_OUTCOMES.VERIFIED, PAYMENT_OUTCOMES.OVERPAID].includes(result.outcome)) {
         return { failureCode: null, failureReason: null };
+    }
+
+    if (result.outcome === PAYMENT_OUTCOMES.UNDERPAID) {
+        return {
+            failureCode: result.code || "PAYMENT_UNDERPAID",
+            failureReason: "Payment was underpaid and requires manual review. No credits were added."
+        };
     }
 
     return {
@@ -90,6 +98,7 @@ const createPaymentLifecycleService = ({
         const status = statusForOutcome(result.outcome);
         const failure = failureForOutcome(result);
         const isSettlementEligible = settlementStatuses.has(status);
+        const shouldClaimCanonicalTxHash = canonicalTxClaimStatuses.has(status);
         const update = {
             status,
             candidateTxHash: result.txHash || intent.candidateTxHash || null,
@@ -104,8 +113,11 @@ const createPaymentLifecycleService = ({
         };
 
         if (isSettlementEligible) {
-            update.txHash = result.txHash;
             update.confirmedAt = intent.confirmedAt || now();
+        }
+
+        if (shouldClaimCanonicalTxHash) {
+            update.txHash = result.txHash;
         }
 
         try {
@@ -113,18 +125,18 @@ const createPaymentLifecycleService = ({
                 {
                     _id: intent._id,
                     userId: intent.userId,
-                    ...(isSettlementEligible ? { txHash: null } : {})
+                    ...(shouldClaimCanonicalTxHash ? { txHash: null } : {})
                 },
                 { $set: update },
                 { new: true }
             );
 
-            if (updatedIntent || !isSettlementEligible) {
+            if (updatedIntent || !shouldClaimCanonicalTxHash) {
                 return updatedIntent;
             }
 
             const currentIntent = await findOwnedIntent({ userId: intent.userId, paymentIntentId: intent._id });
-            if (currentIntent?.txHash === result.txHash && settlementStatuses.has(currentIntent.status)) {
+            if (currentIntent?.txHash === result.txHash && canonicalTxClaimStatuses.has(currentIntent.status)) {
                 return currentIntent;
             }
 

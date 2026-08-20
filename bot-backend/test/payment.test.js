@@ -197,7 +197,7 @@ test("payment config validation accepts Base Sepolia only with explicit non-prod
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "test" }));
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "local" }));
     assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production" }), /PAYMENT_NETWORK/);
-    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: undefined }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "" }), /NODE_ENV/);
     assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "staging" }), /NODE_ENV/);
     assert.throws(() => validatePaymentConfig({
         ...sepoliaConfig,
@@ -538,6 +538,7 @@ test("PaymentIntent schema has required states, immutability, validation, and in
         "CONFIRMED",
         "CONFIRMED_OVERPAID",
         "UNDERPAID",
+        "MANUAL_REVIEW_REQUIRED",
         "EXPIRED",
         "FAILED",
         "REJECTED",

@@ -74,6 +74,7 @@
             "confirmed": "Confirmed",
             "confirmed_overpaid": "Confirmed overpaid",
             "underpaid": "Underpaid",
+            "manual_review_required": "Manual review required",
             "expired": "Expired",
             "rejected": "Rejected",
             "failed": "Failed",

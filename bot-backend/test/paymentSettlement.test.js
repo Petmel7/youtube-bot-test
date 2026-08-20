@@ -390,7 +390,7 @@ test("confirmed overpaid payment credits frozen creditAmount and persists overpa
 });
 
 test("ineligible payment states are rejected", async () => {
-    const rejectedStates = ["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING", "UNDERPAID", "EXPIRED", "FAILED", "REJECTED", "CANCELLED"];
+    const rejectedStates = ["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING", "UNDERPAID", "MANUAL_REVIEW_REQUIRED", "EXPIRED", "FAILED", "REJECTED", "CANCELLED"];
 
     for (const status of rejectedStates) {
         const { service, state } = createServiceHarness();
