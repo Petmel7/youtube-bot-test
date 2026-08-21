@@ -1,0 +1,62 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createAppKit } from "@reown/appkit/react";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { base, baseSepolia } from "viem/chains";
+import { WagmiProvider } from "wagmi";
+import config from "../config/config";
+
+const networks = [base, baseSepolia];
+const expectedNetwork = config.paymentNetworkName === "base-sepolia" ? baseSepolia : base;
+const queryClient = new QueryClient();
+
+let wagmiAdapter = null;
+let initializationError = null;
+
+if (config.walletConnectProjectId) {
+    try {
+        wagmiAdapter = new WagmiAdapter({
+            networks,
+            projectId: config.walletConnectProjectId
+        });
+
+        createAppKit({
+            adapters: [wagmiAdapter],
+            networks,
+            projectId: config.walletConnectProjectId,
+            defaultNetwork: expectedNetwork,
+            metadata: {
+                name: "YouTube Bot",
+                description: "YouTube Bot credit payments",
+                url: window.location.origin,
+                icons: [`${window.location.origin}/logo192.png`]
+            },
+            features: {
+                analytics: false,
+                email: false,
+                socials: []
+            }
+        });
+    } catch (error) {
+        initializationError = error;
+        wagmiAdapter = null;
+    }
+}
+
+export const isWalletConnectConfigured = Boolean(wagmiAdapter);
+export const walletConnectInitializationError = initializationError;
+export const appKitNetworks = networks;
+export const appKitExpectedNetwork = expectedNetwork;
+
+const WalletConnectionProvider = ({ children }) => {
+    if (!wagmiAdapter) return children;
+
+    return (
+        <WagmiProvider config={wagmiAdapter.wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+                {children}
+            </QueryClientProvider>
+        </WagmiProvider>
+    );
+};
+
+export default WalletConnectionProvider;

@@ -50,7 +50,28 @@
             "verify": "Could not verify payment.",
             "txHash": "Enter a valid transaction hash.",
             "walletProvider": "No browser wallet found.",
-            "walletAccount": "No wallet account selected."
+            "walletAccount": "No wallet account selected.",
+            "wrongNetwork": "Switch your wallet to {{network}} before creating a payment.",
+            "switchNetwork": "Could not switch wallet network.",
+            "walletChanged": "The connected wallet changed before the signature finished. Please retry.",
+            "signatureRejected": "Signature request was rejected. You can retry when ready."
+        },
+        "connection": {
+            "connect": "Connect wallet",
+            "connected": "Wallet connected",
+            "notConnected": "Wallet not connected",
+            "connectBody": "Connect an EVM wallet to create a payment.",
+            "manage": "Manage",
+            "wrongNetwork": "Wrong network. Switch to {{network}} to create this payment.",
+            "switchNetwork": "Switch network",
+            "disabledConnect": "Connect a wallet to create a payment.",
+            "disabledNetwork": "Switch to {{network}} to create a payment.",
+            "disabledPackage": "Select a credit package to continue.",
+            "mobileQr": "Use the wallet modal for browser wallets or WalletConnect QR on mobile.",
+            "unavailableTitle": "Wallet connection is not configured",
+            "unavailableBody": "Install a browser wallet and refresh this page. WalletConnect QR is available after REACT_APP_WALLETCONNECT_PROJECT_ID is configured.",
+            "mobileQrFallback": "Mobile wallet QR connection will appear in the Reown modal once WalletConnect is configured.",
+            "initializationError": "Wallet connection could not initialize. Check frontend wallet configuration."
         },
         "fields": {
             "chainId": "Chain ID",

@@ -50,7 +50,28 @@
             "verify": "Zahlung konnte nicht geprüft werden.",
             "txHash": "Gib einen gültigen Transaktionshash ein.",
             "walletProvider": "Keine Browser-Wallet gefunden.",
-            "walletAccount": "Kein Wallet-Konto ausgewählt."
+            "walletAccount": "Kein Wallet-Konto ausgewählt.",
+            "wrongNetwork": "Wechsle deine Wallet zu {{network}}, bevor du eine Zahlung erstellst.",
+            "switchNetwork": "Wallet-Netzwerk konnte nicht gewechselt werden.",
+            "walletChanged": "Die verbundene Wallet hat sich vor Abschluss der Signatur geändert. Bitte erneut versuchen.",
+            "signatureRejected": "Die Signaturanfrage wurde abgelehnt. Du kannst es erneut versuchen."
+        },
+        "connection": {
+            "connect": "Wallet verbinden",
+            "connected": "Wallet verbunden",
+            "notConnected": "Wallet nicht verbunden",
+            "connectBody": "Verbinde eine EVM-Wallet, um eine Zahlung zu erstellen.",
+            "manage": "Verwalten",
+            "wrongNetwork": "Falsches Netzwerk. Wechsle zu {{network}}, um diese Zahlung zu erstellen.",
+            "switchNetwork": "Netzwerk wechseln",
+            "disabledConnect": "Verbinde eine Wallet, um eine Zahlung zu erstellen.",
+            "disabledNetwork": "Wechsle zu {{network}}, um eine Zahlung zu erstellen.",
+            "disabledPackage": "Wähle ein Credit-Paket aus, um fortzufahren.",
+            "mobileQr": "Nutze das Wallet-Fenster für Browser-Wallets oder WalletConnect QR auf Mobilgeräten.",
+            "unavailableTitle": "Wallet-Verbindung ist nicht konfiguriert",
+            "unavailableBody": "Installiere eine Browser-Wallet und aktualisiere diese Seite. WalletConnect QR ist verfügbar, nachdem REACT_APP_WALLETCONNECT_PROJECT_ID konfiguriert wurde.",
+            "mobileQrFallback": "Die QR-Verbindung für mobile Wallets erscheint im Reown-Fenster, sobald WalletConnect konfiguriert ist.",
+            "initializationError": "Wallet-Verbindung konnte nicht initialisiert werden. Prüfe die Frontend-Wallet-Konfiguration."
         },
         "fields": {
             "chainId": "Chain-ID",

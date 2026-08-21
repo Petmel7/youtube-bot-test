@@ -50,7 +50,28 @@
             "verify": "Impossible de vérifier le paiement.",
             "txHash": "Entrez un hash de transaction valide.",
             "walletProvider": "Aucun portefeuille de navigateur trouvé.",
-            "walletAccount": "Aucun compte de portefeuille sélectionné."
+            "walletAccount": "Aucun compte de portefeuille sélectionné.",
+            "wrongNetwork": "Passez votre portefeuille sur {{network}} avant de créer un paiement.",
+            "switchNetwork": "Impossible de changer le réseau du portefeuille.",
+            "walletChanged": "Le portefeuille connecté a changé avant la fin de la signature. Réessayez.",
+            "signatureRejected": "La demande de signature a été refusée. Vous pouvez réessayer."
+        },
+        "connection": {
+            "connect": "Connecter un portefeuille",
+            "connected": "Portefeuille connecté",
+            "notConnected": "Portefeuille non connecté",
+            "connectBody": "Connectez un portefeuille EVM pour créer un paiement.",
+            "manage": "Gérer",
+            "wrongNetwork": "Mauvais réseau. Passez sur {{network}} pour créer ce paiement.",
+            "switchNetwork": "Changer de réseau",
+            "disabledConnect": "Connectez un portefeuille pour créer un paiement.",
+            "disabledNetwork": "Passez sur {{network}} pour créer un paiement.",
+            "disabledPackage": "Sélectionnez un pack de crédits pour continuer.",
+            "mobileQr": "Utilisez la fenêtre de portefeuille pour les extensions ou le QR WalletConnect sur mobile.",
+            "unavailableTitle": "La connexion du portefeuille n'est pas configurée",
+            "unavailableBody": "Installez un portefeuille de navigateur puis actualisez cette page. Le QR WalletConnect sera disponible après configuration de REACT_APP_WALLETCONNECT_PROJECT_ID.",
+            "mobileQrFallback": "La connexion QR du portefeuille mobile apparaîtra dans la fenêtre Reown une fois WalletConnect configuré.",
+            "initializationError": "Impossible d'initialiser la connexion du portefeuille. Vérifiez la configuration du portefeuille côté frontend."
         },
         "fields": {
             "chainId": "ID de chaîne",

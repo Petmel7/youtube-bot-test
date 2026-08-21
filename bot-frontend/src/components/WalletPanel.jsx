@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaCheckCircle, FaCopy, FaRedoAlt } from "react-icons/fa";
+import { useAppKit } from "@reown/appkit/react";
+import { useAccount, useChainId, useSignMessage, useSwitchChain } from "wagmi";
+import { FaCheckCircle, FaCopy, FaExternalLinkAlt, FaRedoAlt, FaWallet } from "react-icons/fa";
 import {
     createPayerChallenge,
     createPaymentIntent,
@@ -9,11 +11,20 @@ import {
     fetchWallet,
     verifyPaymentIntent
 } from "../services/paymentService";
+import config from "../config/config";
+import { appKitExpectedNetwork, isWalletConnectConfigured, walletConnectInitializationError } from "../wallet/appKit";
 import styles from "../styles/walletPanel.module.css";
 
 const txHashPattern = /^0x[a-fA-F0-9]{64}$/;
 const settlementStatuses = new Set(["CONFIRMED", "CONFIRMED_OVERPAID"]);
 const pendingStatuses = new Set(["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING"]);
+const walletLinks = [
+    ["MetaMask", "https://metamask.io/download/"],
+    ["Rabby", "https://rabby.io/"],
+    ["Coinbase Wallet", "https://www.coinbase.com/wallet/downloads"],
+    ["Rainbow", "https://rainbow.me/"],
+    ["Trust Wallet", "https://trustwallet.com/download"]
+];
 
 const formatUsdMinor = (amount) => `$${((amount || 0) / 100).toFixed(2)}`;
 
@@ -46,6 +57,155 @@ const FieldRow = ({ label, value, copyable = false, onCopy }) => (
         )}
     </div>
 );
+
+const shortenAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
+const normalizeAddress = (address) => String(address || "").toLowerCase();
+const isUserRejectedSignature = (error) => (
+    error?.code === 4001 ||
+    error?.name === "UserRejectedRequestError" ||
+    /rejected|denied|declined/i.test(error?.message || "")
+);
+
+const WalletFallbackPanel = () => {
+    const { t } = useTranslation();
+
+    return (
+        <div className={styles.walletConnectBox}>
+            <div>
+                <strong>{t("wallet.connection.unavailableTitle")}</strong>
+                <p>{t("wallet.connection.unavailableBody")}</p>
+                {walletConnectInitializationError && (
+                    <p className={styles.error}>{t("wallet.connection.initializationError")}</p>
+                )}
+            </div>
+            <div className={styles.walletLinkGrid}>
+                {walletLinks.map(([label, href]) => (
+                    <a key={label} href={href} target="_blank" rel="noreferrer">
+                        {label}
+                        <FaExternalLinkAlt />
+                    </a>
+                ))}
+            </div>
+            <p className={styles.muted}>{t("wallet.connection.mobileQrFallback")}</p>
+        </div>
+    );
+};
+
+const AppKitWalletControls = ({
+    selectedPackage,
+    actionLoading,
+    setActionLoading,
+    setError,
+    setNotice,
+    setIntent,
+    setPayerAddress,
+    setTxHash
+}) => {
+    const { t } = useTranslation();
+    const { open } = useAppKit();
+    const { address, isConnected, status } = useAccount();
+    const chainId = useChainId();
+    const { signMessageAsync } = useSignMessage();
+    const { switchChainAsync, isPending: switchingNetwork } = useSwitchChain();
+    const expectedChainId = config.paymentNetwork.id;
+    const expectedNetworkName = config.paymentNetwork.name;
+    const connectedNetworkName = chainId === expectedChainId ? expectedNetworkName : (chainId ? `Chain ${chainId}` : "-");
+    const wrongNetwork = isConnected && chainId !== expectedChainId;
+    const createDisabled = actionLoading || !selectedPackage || !isConnected || wrongNetwork || status === "connecting";
+
+    const openConnectModal = () => open({ view: "Connect", namespace: "eip155" });
+
+    const handleSwitchNetwork = async () => {
+        setError("");
+        try {
+            await switchChainAsync({ chainId: appKitExpectedNetwork.id });
+        } catch (switchError) {
+            setError(switchError.message || t("wallet.errors.switchNetwork"));
+        }
+    };
+
+    const handleCreateIntent = async () => {
+        if (!selectedPackage?.packageId || !address) return;
+
+        setActionLoading(true);
+        setError("");
+        setNotice("");
+        try {
+            if (chainId !== expectedChainId) {
+                throw new Error(t("wallet.errors.wrongNetwork", { network: expectedNetworkName }));
+            }
+
+            const challenge = await createPayerChallenge(address);
+            if (normalizeAddress(challenge.payerAddress) !== normalizeAddress(address)) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            const signature = await signMessageAsync({ message: challenge.message });
+            const nextIntent = await createPaymentIntent({
+                packageId: selectedPackage.packageId,
+                payerChallengeId: challenge.id,
+                signature
+            });
+            if (normalizeAddress(nextIntent.payerAddress) !== normalizeAddress(address)) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            setIntent(nextIntent);
+            setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
+            setTxHash(nextIntent.txHash || "");
+        } catch (createError) {
+            setError(isUserRejectedSignature(createError)
+                ? t("wallet.errors.signatureRejected")
+                : (createError.shortMessage || createError.message || t("wallet.errors.create")));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    return (
+        <div className={styles.walletConnectBox}>
+            <div className={styles.walletStatusRow}>
+                <div>
+                    <strong>{isConnected ? t("wallet.connection.connected") : t("wallet.connection.notConnected")}</strong>
+                    <p>
+                        {isConnected
+                            ? `${shortenAddress(address)} · ${connectedNetworkName}`
+                            : t("wallet.connection.connectBody")}
+                    </p>
+                </div>
+                {!isConnected ? (
+                    <button className={styles.iconTextButton} type="button" onClick={openConnectModal} disabled={actionLoading}>
+                        <FaWallet />
+                        {t("wallet.connection.connect")}
+                    </button>
+                ) : wrongNetwork ? (
+                    <button className={styles.iconTextButton} type="button" onClick={handleSwitchNetwork} disabled={actionLoading || switchingNetwork}>
+                        {switchingNetwork ? t("wallet.working") : t("wallet.connection.switchNetwork")}
+                    </button>
+                ) : (
+                    <button className={styles.iconTextButton} type="button" onClick={() => open({ view: "Account" })} disabled={actionLoading}>
+                        <FaWallet />
+                        {t("wallet.connection.manage")}
+                    </button>
+                )}
+            </div>
+            {wrongNetwork && <p className={styles.error}>{t("wallet.connection.wrongNetwork", { network: expectedNetworkName })}</p>}
+            {!isConnected && <p className={styles.muted}>{t("wallet.connection.mobileQr")}</p>}
+            <button className={styles.primaryButton} type="button" onClick={handleCreateIntent} disabled={createDisabled}>
+                {actionLoading ? t("wallet.working") : t("wallet.createIntent")}
+            </button>
+            {createDisabled && !actionLoading && (
+                <p className={styles.muted}>
+                    {!isConnected
+                        ? t("wallet.connection.disabledConnect")
+                        : wrongNetwork
+                            ? t("wallet.connection.disabledNetwork", { network: expectedNetworkName })
+                            : t("wallet.connection.disabledPackage")}
+                </p>
+            )}
+        </div>
+    );
+};
 
 const WalletPanel = () => {
     const { t } = useTranslation();
@@ -121,43 +281,6 @@ const WalletPanel = () => {
             }
         } catch (refreshError) {
             setError(refreshError.message || t("wallet.errors.load"));
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    const handleCreateIntent = async () => {
-        if (!selectedPackage?.packageId) return;
-
-        setActionLoading(true);
-        setError("");
-        setNotice("");
-        try {
-            if (!window.ethereum?.request) {
-                throw new Error(t("wallet.errors.walletProvider"));
-            }
-
-            const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-            const selectedAddress = accounts?.[0];
-            if (!selectedAddress) {
-                throw new Error(t("wallet.errors.walletAccount"));
-            }
-
-            const challenge = await createPayerChallenge(selectedAddress);
-            const signature = await window.ethereum.request({
-                method: "personal_sign",
-                params: [challenge.message, challenge.payerAddress]
-            });
-            const nextIntent = await createPaymentIntent({
-                packageId: selectedPackage.packageId,
-                payerChallengeId: challenge.id,
-                signature
-            });
-            setIntent(nextIntent);
-            setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
-            setTxHash(nextIntent.txHash || "");
-        } catch (createError) {
-            setError(createError.message || t("wallet.errors.create"));
         } finally {
             setActionLoading(false);
         }
@@ -243,9 +366,20 @@ const WalletPanel = () => {
                     </div>
                     {packages.length === 0 && <p className={styles.muted}>{t("wallet.noPackages")}</p>}
 
-                    <button className={styles.primaryButton} type="button" onClick={handleCreateIntent} disabled={!selectedPackage || actionLoading}>
-                        {actionLoading ? t("wallet.working") : t("wallet.createIntent")}
-                    </button>
+                    {isWalletConnectConfigured ? (
+                        <AppKitWalletControls
+                            selectedPackage={selectedPackage}
+                            actionLoading={actionLoading}
+                            setActionLoading={setActionLoading}
+                            setError={setError}
+                            setNotice={setNotice}
+                            setIntent={setIntent}
+                            setPayerAddress={setPayerAddress}
+                            setTxHash={setTxHash}
+                        />
+                    ) : (
+                        <WalletFallbackPanel />
+                    )}
 
                     {intent && (
                         <div className={styles.intentBox}>

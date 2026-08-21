@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@reown/appkit": "^1.8.23",
+    "@reown/appkit-adapter-wagmi": "^1.8.23",
+    "@tanstack/react-query": "^5.101.4",
+    "@wagmi/connectors": "^6.2.0",
     "ajv": "^6.12.6",
     "ajv-keywords": "^3.5.2",
     "cra-template-pwa": "2.0.0",
@@ -12,7 +16,9 @@
     "react-i18next": "^15.5.1",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.1.5",
-    "react-scripts": "5.0.1"
+    "react-scripts": "5.0.1",
+    "viem": "^2.55.19",
+    "wagmi": "^2.19.5"
   },
   "scripts": {
     "dev": "react-scripts start",
