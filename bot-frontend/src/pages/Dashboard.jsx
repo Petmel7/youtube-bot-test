@@ -34,7 +34,7 @@ const Dashboard = () => {
             const promptData = await fetchUserPrompt(setSavedTheme, setSavedGender);
             if (promptData) {
                 setSavedTheme(promptData.channelTheme);
-                setSavedGender(promptData.genderText);
+                setSavedGender(promptData.gender);
             }
         };
         getUserPrompt();

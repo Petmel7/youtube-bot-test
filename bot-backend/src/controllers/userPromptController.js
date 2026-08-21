@@ -25,8 +25,17 @@ const updateUserPrompt = async (req, res) => {
 
 const getUserPrompt = async (req, res) => {
     const userId = req.user._id;
-    const prompt = await getUserPromptData(userId);
-    res.json({ success: true, prompt: toPromptDto(prompt) });
+    try {
+        const prompt = await getUserPromptData(userId);
+        res.json({ success: true, prompt: toPromptDto(prompt) });
+    } catch (error) {
+        if (error?.code === "PROMPT_NOT_FOUND") {
+            res.json({ success: true, prompt: null });
+            return;
+        }
+
+        throw error;
+    }
 };
 
 const updateUserGender = async (req, res) => {

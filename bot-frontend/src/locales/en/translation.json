@@ -38,6 +38,13 @@
         "noPackages": "No credit packages are available.",
         "createIntent": "Create payment",
         "working": "Working...",
+        "signing": {
+            "creatingChallenge": "Preparing wallet signature...",
+            "waitingSignature": "Waiting for wallet signature",
+            "creatingIntent": "Creating payment...",
+            "openWallet": "Open your wallet to sign. On mobile, switch to your connected wallet app and approve the signature.",
+            "cancel": "Cancel signing"
+        },
         "paymentInstructions": "Payment instructions",
         "copied": "Copied",
         "settled": "Payment settled. Wallet refreshed.",
@@ -54,7 +61,9 @@
             "wrongNetwork": "Switch your wallet to {{network}} before creating a payment.",
             "switchNetwork": "Could not switch wallet network.",
             "walletChanged": "The connected wallet changed before the signature finished. Please retry.",
-            "signatureRejected": "Signature request was rejected. You can retry when ready."
+            "signatureRejected": "Signature request was rejected. You can retry when ready.",
+            "signatureTimedOut": "Signature request timed out. Please retry and open your wallet to sign.",
+            "signatureCancelled": "Signing was cancelled. You can retry when ready."
         },
         "connection": {
             "connect": "Connect wallet",

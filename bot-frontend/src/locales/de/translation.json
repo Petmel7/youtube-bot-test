@@ -38,6 +38,13 @@
         "noPackages": "Keine Credit-Pakete verfügbar.",
         "createIntent": "Zahlung erstellen",
         "working": "Wird verarbeitet...",
+        "signing": {
+            "creatingChallenge": "Wallet-Signatur wird vorbereitet...",
+            "waitingSignature": "Warten auf Wallet-Signatur",
+            "creatingIntent": "Zahlung wird erstellt...",
+            "openWallet": "Öffne deine Wallet zum Signieren. Wechsle auf Mobilgeräten zur verbundenen Wallet-App und bestätige die Signatur.",
+            "cancel": "Signieren abbrechen"
+        },
         "paymentInstructions": "Zahlungsanweisungen",
         "copied": "Kopiert",
         "settled": "Zahlung gutgeschrieben. Wallet aktualisiert.",
@@ -54,7 +61,9 @@
             "wrongNetwork": "Wechsle deine Wallet zu {{network}}, bevor du eine Zahlung erstellst.",
             "switchNetwork": "Wallet-Netzwerk konnte nicht gewechselt werden.",
             "walletChanged": "Die verbundene Wallet hat sich vor Abschluss der Signatur geändert. Bitte erneut versuchen.",
-            "signatureRejected": "Die Signaturanfrage wurde abgelehnt. Du kannst es erneut versuchen."
+            "signatureRejected": "Die Signaturanfrage wurde abgelehnt. Du kannst es erneut versuchen.",
+            "signatureTimedOut": "Die Signaturanfrage ist abgelaufen. Bitte erneut versuchen und die Wallet zum Signieren öffnen.",
+            "signatureCancelled": "Das Signieren wurde abgebrochen. Du kannst es erneut versuchen."
         },
         "connection": {
             "connect": "Wallet verbinden",

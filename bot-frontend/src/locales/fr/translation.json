@@ -38,6 +38,13 @@
         "noPackages": "Aucun pack de crédits disponible.",
         "createIntent": "Créer un paiement",
         "working": "Traitement...",
+        "signing": {
+            "creatingChallenge": "Préparation de la signature du portefeuille...",
+            "waitingSignature": "En attente de la signature du portefeuille",
+            "creatingIntent": "Création du paiement...",
+            "openWallet": "Ouvrez votre portefeuille pour signer. Sur mobile, passez dans l'application de portefeuille connectée et approuvez la signature.",
+            "cancel": "Annuler la signature"
+        },
         "paymentInstructions": "Instructions de paiement",
         "copied": "Copié",
         "settled": "Paiement crédité. Portefeuille actualisé.",
@@ -54,7 +61,9 @@
             "wrongNetwork": "Passez votre portefeuille sur {{network}} avant de créer un paiement.",
             "switchNetwork": "Impossible de changer le réseau du portefeuille.",
             "walletChanged": "Le portefeuille connecté a changé avant la fin de la signature. Réessayez.",
-            "signatureRejected": "La demande de signature a été refusée. Vous pouvez réessayer."
+            "signatureRejected": "La demande de signature a été refusée. Vous pouvez réessayer.",
+            "signatureTimedOut": "La demande de signature a expiré. Réessayez et ouvrez votre portefeuille pour signer.",
+            "signatureCancelled": "La signature a été annulée. Vous pouvez réessayer."
         },
         "connection": {
             "connect": "Connecter un portefeuille",

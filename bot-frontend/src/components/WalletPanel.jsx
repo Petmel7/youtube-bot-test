@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppKit } from "@reown/appkit/react";
 import { useAccount, useChainId, useSignMessage, useSwitchChain } from "wagmi";
@@ -18,6 +18,13 @@ import styles from "../styles/walletPanel.module.css";
 const txHashPattern = /^0x[a-fA-F0-9]{64}$/;
 const settlementStatuses = new Set(["CONFIRMED", "CONFIRMED_OVERPAID"]);
 const pendingStatuses = new Set(["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING"]);
+const createFlowStates = {
+    idle: "idle",
+    creatingChallenge: "creatingChallenge",
+    awaitingSignature: "awaitingSignature",
+    creatingIntent: "creatingIntent"
+};
+const signatureTimeoutMs = 120000;
 const walletLinks = [
     ["MetaMask", "https://metamask.io/download/"],
     ["Rabby", "https://rabby.io/"],
@@ -60,11 +67,25 @@ const FieldRow = ({ label, value, copyable = false, onCopy }) => (
 
 const shortenAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 const normalizeAddress = (address) => String(address || "").toLowerCase();
+const isActiveCreateFlow = (state) => state !== createFlowStates.idle;
 const isUserRejectedSignature = (error) => (
     error?.code === 4001 ||
     error?.name === "UserRejectedRequestError" ||
     /rejected|denied|declined/i.test(error?.message || "")
 );
+const withTimeout = (promise, timeoutMs, createError) => new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(createError()), timeoutMs);
+    promise.then(
+        (value) => {
+            window.clearTimeout(timeoutId);
+            resolve(value);
+        },
+        (error) => {
+            window.clearTimeout(timeoutId);
+            reject(error);
+        }
+    );
+});
 
 const WalletFallbackPanel = () => {
     const { t } = useTranslation();
@@ -111,7 +132,42 @@ const AppKitWalletControls = ({
     const expectedNetworkName = config.paymentNetwork.name;
     const connectedNetworkName = chainId === expectedChainId ? expectedNetworkName : (chainId ? `Chain ${chainId}` : "-");
     const wrongNetwork = isConnected && chainId !== expectedChainId;
-    const createDisabled = actionLoading || !selectedPackage || !isConnected || wrongNetwork || status === "connecting";
+    const [createFlowState, setCreateFlowState] = useState(createFlowStates.idle);
+    const operationIdRef = useRef(0);
+    const signingAddressRef = useRef("");
+    const signingChainIdRef = useRef(null);
+    const addressRef = useRef(address);
+    const chainIdRef = useRef(chainId);
+    const createFlowActive = isActiveCreateFlow(createFlowState);
+    const awaitingSignature = createFlowState === createFlowStates.awaitingSignature;
+    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !isConnected || wrongNetwork || status === "connecting";
+
+    useEffect(() => {
+        addressRef.current = address;
+        chainIdRef.current = chainId;
+    }, [address, chainId]);
+
+    const resetCreateFlow = useCallback(({ message = "", notice = "", cancelOperation = true } = {}) => {
+        if (cancelOperation) operationIdRef.current += 1;
+        signingAddressRef.current = "";
+        signingChainIdRef.current = null;
+        setCreateFlowState(createFlowStates.idle);
+        setActionLoading(false);
+        if (message) setError(message);
+        setNotice(notice);
+    }, [setActionLoading, setError, setNotice]);
+
+    useEffect(() => {
+        if (!awaitingSignature || !signingAddressRef.current) return;
+
+        const walletChanged = !isConnected ||
+            normalizeAddress(address) !== normalizeAddress(signingAddressRef.current) ||
+            chainId !== signingChainIdRef.current;
+
+        if (walletChanged) {
+            resetCreateFlow({ message: t("wallet.errors.walletChanged") });
+        }
+    }, [address, awaitingSignature, chainId, isConnected, resetCreateFlow, t]);
 
     const openConnectModal = () => open({ view: "Connect", namespace: "eip155" });
 
@@ -127,7 +183,12 @@ const AppKitWalletControls = ({
     const handleCreateIntent = async () => {
         if (!selectedPackage?.packageId || !address) return;
 
+        const operationId = operationIdRef.current + 1;
+        operationIdRef.current = operationId;
+        signingAddressRef.current = "";
+        signingChainIdRef.current = null;
         setActionLoading(true);
+        setCreateFlowState(createFlowStates.creatingChallenge);
         setError("");
         setNotice("");
         try {
@@ -136,16 +197,36 @@ const AppKitWalletControls = ({
             }
 
             const challenge = await createPayerChallenge(address);
+            if (operationId !== operationIdRef.current) return;
             if (normalizeAddress(challenge.payerAddress) !== normalizeAddress(address)) {
                 throw new Error(t("wallet.errors.walletChanged"));
             }
 
-            const signature = await signMessageAsync({ message: challenge.message });
+            signingAddressRef.current = address;
+            signingChainIdRef.current = chainId;
+            setCreateFlowState(createFlowStates.awaitingSignature);
+            setNotice(t("wallet.signing.openWallet"));
+
+            const signature = await withTimeout(
+                signMessageAsync({ account: address, message: challenge.message }),
+                signatureTimeoutMs,
+                () => new Error(t("wallet.errors.signatureTimedOut"))
+            );
+            if (operationId !== operationIdRef.current) return;
+            if (
+                normalizeAddress(addressRef.current) !== normalizeAddress(challenge.payerAddress) ||
+                chainIdRef.current !== expectedChainId
+            ) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            setCreateFlowState(createFlowStates.creatingIntent);
             const nextIntent = await createPaymentIntent({
                 packageId: selectedPackage.packageId,
                 payerChallengeId: challenge.id,
                 signature
             });
+            if (operationId !== operationIdRef.current) return;
             if (normalizeAddress(nextIntent.payerAddress) !== normalizeAddress(address)) {
                 throw new Error(t("wallet.errors.walletChanged"));
             }
@@ -154,13 +235,30 @@ const AppKitWalletControls = ({
             setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
             setTxHash(nextIntent.txHash || "");
         } catch (createError) {
+            if (operationId !== operationIdRef.current) return;
             setError(isUserRejectedSignature(createError)
                 ? t("wallet.errors.signatureRejected")
                 : (createError.shortMessage || createError.message || t("wallet.errors.create")));
         } finally {
-            setActionLoading(false);
+            if (operationId === operationIdRef.current) {
+                resetCreateFlow({ cancelOperation: false });
+            }
         }
     };
+
+    const handleCancelSignature = () => {
+        resetCreateFlow({
+            message: t("wallet.errors.signatureCancelled"),
+            cancelOperation: true
+        });
+    };
+
+    const createButtonText = {
+        [createFlowStates.creatingChallenge]: t("wallet.signing.creatingChallenge"),
+        [createFlowStates.awaitingSignature]: t("wallet.signing.waitingSignature"),
+        [createFlowStates.creatingIntent]: t("wallet.signing.creatingIntent"),
+        [createFlowStates.idle]: t("wallet.createIntent")
+    }[createFlowState];
 
     return (
         <div className={styles.walletConnectBox}>
@@ -192,8 +290,17 @@ const AppKitWalletControls = ({
             {wrongNetwork && <p className={styles.error}>{t("wallet.connection.wrongNetwork", { network: expectedNetworkName })}</p>}
             {!isConnected && <p className={styles.muted}>{t("wallet.connection.mobileQr")}</p>}
             <button className={styles.primaryButton} type="button" onClick={handleCreateIntent} disabled={createDisabled}>
-                {actionLoading ? t("wallet.working") : t("wallet.createIntent")}
+                {createButtonText}
             </button>
+            {awaitingSignature && (
+                <div className={styles.signaturePrompt}>
+                    <p>{t("wallet.signing.waitingSignature")}</p>
+                    <p className={styles.muted}>{t("wallet.signing.openWallet")}</p>
+                    <button className={styles.secondaryButton} type="button" onClick={handleCancelSignature}>
+                        {t("wallet.signing.cancel")}
+                    </button>
+                </div>
+            )}
             {createDisabled && !actionLoading && (
                 <p className={styles.muted}>
                     {!isConnected

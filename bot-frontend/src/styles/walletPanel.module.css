@@ -60,6 +60,7 @@
 
 .packageButton,
 .primaryButton,
+.secondaryButton,
 .iconTextButton,
 .iconButton {
     border: none;
@@ -151,6 +152,7 @@
 }
 
 .primaryButton,
+.secondaryButton,
 .iconTextButton {
     display: inline-flex;
     align-items: center;
@@ -167,6 +169,12 @@
     width: 100%;
 }
 
+.secondaryButton {
+    border: 1px solid #d8d8d8;
+    background: #fff;
+    color: #101828;
+}
+
 .iconTextButton {
     flex: 0 0 auto;
 }
@@ -176,12 +184,32 @@
     background: #1e90ff;
 }
 
+.secondaryButton:hover:not(:disabled) {
+    border-color: #1e90ff;
+    color: #1e90ff;
+}
+
 .primaryButton:disabled,
+.secondaryButton:disabled,
 .iconTextButton:disabled,
 .packageButton:disabled,
 .iconButton:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.signaturePrompt {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.signaturePrompt p {
+    margin: 0;
+    text-align: left;
 }
 
 .intentBox {
@@ -302,6 +330,7 @@
 
 :global(body.dark-mode) .balanceGrid div,
 :global(body.dark-mode) .packageButton,
+:global(body.dark-mode) .secondaryButton,
 :global(body.dark-mode) .walletConnectBox {
     border-color: #3d3d3d;
     background: #272727;
@@ -321,6 +350,11 @@
 :global(body.dark-mode) .packageButtonSelected {
     border-color: #ff4d6d;
     background: #35131a;
+}
+
+:global(body.dark-mode) .signaturePrompt {
+    border-color: #3d3d3d;
+    background: #1f1f1f;
 }
 
 :global(body.dark-mode) .intentBox,
