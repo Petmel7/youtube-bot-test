@@ -212,6 +212,77 @@
     text-align: left;
 }
 
+.paymentSummary {
+    margin-bottom: 14px;
+}
+
+.paymentSummary h4 {
+    margin: 0 0 10px;
+    font-size: 16px;
+}
+
+.summaryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.summaryGrid div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.summaryGrid span {
+    display: block;
+    margin-bottom: 4px;
+    color: #666;
+    font-size: 12px;
+}
+
+.summaryGrid strong {
+    display: block;
+    overflow-wrap: anywhere;
+    font-size: 15px;
+}
+
+.paymentActions {
+    display: grid;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.collapsibleBlock {
+    margin: 14px 0;
+    padding: 10px 0;
+    border-top: 1px solid #e5e5e5;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.collapsibleBlock summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.linkButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #1e6fd9;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.linkButton:hover {
+    text-decoration: underline;
+}
+
 .intentBox {
     margin-top: 16px;
     padding-top: 16px;
@@ -355,6 +426,23 @@
 :global(body.dark-mode) .signaturePrompt {
     border-color: #3d3d3d;
     background: #1f1f1f;
+}
+
+:global(body.dark-mode) .summaryGrid div {
+    border-color: #3d3d3d;
+    background: #272727;
+}
+
+:global(body.dark-mode) .summaryGrid span {
+    color: #c8c8c8;
+}
+
+:global(body.dark-mode) .collapsibleBlock {
+    border-color: #3d3d3d;
+}
+
+:global(body.dark-mode) .linkButton {
+    color: #74b7ff;
 }
 
 :global(body.dark-mode) .intentBox,

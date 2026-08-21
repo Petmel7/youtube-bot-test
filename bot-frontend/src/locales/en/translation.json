@@ -37,7 +37,21 @@
         "available": "Available",
         "noPackages": "No credit packages are available.",
         "createIntent": "Create payment",
+        "payWithWallet": "Pay with wallet",
+        "paymentSummary": "Payment summary",
+        "advancedDetails": "Advanced details",
+        "manualTxHash": "I already paid / Enter transaction hash manually",
+        "qrPayment": "QR payment link",
+        "qrCompatibilityNote": "Wallet support for ERC-681 token payment links varies. Always confirm the token, recipient, network, and amount in your wallet.",
         "working": "Working...",
+        "paymentFlow": {
+            "waitingWallet": "Waiting for wallet",
+            "submitted": "Transaction submitted",
+            "verifying": "Verifying payment",
+            "pendingConfirmations": "Payment is pending confirmations. You can refresh verification shortly.",
+            "confirmed": "Payment confirmed",
+            "retryVerify": "Retry verification"
+        },
         "signing": {
             "creatingChallenge": "Preparing wallet signature...",
             "waitingSignature": "Waiting for wallet signature",
@@ -55,6 +69,7 @@
             "load": "Could not load wallet data.",
             "create": "Could not create payment.",
             "verify": "Could not verify payment.",
+            "payment": "Could not send wallet payment.",
             "txHash": "Enter a valid transaction hash.",
             "walletProvider": "No browser wallet found.",
             "walletAccount": "No wallet account selected.",
@@ -63,7 +78,8 @@
             "walletChanged": "The connected wallet changed before the signature finished. Please retry.",
             "signatureRejected": "Signature request was rejected. You can retry when ready.",
             "signatureTimedOut": "Signature request timed out. Please retry and open your wallet to sign.",
-            "signatureCancelled": "Signing was cancelled. You can retry when ready."
+            "signatureCancelled": "Signing was cancelled. You can retry when ready.",
+            "paymentCancelled": "Payment was cancelled. You can retry when ready."
         },
         "connection": {
             "connect": "Connect wallet",
@@ -84,6 +100,7 @@
         },
         "fields": {
             "chainId": "Chain ID",
+            "network": "Network",
             "token": "Token",
             "decimals": "decimals",
             "tokenAddress": "Token address",

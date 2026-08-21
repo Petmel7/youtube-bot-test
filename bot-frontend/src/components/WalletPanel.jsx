@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppKit } from "@reown/appkit/react";
-import { useAccount, useChainId, useSignMessage, useSwitchChain } from "wagmi";
+import { useAccount, useChainId, useSignMessage, useSwitchChain, useWriteContract } from "wagmi";
 import { FaCheckCircle, FaCopy, FaExternalLinkAlt, FaRedoAlt, FaWallet } from "react-icons/fa";
 import {
     createPayerChallenge,
@@ -24,7 +24,23 @@ const createFlowStates = {
     awaitingSignature: "awaitingSignature",
     creatingIntent: "creatingIntent"
 };
+const paymentFlowStates = {
+    idle: "idle",
+    waitingWallet: "waitingWallet",
+    submitted: "submitted",
+    verifying: "verifying"
+};
 const signatureTimeoutMs = 120000;
+const erc20TransferAbi = [{
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+        { name: "to", type: "address" },
+        { name: "value", type: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool" }]
+}];
 const walletLinks = [
     ["MetaMask", "https://metamask.io/download/"],
     ["Rabby", "https://rabby.io/"],
@@ -68,11 +84,13 @@ const FieldRow = ({ label, value, copyable = false, onCopy }) => (
 const shortenAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 const normalizeAddress = (address) => String(address || "").toLowerCase();
 const isActiveCreateFlow = (state) => state !== createFlowStates.idle;
+const isActivePaymentFlow = (state) => state !== paymentFlowStates.idle;
 const isUserRejectedSignature = (error) => (
     error?.code === 4001 ||
     error?.name === "UserRejectedRequestError" ||
     /rejected|denied|declined/i.test(error?.message || "")
 );
+const isUserRejectedTransaction = isUserRejectedSignature;
 const withTimeout = (promise, timeoutMs, createError) => new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => reject(createError()), timeoutMs);
     promise.then(
@@ -86,6 +104,51 @@ const withTimeout = (promise, timeoutMs, createError) => new Promise((resolve, r
         }
     );
 });
+
+const createPaymentRequestLink = (intent) => {
+    if (!intent?.token?.address || !intent?.recipientAddress || !intent?.expectedTokenAmountBaseUnits || !intent?.chainId) {
+        return "";
+    }
+
+    return `ethereum:${intent.token.address}@${intent.chainId}/transfer?address=${intent.recipientAddress}&uint256=${intent.expectedTokenAmountBaseUnits}`;
+};
+
+const PaymentSummary = ({ intent }) => {
+    const { t } = useTranslation();
+    const tokenAmount = formatTokenAmount(intent.expectedTokenAmountBaseUnits, intent.token?.decimals);
+
+    return (
+        <div className={styles.paymentSummary}>
+            <h4>{t("wallet.paymentSummary")}</h4>
+            <div className={styles.summaryGrid}>
+                <div>
+                    <span>{t("wallet.fields.credits")}</span>
+                    <strong>{intent.creditAmount}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.usd")}</span>
+                    <strong>{formatUsdMinor(intent.expectedUsdAmountMinor)}</strong>
+                </div>
+                <div>
+                    <span>{intent.token?.symbol || "USDC"}</span>
+                    <strong>{tokenAmount}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.network")}</span>
+                    <strong>{config.paymentNetwork.name}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.recipient")}</span>
+                    <strong>{shortenAddress(intent.recipientAddress)}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.expires")}</span>
+                    <strong>{intent.expiresAt ? new Date(intent.expiresAt).toLocaleString() : "-"}</strong>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const WalletFallbackPanel = () => {
     const { t } = useTranslation();
@@ -314,6 +377,123 @@ const AppKitWalletControls = ({
     );
 };
 
+const AppKitPaymentActions = ({
+    intent,
+    txHash,
+    setTxHash,
+    actionLoading,
+    setActionLoading,
+    setError,
+    setNotice,
+    setIntent,
+    loadWallet
+}) => {
+    const { t } = useTranslation();
+    const { address, isConnected } = useAccount();
+    const chainId = useChainId();
+    const { writeContractAsync } = useWriteContract();
+    const [paymentFlowState, setPaymentFlowState] = useState(paymentFlowStates.idle);
+    const expectedChainId = config.paymentNetwork.id;
+    const wrongNetwork = isConnected && chainId !== expectedChainId;
+    const paymentActive = isActivePaymentFlow(paymentFlowState);
+    const paymentDisabled = actionLoading || paymentActive || !intent || intent.credited || !isConnected || wrongNetwork;
+
+    const verifySubmittedHash = async (submittedTxHash) => {
+        setPaymentFlowState(paymentFlowStates.verifying);
+        const result = await verifyPaymentIntent(intent.id, submittedTxHash.toLowerCase());
+        setIntent(result.intent);
+
+        if (result.intent.credited || settlementStatuses.has(result.intent.status)) {
+            await loadWallet();
+            setNotice(t("wallet.paymentFlow.confirmed"));
+        } else if (pendingStatuses.has(result.intent.status)) {
+            setNotice(t("wallet.paymentFlow.pendingConfirmations"));
+        }
+    };
+
+    const handlePayWithWallet = async () => {
+        if (!intent || !address) return;
+
+        setActionLoading(true);
+        setPaymentFlowState(paymentFlowStates.waitingWallet);
+        setError("");
+        setNotice(t("wallet.paymentFlow.waitingWallet"));
+
+        try {
+            if (chainId !== expectedChainId) {
+                throw new Error(t("wallet.errors.wrongNetwork", { network: config.paymentNetwork.name }));
+            }
+
+            if (normalizeAddress(intent.payerAddress) !== normalizeAddress(address)) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            const submittedTxHash = await writeContractAsync({
+                address: intent.token.address,
+                abi: erc20TransferAbi,
+                functionName: "transfer",
+                args: [intent.recipientAddress, window.BigInt(intent.expectedTokenAmountBaseUnits)],
+                chainId: expectedChainId,
+                account: address
+            });
+
+            setPaymentFlowState(paymentFlowStates.submitted);
+            setTxHash(submittedTxHash);
+            setNotice(t("wallet.paymentFlow.submitted"));
+            await verifySubmittedHash(submittedTxHash);
+        } catch (paymentError) {
+            setError(isUserRejectedTransaction(paymentError)
+                ? t("wallet.errors.paymentCancelled")
+                : (paymentError.shortMessage || paymentError.message || t("wallet.errors.payment")));
+        } finally {
+            setPaymentFlowState(paymentFlowStates.idle);
+            setActionLoading(false);
+        }
+    };
+
+    const handleRetryVerify = async () => {
+        const normalizedHash = txHash.trim();
+        if (!txHashPattern.test(normalizedHash)) {
+            setError(t("wallet.errors.txHash"));
+            return;
+        }
+
+        setActionLoading(true);
+        setError("");
+        setNotice("");
+        try {
+            await verifySubmittedHash(normalizedHash);
+        } catch (verifyError) {
+            setError(verifyError.message || t("wallet.errors.verify"));
+        } finally {
+            setPaymentFlowState(paymentFlowStates.idle);
+            setActionLoading(false);
+        }
+    };
+
+    const buttonText = {
+        [paymentFlowStates.waitingWallet]: t("wallet.paymentFlow.waitingWallet"),
+        [paymentFlowStates.submitted]: t("wallet.paymentFlow.submitted"),
+        [paymentFlowStates.verifying]: t("wallet.paymentFlow.verifying"),
+        [paymentFlowStates.idle]: t("wallet.payWithWallet")
+    }[paymentFlowState];
+
+    return (
+        <div className={styles.paymentActions}>
+            <button className={styles.primaryButton} type="button" onClick={handlePayWithWallet} disabled={paymentDisabled}>
+                {buttonText}
+            </button>
+            {pendingStatuses.has(intent.status) && txHash && (
+                <button className={styles.secondaryButton} type="button" onClick={handleRetryVerify} disabled={actionLoading || paymentActive}>
+                    {t("wallet.paymentFlow.retryVerify")}
+                </button>
+            )}
+            {wrongNetwork && <p className={styles.error}>{t("wallet.connection.wrongNetwork", { network: config.paymentNetwork.name })}</p>}
+            {!isConnected && <p className={styles.muted}>{t("wallet.connection.disabledConnect")}</p>}
+        </div>
+    );
+};
+
 const WalletPanel = () => {
     const { t } = useTranslation();
     const [wallet, setWallet] = useState(null);
@@ -326,6 +506,7 @@ const WalletPanel = () => {
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
+    const [showManualTxHash, setShowManualTxHash] = useState(false);
 
     const selectedPackage = useMemo(
         () => packages.find(paymentPackage => paymentPackage.packageId === selectedPackageId) || packages[0],
@@ -421,9 +602,7 @@ const WalletPanel = () => {
         }
     };
 
-    const tokenAmount = intent
-        ? formatTokenAmount(intent.expectedTokenAmountBaseUnits, intent.token?.decimals)
-        : "";
+    const paymentRequestLink = createPaymentRequestLink(intent);
 
     return (
         <section className={styles.walletPanel}>
@@ -497,36 +676,71 @@ const WalletPanel = () => {
                                 </span>
                             </div>
 
-                            <FieldRow label={t("wallet.fields.chainId")} value={intent.chainId} />
-                            <FieldRow label={t("wallet.fields.token")} value={`${intent.token?.symbol || ""} (${intent.token?.decimals ?? "-"} ${t("wallet.fields.decimals")})`} />
-                            <FieldRow label={t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
-                            <FieldRow label={t("wallet.fields.recipient")} value={intent.recipientAddress} copyable onCopy={copyValue} />
-                            <FieldRow label={t("wallet.fields.payer")} value={intent.payerAddress || payerAddress} copyable onCopy={copyValue} />
-                            <FieldRow label={t("wallet.fields.tokenAmount")} value={`${tokenAmount} ${intent.token?.symbol || ""}`.trim()} />
-                            <FieldRow label={t("wallet.fields.baseUnits")} value={intent.expectedTokenAmountBaseUnits} copyable onCopy={copyValue} />
-                            <FieldRow label={t("wallet.fields.usd")} value={formatUsdMinor(intent.expectedUsdAmountMinor)} />
-                            <FieldRow label={t("wallet.fields.credits")} value={intent.creditAmount} />
-                            <FieldRow label={t("wallet.fields.expires")} value={intent.expiresAt ? new Date(intent.expiresAt).toLocaleString() : ""} />
+                            <PaymentSummary intent={intent} />
+
+                            {isWalletConnectConfigured && (
+                                <AppKitPaymentActions
+                                    intent={intent}
+                                    txHash={txHash}
+                                    setTxHash={setTxHash}
+                                    actionLoading={actionLoading}
+                                    setActionLoading={setActionLoading}
+                                    setError={setError}
+                                    setNotice={setNotice}
+                                    setIntent={setIntent}
+                                    loadWallet={loadWallet}
+                                />
+                            )}
+
+                            <details className={styles.collapsibleBlock}>
+                                <summary>{t("wallet.advancedDetails")}</summary>
+                                <FieldRow label={t("wallet.fields.chainId")} value={intent.chainId} />
+                                <FieldRow label={t("wallet.fields.token")} value={`${intent.token?.symbol || ""} (${intent.token?.decimals ?? "-"} ${t("wallet.fields.decimals")})`} />
+                                <FieldRow label={t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
+                                <FieldRow label={t("wallet.fields.recipient")} value={intent.recipientAddress} copyable onCopy={copyValue} />
+                                <FieldRow label={t("wallet.fields.payer")} value={intent.payerAddress || payerAddress} copyable onCopy={copyValue} />
+                                <FieldRow label={t("wallet.fields.tokenAmount")} value={`${formatTokenAmount(intent.expectedTokenAmountBaseUnits, intent.token?.decimals)} ${intent.token?.symbol || ""}`.trim()} />
+                                <FieldRow label={t("wallet.fields.baseUnits")} value={intent.expectedTokenAmountBaseUnits} copyable onCopy={copyValue} />
+                                <FieldRow label={t("wallet.fields.usd")} value={formatUsdMinor(intent.expectedUsdAmountMinor)} />
+                                <FieldRow label={t("wallet.fields.credits")} value={intent.creditAmount} />
+                                <FieldRow label={t("wallet.fields.expires")} value={intent.expiresAt ? new Date(intent.expiresAt).toLocaleString() : ""} />
+                                {paymentRequestLink && (
+                                    <FieldRow label={t("wallet.qrPayment")} value={paymentRequestLink} copyable onCopy={copyValue} />
+                                )}
+                                {paymentRequestLink && (
+                                    <p className={styles.muted}>{t("wallet.qrCompatibilityNote")}</p>
+                                )}
+                            </details>
+
                             {intent.confirmationCount !== null && (
                                 <FieldRow label={t("wallet.fields.confirmations")} value={`${intent.confirmationCount}/${intent.requiredConfirmations || "-"}`} />
                             )}
 
                             {intent.failureReason && <p className={styles.error}>{intent.failureReason}</p>}
 
-                            <form className={styles.verifyForm} onSubmit={handleVerify}>
-                                <input
-                                    className={styles.txInput}
-                                    type="text"
-                                    value={txHash}
-                                    onChange={(event) => setTxHash(event.target.value)}
-                                    placeholder={t("wallet.txHashPlaceholder")}
-                                    disabled={actionLoading || intent.credited}
-                                />
-                                <button className={styles.primaryButton} type="submit" disabled={actionLoading || intent.credited}>
-                                    {intent.credited ? <FaCheckCircle /> : null}
-                                    {intent.credited ? t("wallet.credited") : t("wallet.verify")}
-                                </button>
-                            </form>
+                            <button
+                                className={styles.linkButton}
+                                type="button"
+                                onClick={() => setShowManualTxHash(current => !current)}
+                            >
+                                {t("wallet.manualTxHash")}
+                            </button>
+                            {showManualTxHash && (
+                                <form className={styles.verifyForm} onSubmit={handleVerify}>
+                                    <input
+                                        className={styles.txInput}
+                                        type="text"
+                                        value={txHash}
+                                        onChange={(event) => setTxHash(event.target.value)}
+                                        placeholder={t("wallet.txHashPlaceholder")}
+                                        disabled={actionLoading || intent.credited}
+                                    />
+                                    <button className={styles.primaryButton} type="submit" disabled={actionLoading || intent.credited}>
+                                        {intent.credited ? <FaCheckCircle /> : null}
+                                        {intent.credited ? t("wallet.credited") : t("wallet.verify")}
+                                    </button>
+                                </form>
+                            )}
                         </div>
                     )}
                 </>

@@ -37,7 +37,21 @@
         "available": "Disponible",
         "noPackages": "Aucun pack de crédits disponible.",
         "createIntent": "Créer un paiement",
+        "payWithWallet": "Payer avec le portefeuille",
+        "paymentSummary": "Résumé du paiement",
+        "advancedDetails": "Détails avancés",
+        "manualTxHash": "J'ai déjà payé / Saisir le hash de transaction manuellement",
+        "qrPayment": "Lien de paiement QR",
+        "qrCompatibilityNote": "La prise en charge des liens ERC-681 pour les tokens varie selon les portefeuilles. Vérifiez toujours le token, le destinataire, le réseau et le montant dans votre portefeuille.",
         "working": "Traitement...",
+        "paymentFlow": {
+            "waitingWallet": "En attente du portefeuille",
+            "submitted": "Transaction envoyée",
+            "verifying": "Vérification du paiement",
+            "pendingConfirmations": "Le paiement attend des confirmations. Vous pouvez relancer la vérification bientôt.",
+            "confirmed": "Paiement confirmé",
+            "retryVerify": "Relancer la vérification"
+        },
         "signing": {
             "creatingChallenge": "Préparation de la signature du portefeuille...",
             "waitingSignature": "En attente de la signature du portefeuille",
@@ -55,6 +69,7 @@
             "load": "Impossible de charger le portefeuille.",
             "create": "Impossible de créer le paiement.",
             "verify": "Impossible de vérifier le paiement.",
+            "payment": "Impossible d'envoyer le paiement depuis le portefeuille.",
             "txHash": "Entrez un hash de transaction valide.",
             "walletProvider": "Aucun portefeuille de navigateur trouvé.",
             "walletAccount": "Aucun compte de portefeuille sélectionné.",
@@ -63,7 +78,8 @@
             "walletChanged": "Le portefeuille connecté a changé avant la fin de la signature. Réessayez.",
             "signatureRejected": "La demande de signature a été refusée. Vous pouvez réessayer.",
             "signatureTimedOut": "La demande de signature a expiré. Réessayez et ouvrez votre portefeuille pour signer.",
-            "signatureCancelled": "La signature a été annulée. Vous pouvez réessayer."
+            "signatureCancelled": "La signature a été annulée. Vous pouvez réessayer.",
+            "paymentCancelled": "Le paiement a été annulé. Vous pouvez réessayer."
         },
         "connection": {
             "connect": "Connecter un portefeuille",
@@ -84,6 +100,7 @@
         },
         "fields": {
             "chainId": "ID de chaîne",
+            "network": "Réseau",
             "token": "Token",
             "decimals": "décimales",
             "tokenAddress": "Adresse du token",

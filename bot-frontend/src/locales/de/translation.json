@@ -37,7 +37,21 @@
         "available": "Verfügbar",
         "noPackages": "Keine Credit-Pakete verfügbar.",
         "createIntent": "Zahlung erstellen",
+        "payWithWallet": "Mit Wallet bezahlen",
+        "paymentSummary": "Zahlungsübersicht",
+        "advancedDetails": "Erweiterte Details",
+        "manualTxHash": "Ich habe bereits bezahlt / Transaktionshash manuell eingeben",
+        "qrPayment": "QR-Zahlungslink",
+        "qrCompatibilityNote": "Die Unterstützung für ERC-681-Token-Zahlungslinks variiert je nach Wallet. Prüfe Token, Empfänger, Netzwerk und Betrag immer in deiner Wallet.",
         "working": "Wird verarbeitet...",
+        "paymentFlow": {
+            "waitingWallet": "Warten auf Wallet",
+            "submitted": "Transaktion gesendet",
+            "verifying": "Zahlung wird geprüft",
+            "pendingConfirmations": "Die Zahlung wartet auf Bestätigungen. Du kannst die Prüfung gleich erneut starten.",
+            "confirmed": "Zahlung bestätigt",
+            "retryVerify": "Prüfung wiederholen"
+        },
         "signing": {
             "creatingChallenge": "Wallet-Signatur wird vorbereitet...",
             "waitingSignature": "Warten auf Wallet-Signatur",
@@ -55,6 +69,7 @@
             "load": "Wallet-Daten konnten nicht geladen werden.",
             "create": "Zahlung konnte nicht erstellt werden.",
             "verify": "Zahlung konnte nicht geprüft werden.",
+            "payment": "Wallet-Zahlung konnte nicht gesendet werden.",
             "txHash": "Gib einen gültigen Transaktionshash ein.",
             "walletProvider": "Keine Browser-Wallet gefunden.",
             "walletAccount": "Kein Wallet-Konto ausgewählt.",
@@ -63,7 +78,8 @@
             "walletChanged": "Die verbundene Wallet hat sich vor Abschluss der Signatur geändert. Bitte erneut versuchen.",
             "signatureRejected": "Die Signaturanfrage wurde abgelehnt. Du kannst es erneut versuchen.",
             "signatureTimedOut": "Die Signaturanfrage ist abgelaufen. Bitte erneut versuchen und die Wallet zum Signieren öffnen.",
-            "signatureCancelled": "Das Signieren wurde abgebrochen. Du kannst es erneut versuchen."
+            "signatureCancelled": "Das Signieren wurde abgebrochen. Du kannst es erneut versuchen.",
+            "paymentCancelled": "Die Zahlung wurde abgebrochen. Du kannst es erneut versuchen."
         },
         "connection": {
             "connect": "Wallet verbinden",
@@ -84,6 +100,7 @@
         },
         "fields": {
             "chainId": "Chain-ID",
+            "network": "Netzwerk",
             "token": "Token",
             "decimals": "Dezimalstellen",
             "tokenAddress": "Token-Adresse",
