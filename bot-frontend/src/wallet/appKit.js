@@ -8,11 +8,15 @@ import config from "../config/config";
 const networks = [base, baseSepolia];
 const expectedNetwork = config.paymentNetworkName === "base-sepolia" ? baseSepolia : base;
 const queryClient = new QueryClient();
+const appKitStateKey = "__youtubeBotAppKit";
 
 let wagmiAdapter = null;
 let initializationError = null;
 
-if (config.walletConnectProjectId) {
+if (typeof window !== "undefined" && window[appKitStateKey]) {
+    wagmiAdapter = window[appKitStateKey].wagmiAdapter;
+    initializationError = window[appKitStateKey].initializationError;
+} else if (config.walletConnectProjectId) {
     try {
         wagmiAdapter = new WagmiAdapter({
             networks,
@@ -39,6 +43,13 @@ if (config.walletConnectProjectId) {
     } catch (error) {
         initializationError = error;
         wagmiAdapter = null;
+    }
+
+    if (typeof window !== "undefined") {
+        window[appKitStateKey] = {
+            wagmiAdapter,
+            initializationError
+        };
     }
 }
 

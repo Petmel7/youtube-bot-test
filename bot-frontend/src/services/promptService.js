@@ -1,4 +1,10 @@
-import { apiRequest } from "./api";
+import { ApiError, apiRequest } from "./api";
+
+const isMissingPromptError = (error) => (
+    error instanceof ApiError &&
+    error.status === 404 &&
+    error.code === "PROMPT_NOT_FOUND"
+);
 
 export const fetchAddTheme = async (channelTheme, gender) => {
     if (!channelTheme || !gender) {
@@ -49,8 +55,14 @@ export const fetchUserPrompt = async (setSavedTheme, setSavedGender) => {
             return data.prompt;
         }
     } catch (error) {
+        if (isMissingPromptError(error)) {
+            return null;
+        }
+
         console.error("❌ Error fetching channel theme:", error);
     }
+
+    return null;
 };
 
 // ✅ Отримати тематику каналу
@@ -59,6 +71,10 @@ export const fetchGetTheme = async () => {
         const data = await apiRequest("/user-prompt");
         return data.prompt || null;
     } catch (error) {
+        if (isMissingPromptError(error)) {
+            return null;
+        }
+
         console.error("❌ Error fetching channel theme:", error);
         return null;
     }
