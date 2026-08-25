@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const mongoose = require("mongoose");
 const { Wallet: EthersWallet } = require("ethers");
 
@@ -20,6 +21,8 @@ const {
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
+const solanaDevnetUsdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+const solanaTreasuryAddress = "9xQeWvG816bUx9EPfDTwBX7VgQZnE8qNvSgtV6fSTH3";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const payerAddress = "0x2222222222222222222222222222222222222222";
 const payerChallengeId = new mongoose.Types.ObjectId();
@@ -104,6 +107,27 @@ const query = (value) => ({
 });
 
 const clone = (value) => value ? { ...value } : null;
+const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const encodeBase58 = (buffer) => {
+    let digits = [0];
+    for (const byte of buffer) {
+        let carry = byte;
+        for (let index = 0; index < digits.length; index += 1) {
+            carry += digits[index] << 8;
+            digits[index] = carry % 58;
+            carry = Math.floor(carry / 58);
+        }
+        while (carry > 0) {
+            digits.push(carry % 58);
+            carry = Math.floor(carry / 58);
+        }
+    }
+    for (const byte of buffer) {
+        if (byte !== 0) break;
+        digits.push(0);
+    }
+    return digits.reverse().map(digit => base58Alphabet[digit]).join("");
+};
 
 const createFakePaymentIntentModel = () => {
     const intents = [];
@@ -297,6 +321,47 @@ test("payment config validation accepts explicit BNB Chain methods only from whi
     }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
 });
 
+test("payment config validation accepts explicit Solana devnet only with testnet opt-in", () => {
+    const solanaConfig = validPaymentConfig({
+        allowTestnetPayments: true,
+        methodsJson: JSON.stringify([{
+            id: "solana-devnet-usdc",
+            enabled: true,
+            networkId: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+            cluster: "devnet",
+            rpcUrl: "https://api.devnet.solana.com",
+            mintAddress: solanaDevnetUsdcMint,
+            tokenSymbol: "USDC",
+            tokenDecimals: 6,
+            treasuryAddress: solanaTreasuryAddress,
+            confirmations: 1
+        }]),
+        defaultMethodId: "solana-devnet-usdc"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(solanaConfig, { nodeEnv: "development" }));
+    assert.throws(() => validatePaymentConfig(solanaConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+    assert.throws(() => validatePaymentConfig({
+        ...solanaConfig,
+        allowTestnetPayments: false
+    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
+    assert.throws(() => validatePaymentConfig({
+        ...solanaConfig,
+        methodsJson: JSON.stringify([{
+            id: "solana-devnet-usdc",
+            enabled: true,
+            networkId: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+            cluster: "devnet",
+            rpcUrl: "https://api.devnet.solana.com",
+            mintAddress: "11111111111111111111111111111111",
+            tokenSymbol: "USDC",
+            tokenDecimals: 6,
+            treasuryAddress: solanaTreasuryAddress,
+            confirmations: 1
+        }])
+    }, { nodeEnv: "development" }), /PAYMENT_METHOD_MINT_ADDRESS/);
+});
+
 test("payment config validation rejects unknown, disabled, and production testnet payment methods", () => {
     assert.throws(() => validatePaymentConfig(validPaymentConfig({
         methodsJson: JSON.stringify([{
@@ -487,6 +552,51 @@ test("payment payer challenge verifies signature, expiry, and one-time use", asy
         userId,
         payerChallengeId: String(invalidChallenge._id),
         signature: invalidSignature
+    }), { code: "INVALID_PAYER_SIGNATURE" });
+});
+
+test("Solana payer challenge verifies valid signature and rejects invalid signature", async () => {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+    const publicKeyDer = publicKey.export({ format: "der", type: "spki" });
+    const payerPublicKey = encodeBase58(publicKeyDer.subarray(-32));
+    const userId = new mongoose.Types.ObjectId();
+    const now = new Date("2026-08-17T10:00:00.000Z");
+    const challengeService = createPaymentPayerChallengeService({
+        ChallengeModel: createFakeChallengeModel(),
+        now: () => now,
+        randomBytes: () => Buffer.from("1".repeat(48), "hex")
+    });
+
+    const { challenge } = await challengeService.createChallenge({
+        userId,
+        namespace: "solana",
+        payerAddress: payerPublicKey
+    });
+    const signature = crypto.sign(null, Buffer.from(challenge.message), privateKey).toString("base64");
+
+    const verified = await challengeService.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(challenge._id),
+        signature
+    });
+
+    assert.equal(verified.payerAddress, payerPublicKey);
+    assert.equal(verified.challenge.namespace, "solana");
+    await assert.rejects(() => challengeService.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(challenge._id),
+        signature
+    }), { code: "PAYER_CHALLENGE_USED" });
+
+    const { challenge: secondChallenge } = await challengeService.createChallenge({
+        userId,
+        namespace: "solana",
+        payerAddress: payerPublicKey
+    });
+    await assert.rejects(() => challengeService.verifyAndUseChallenge({
+        userId,
+        payerChallengeId: String(secondChallenge._id),
+        signature: Buffer.alloc(64).toString("base64")
     }), { code: "INVALID_PAYER_SIGNATURE" });
 });
 
@@ -700,7 +810,13 @@ test("PaymentIntent schema has required states, immutability, validation, and in
     const indexes = PaymentIntent.schema.indexes();
     assert(indexes.some(([fields, options]) => fields.userId === 1 && fields.idempotencyKey === 1 && options.unique === true));
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.payerAddress === 1 && fields.createdAt === -1));
-    assert(indexes.some(([fields, options]) => fields.chainId === 1 && fields.txHash === 1 && options.unique === true && options.partialFilterExpression?.txHash?.$type === "string"));
+    assert(indexes.some(([fields, options]) => (
+        fields.namespace === 1 &&
+        fields.networkId === 1 &&
+        fields.txHash === 1 &&
+        options.unique === true &&
+        options.partialFilterExpression?.txHash?.$type === "string"
+    )));
     assert(indexes.some(([fields]) => fields.paymentMethodId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.updatedAt === 1));

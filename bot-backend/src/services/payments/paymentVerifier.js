@@ -90,11 +90,18 @@ const isValidExpectedAmount = (value) => (
 const createPaymentVerifier = ({
     provider = null,
     config = paymentConfig,
-    providerFactory = (method) => createEvmProvider({ rpcUrl: method.rpcUrl })
+    providerFactory = (method) => createEvmProvider({ rpcUrl: method.rpcUrl }),
+    solanaVerifier = null
 } = {}) => {
     const verifyPaymentIntent = async (paymentIntent) => {
         const txHash = paymentIntent?.txHash;
         const context = { intent: paymentIntent, config, txHash };
+        const methodNamespace = paymentIntent?.paymentMethodSnapshot?.namespace || paymentIntent?.namespace || "eip155";
+
+        if (methodNamespace === "solana") {
+            const verifier = solanaVerifier || require("./solanaPaymentVerifier").createSolanaPaymentVerifier({ config });
+            return verifier.verifyPaymentIntent(paymentIntent);
+        }
 
         if (!canonicalTxHashPattern.test(txHash || "")) {
             return rejectResult(PAYMENT_VERIFICATION_CODES.INVALID_TX_HASH, context);
@@ -104,7 +111,7 @@ const createPaymentVerifier = ({
             const method = paymentIntent.paymentMethodSnapshot || null;
             const allowedMethod = method?.id ? getAllowedPaymentMethod(method.id) : null;
 
-            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id) {
+            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id || (method.namespace || "eip155") !== "eip155") {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_METHOD, context);
             }
 
@@ -259,5 +266,6 @@ const createPaymentVerifier = ({
 module.exports = {
     PAYMENT_OUTCOMES,
     PAYMENT_VERIFICATION_CODES,
+    createPaymentResult: createResult,
     createPaymentVerifier
 };

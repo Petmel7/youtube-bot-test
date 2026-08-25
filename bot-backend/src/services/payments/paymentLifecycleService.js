@@ -103,6 +103,9 @@ const createPaymentLifecycleService = ({
         const update = {
             status,
             candidateTxHash: result.txHash || intent.candidateTxHash || null,
+            transactionSignature: (intent.namespace || intent.paymentMethodSnapshot?.namespace) === "solana"
+                ? (result.txHash || intent.transactionSignature || null)
+                : intent.transactionSignature || null,
             fromAddress: result.fromAddress || null,
             firstSeenBlock: result.firstSeenBlock ?? null,
             confirmedBlock: result.confirmedBlock ?? null,

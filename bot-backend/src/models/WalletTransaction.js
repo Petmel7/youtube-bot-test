@@ -5,7 +5,7 @@ const immutableString = { type: String, required: true, immutable: true };
 const immutableNumber = { type: Number, required: true, immutable: true };
 const immutableOptionalNumber = { type: Number, default: null, immutable: true };
 const immutableOptionalObjectId = { type: mongoose.Schema.Types.ObjectId, default: null, immutable: true };
-const txHashPattern = /^0x[a-f0-9]{64}$/;
+const txIdentifierPattern = /^(0x[a-f0-9]{64}|[1-9A-HJ-NP-Za-km-z]{64,128})$/;
 const nullablePositiveInteger = {
     validator: (value) => value === null || (Number.isInteger(value) && value > 0),
     message: "{PATH} must be a positive integer"
@@ -28,8 +28,11 @@ const walletTransactionSchema = new mongoose.Schema({
     referenceId: immutableString,
     reservationKey: { type: String, default: null, index: true, immutable: true },
     paymentIntentId: { ...immutableOptionalObjectId, ref: "PaymentIntent" },
+    paymentMethodId: { type: String, default: null, immutable: true },
+    namespace: { type: String, enum: ["eip155", "solana", null], default: null, immutable: true },
+    networkId: { type: String, default: null, immutable: true },
     chainId: { type: Number, default: null, immutable: true, validate: nullablePositiveInteger },
-    txHash: { type: String, default: null, immutable: true, match: txHashPattern },
+    txHash: { type: String, default: null, immutable: true, match: txIdentifierPattern },
     idempotencyKey: { type: String, required: true, unique: true, immutable: true },
     metadata: { type: mongoose.Schema.Types.Mixed, default: undefined, immutable: true }
 }, { timestamps: { createdAt: true, updatedAt: false } });
@@ -44,8 +47,8 @@ walletTransactionSchema.index(
     { unique: true, partialFilterExpression: { type: "CREDIT", paymentIntentId: { $type: "objectId" } } }
 );
 walletTransactionSchema.index(
-    { chainId: 1, txHash: 1, type: 1 },
-    { unique: true, partialFilterExpression: { type: "CREDIT", chainId: { $type: "number" }, txHash: { $type: "string" } } }
+    { namespace: 1, networkId: 1, txHash: 1, type: 1 },
+    { unique: true, partialFilterExpression: { type: "CREDIT", namespace: { $type: "string" }, networkId: { $type: "string" }, txHash: { $type: "string" } } }
 );
 
 const WalletTransaction = mongoose.model("WalletTransaction", walletTransactionSchema, "wallettransactions");

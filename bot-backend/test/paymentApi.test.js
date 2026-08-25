@@ -324,15 +324,20 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
     assert.deepEqual(packages.body.paymentMethods, [{
         id: "base-mainnet-usdc",
         name: "Base mainnet USDC",
+        namespace: "eip155",
         network: "base-mainnet",
+        networkId: null,
         chainId: 8453,
+        cluster: null,
         caipNetworkId: "eip155:8453",
         testnet: false,
         enabled: true,
         token: {
             address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            mintAddress: null,
             symbol: "USDC",
-            decimals: 6
+            decimals: 6,
+            assetType: "erc20"
         }
     }]);
     assert.equal(packages.body.defaultPaymentMethodId, "base-mainnet-usdc");

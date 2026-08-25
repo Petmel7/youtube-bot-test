@@ -12,6 +12,7 @@ const {
     aiEstimatedInputCharsPerToken
 } = require("./config");
 const { isValidEvmAddress, normalizeEvmAddress } = require("../utils/evmAddress");
+const { isValidSolanaPublicKey } = require("../utils/solana");
 const { BASE_MAINNET_CHAIN_ID, getAllowedPaymentMethod, getAllowedPaymentMethodByLegacyNetwork } = require("./paymentNetworks");
 const { buildPaymentMethods } = require("./paymentMethods");
 const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
@@ -177,19 +178,45 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
             throw new Error("Invalid NODE_ENV configuration for testnet payments");
         }
 
-        if (!Number.isInteger(method.chainId) || method.chainId <= 0 || method.chainId !== allowed.chainId) {
-            throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
-        }
-
-        if (nodeEnv === "production" && method.chainId !== BASE_MAINNET_CHAIN_ID && method.network !== "bnb-mainnet") {
-            throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
+        if ((method.namespace || "eip155") !== (allowed.namespace || "eip155")) {
+            throw new Error("Invalid PAYMENT_METHOD_NAMESPACE configuration");
         }
 
         validateUrl(method.rpcUrl, "PAYMENT_METHOD_RPC_URL");
 
-        const configuredTokenAddress = normalizeEvmAddress(method.tokenAddress);
-        if (!isValidEvmAddress(method.tokenAddress) || configuredTokenAddress !== allowed.tokenAddress) {
-            throw new Error("Invalid PAYMENT_METHOD_TOKEN_ADDRESS configuration");
+        if ((allowed.namespace || "eip155") === "solana") {
+            if (method.networkId !== allowed.networkId || method.cluster !== allowed.cluster) {
+                throw new Error("Invalid PAYMENT_METHOD_NETWORK_ID configuration");
+            }
+
+            if (method.assetType !== allowed.assetType) {
+                throw new Error("Invalid PAYMENT_METHOD_ASSET_TYPE configuration");
+            }
+
+            if (!isValidSolanaPublicKey(method.mintAddress) || method.mintAddress !== allowed.mintAddress) {
+                throw new Error("Invalid PAYMENT_METHOD_MINT_ADDRESS configuration");
+            }
+
+            if (!isValidSolanaPublicKey(method.treasuryAddress)) {
+                throw new Error("Invalid PAYMENT_METHOD_TREASURY_ADDRESS configuration");
+            }
+        } else {
+            if (!Number.isInteger(method.chainId) || method.chainId <= 0 || method.chainId !== allowed.chainId) {
+                throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
+            }
+
+            if (nodeEnv === "production" && method.chainId !== BASE_MAINNET_CHAIN_ID && method.network !== "bnb-mainnet") {
+                throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
+            }
+
+            const configuredTokenAddress = normalizeEvmAddress(method.tokenAddress);
+            if (!isValidEvmAddress(method.tokenAddress) || configuredTokenAddress !== allowed.tokenAddress) {
+                throw new Error("Invalid PAYMENT_METHOD_TOKEN_ADDRESS configuration");
+            }
+
+            if (!isValidEvmAddress(method.treasuryAddress)) {
+                throw new Error("Invalid PAYMENT_METHOD_TREASURY_ADDRESS configuration");
+            }
         }
 
         if (method.tokenSymbol !== allowed.tokenSymbol) {
@@ -200,9 +227,6 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
             throw new Error("Invalid PAYMENT_METHOD_TOKEN_DECIMALS configuration");
         }
 
-        if (!isValidEvmAddress(method.treasuryAddress)) {
-            throw new Error("Invalid PAYMENT_METHOD_TREASURY_ADDRESS configuration");
-        }
     });
 };
 

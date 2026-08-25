@@ -15,7 +15,8 @@ import {
 import { appKitNetworks, isWalletConnectConfigured, walletConnectInitializationError } from "../wallet/appKit";
 import styles from "../styles/walletPanel.module.css";
 
-const txHashPattern = /^0x[a-fA-F0-9]{64}$/;
+const txHashPattern = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{64,128})$/;
+const solanaSignaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/;
 const settlementStatuses = new Set(["CONFIRMED", "CONFIRMED_OVERPAID"]);
 const pendingStatuses = new Set(["PENDING", "SUBMITTED", "VERIFYING", "CONFIRMING"]);
 const createFlowStates = {
@@ -83,6 +84,9 @@ const FieldRow = ({ label, value, copyable = false, onCopy }) => (
 
 const shortenAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 const normalizeAddress = (address) => String(address || "").toLowerCase();
+const methodNamespace = (method) => method?.namespace || "eip155";
+const isSolanaMethod = (method) => methodNamespace(method) === "solana";
+const intentNamespace = (intent) => intent?.namespace || intent?.paymentMethod?.namespace || "eip155";
 const isActiveCreateFlow = (state) => state !== createFlowStates.idle;
 const isActivePaymentFlow = (state) => state !== paymentFlowStates.idle;
 const isUserRejectedSignature = (error) => (
@@ -106,7 +110,7 @@ const withTimeout = (promise, timeoutMs, createError) => new Promise((resolve, r
 });
 
 const createPaymentRequestLink = (intent) => {
-    if (!intent?.token?.address || !intent?.recipientAddress || !intent?.expectedTokenAmountBaseUnits || !intent?.chainId) {
+    if (intentNamespace(intent) !== "eip155" || !intent?.token?.address || !intent?.recipientAddress || !intent?.expectedTokenAmountBaseUnits || !intent?.chainId) {
         return "";
     }
 
@@ -114,6 +118,7 @@ const createPaymentRequestLink = (intent) => {
 };
 
 const methodLabel = (method) => method ? `${method.name || method.network} · ${method.token?.symbol || ""}`.trim() : "-";
+const bytesToBase64 = (bytes) => window.btoa(String.fromCharCode(...Array.from(bytes)));
 
 const PrePaymentSummary = ({ selectedPackage, selectedPaymentMethod }) => {
     const { t } = useTranslation();
@@ -293,7 +298,7 @@ const AppKitWalletControls = ({
                 throw new Error(t("wallet.errors.wrongNetwork", { network: expectedNetworkName }));
             }
 
-            const challenge = await createPayerChallenge(address);
+            const challenge = await createPayerChallenge(address, "eip155");
             if (operationId !== operationIdRef.current) return;
             if (normalizeAddress(challenge.payerAddress) !== normalizeAddress(address)) {
                 throw new Error(t("wallet.errors.walletChanged"));
@@ -409,6 +414,151 @@ const AppKitWalletControls = ({
                                 ? t("wallet.connection.disabledMethod")
                                 : t("wallet.connection.disabledPackage")}
                 </p>
+            )}
+        </div>
+    );
+};
+
+const SolanaWalletControls = ({
+    selectedPackage,
+    selectedPaymentMethod,
+    actionLoading,
+    setActionLoading,
+    setError,
+    setNotice,
+    setIntent,
+    setPayerAddress,
+    setTxHash
+}) => {
+    const { t } = useTranslation();
+    const [createFlowState, setCreateFlowState] = useState(createFlowStates.idle);
+    const [address, setAddress] = useState("");
+    const operationIdRef = useRef(0);
+    const signingAddressRef = useRef("");
+    const createFlowActive = isActiveCreateFlow(createFlowState);
+    const awaitingSignature = createFlowState === createFlowStates.awaitingSignature;
+    const solanaProvider = typeof window !== "undefined" ? window.solana : null;
+    const isConnected = Boolean(address);
+    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !selectedPaymentMethod || !solanaProvider;
+
+    const resetCreateFlow = useCallback(({ message = "", notice = "", cancelOperation = true } = {}) => {
+        if (cancelOperation) operationIdRef.current += 1;
+        signingAddressRef.current = "";
+        setCreateFlowState(createFlowStates.idle);
+        setActionLoading(false);
+        if (message) setError(message);
+        setNotice(notice);
+    }, [setActionLoading, setError, setNotice]);
+
+    const connectSolanaWallet = async () => {
+        if (!solanaProvider?.connect) {
+            throw new Error(t("wallet.errors.solanaWalletProvider"));
+        }
+        const result = await solanaProvider.connect();
+        const nextAddress = result?.publicKey?.toString?.() || solanaProvider.publicKey?.toString?.() || "";
+        if (!nextAddress) throw new Error(t("wallet.errors.walletAccount"));
+        setAddress(nextAddress);
+        return nextAddress;
+    };
+
+    const handleCreateIntent = async () => {
+        if (!selectedPackage?.packageId || !selectedPaymentMethod) return;
+
+        const operationId = operationIdRef.current + 1;
+        operationIdRef.current = operationId;
+        setActionLoading(true);
+        setCreateFlowState(createFlowStates.creatingChallenge);
+        setError("");
+        setNotice("");
+
+        try {
+            const payer = address || await connectSolanaWallet();
+            const challenge = await createPayerChallenge(payer, "solana");
+            if (operationId !== operationIdRef.current) return;
+            if (challenge.payerAddress !== payer) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            signingAddressRef.current = payer;
+            setCreateFlowState(createFlowStates.awaitingSignature);
+            setNotice(t("wallet.signing.openSolanaWallet"));
+
+            if (!solanaProvider?.signMessage) {
+                throw new Error(t("wallet.errors.solanaWalletProvider"));
+            }
+
+            const encodedMessage = new TextEncoder().encode(challenge.message);
+            const signed = await withTimeout(
+                solanaProvider.signMessage(encodedMessage, "utf8"),
+                signatureTimeoutMs,
+                () => new Error(t("wallet.errors.signatureTimedOut"))
+            );
+            if (operationId !== operationIdRef.current) return;
+
+            const currentAddress = solanaProvider.publicKey?.toString?.() || payer;
+            if (currentAddress !== signingAddressRef.current) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            const signatureBytes = signed?.signature || signed;
+            const signature = bytesToBase64(signatureBytes);
+
+            setCreateFlowState(createFlowStates.creatingIntent);
+            const nextIntent = await createPaymentIntent({
+                packageId: selectedPackage.packageId,
+                paymentMethodId: selectedPaymentMethod.id,
+                payerChallengeId: challenge.id,
+                signature
+            });
+            if (operationId !== operationIdRef.current) return;
+
+            setIntent(nextIntent);
+            setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
+            setTxHash(nextIntent.txHash || "");
+            setNotice(t("wallet.solanaManualPayment"));
+        } catch (createError) {
+            if (operationId !== operationIdRef.current) return;
+            setError(isUserRejectedSignature(createError)
+                ? t("wallet.errors.signatureRejected")
+                : (createError.message || t("wallet.errors.create")));
+        } finally {
+            if (operationId === operationIdRef.current) {
+                resetCreateFlow({ cancelOperation: false });
+            }
+        }
+    };
+
+    const createButtonText = {
+        [createFlowStates.creatingChallenge]: t("wallet.signing.creatingChallenge"),
+        [createFlowStates.awaitingSignature]: t("wallet.signing.signingSolanaChallenge"),
+        [createFlowStates.creatingIntent]: t("wallet.signing.creatingIntent"),
+        [createFlowStates.idle]: t("wallet.createIntent")
+    }[createFlowState];
+
+    return (
+        <div className={styles.walletConnectBox}>
+            <div className={styles.walletStatusRow}>
+                <div>
+                    <strong>{isConnected ? t("wallet.connection.solanaConnected") : t("wallet.connection.solanaNotConnected")}</strong>
+                    <p>{isConnected ? `${shortenAddress(address)} · ${selectedPaymentMethod?.name || t("wallet.solanaNetwork")}` : t("wallet.connection.solanaConnectBody")}</p>
+                </div>
+                <button className={styles.iconTextButton} type="button" onClick={connectSolanaWallet} disabled={actionLoading || !solanaProvider}>
+                    <FaWallet />
+                    {isConnected ? t("wallet.connection.manage") : t("wallet.connection.connectSolana")}
+                </button>
+            </div>
+            {!solanaProvider && <p className={styles.error}>{t("wallet.errors.solanaWalletProvider")}</p>}
+            <button className={styles.primaryButton} type="button" onClick={handleCreateIntent} disabled={createDisabled}>
+                {createButtonText}
+            </button>
+            {awaitingSignature && (
+                <div className={styles.signaturePrompt}>
+                    <p>{t("wallet.signing.signingSolanaChallenge")}</p>
+                    <p className={styles.muted}>{t("wallet.signing.openSolanaWallet")}</p>
+                    <button className={styles.secondaryButton} type="button" onClick={() => resetCreateFlow({ message: t("wallet.errors.signatureCancelled") })}>
+                        {t("wallet.signing.cancel")}
+                    </button>
+                </div>
             )}
         </div>
     );
@@ -531,6 +681,65 @@ const AppKitPaymentActions = ({
     );
 };
 
+const SolanaPaymentActions = ({
+    intent,
+    txHash,
+    setTxHash,
+    actionLoading,
+    setActionLoading,
+    setError,
+    setNotice,
+    setIntent,
+    loadWallet
+}) => {
+    const { t } = useTranslation();
+    const [paymentFlowState, setPaymentFlowState] = useState(paymentFlowStates.idle);
+
+    const verifySubmittedSignature = async (submittedSignature) => {
+        setPaymentFlowState(paymentFlowStates.verifying);
+        const result = await verifyPaymentIntent(intent.id, submittedSignature);
+        setIntent(result.intent);
+
+        if (result.intent.credited || settlementStatuses.has(result.intent.status)) {
+            await loadWallet();
+            setNotice(t("wallet.paymentFlow.finalized"));
+        } else if (pendingStatuses.has(result.intent.status)) {
+            setNotice(t("wallet.paymentFlow.solanaPending"));
+        }
+    };
+
+    const handleRetryVerify = async () => {
+        const normalizedSignature = txHash.trim();
+        if (!solanaSignaturePattern.test(normalizedSignature)) {
+            setError(t("wallet.errors.solanaSignature"));
+            return;
+        }
+
+        setActionLoading(true);
+        setError("");
+        setNotice("");
+        try {
+            await verifySubmittedSignature(normalizedSignature);
+        } catch (verifyError) {
+            setError(verifyError.message || t("wallet.errors.verify"));
+        } finally {
+            setPaymentFlowState(paymentFlowStates.idle);
+            setActionLoading(false);
+        }
+    };
+
+    return (
+        <div className={styles.paymentActions}>
+            <p className={styles.muted}>{t("wallet.solanaManualPayment")}</p>
+            {pendingStatuses.has(intent.status) && txHash && (
+                <button className={styles.secondaryButton} type="button" onClick={handleRetryVerify} disabled={actionLoading || isActivePaymentFlow(paymentFlowState)}>
+                    {paymentFlowState === paymentFlowStates.verifying ? t("wallet.paymentFlow.verifying") : t("wallet.paymentFlow.retryVerify")}
+                </button>
+            )}
+        </div>
+    );
+};
+
 const WalletPanel = () => {
     const { t } = useTranslation();
     const [wallet, setWallet] = useState(null);
@@ -646,7 +855,10 @@ const WalletPanel = () => {
         setError("");
         setNotice("");
         try {
-            const result = await verifyPaymentIntent(intent.id, normalizedHash.toLowerCase());
+            const result = await verifyPaymentIntent(
+                intent.id,
+                intentNamespace(intent) === "solana" ? normalizedHash : normalizedHash.toLowerCase()
+            );
             setIntent(result.intent);
 
             if (result.intent.credited || settlementStatuses.has(result.intent.status)) {
@@ -741,7 +953,19 @@ const WalletPanel = () => {
                         />
                     )}
 
-                    {isWalletConnectConfigured ? (
+                    {isSolanaMethod(selectedPaymentMethod) ? (
+                        <SolanaWalletControls
+                            selectedPackage={selectedPackage}
+                            selectedPaymentMethod={selectedPaymentMethod}
+                            actionLoading={actionLoading}
+                            setActionLoading={setActionLoading}
+                            setError={setError}
+                            setNotice={setNotice}
+                            setIntent={setIntent}
+                            setPayerAddress={setPayerAddress}
+                            setTxHash={setTxHash}
+                        />
+                    ) : isWalletConnectConfigured ? (
                         <AppKitWalletControls
                             selectedPackage={selectedPackage}
                             selectedPaymentMethod={selectedPaymentMethod}
@@ -768,7 +992,19 @@ const WalletPanel = () => {
 
                             <PaymentSummary intent={intent} />
 
-                            {isWalletConnectConfigured && (
+                            {intentNamespace(intent) === "solana" ? (
+                                <SolanaPaymentActions
+                                    intent={intent}
+                                    txHash={txHash}
+                                    setTxHash={setTxHash}
+                                    actionLoading={actionLoading}
+                                    setActionLoading={setActionLoading}
+                                    setError={setError}
+                                    setNotice={setNotice}
+                                    setIntent={setIntent}
+                                    loadWallet={loadWallet}
+                                />
+                            ) : isWalletConnectConfigured && (
                                 <AppKitPaymentActions
                                     intent={intent}
                                     txHash={txHash}
@@ -785,10 +1021,10 @@ const WalletPanel = () => {
                             <details className={styles.collapsibleBlock}>
                                 <summary>{t("wallet.advancedDetails")}</summary>
                                 <FieldRow label={t("wallet.fields.paymentIntentId")} value={intent.id} copyable onCopy={copyValue} />
-                                <FieldRow label={t("wallet.fields.chainId")} value={intent.chainId} />
-                                <FieldRow label={t("wallet.fields.caipNetworkId")} value={intent.paymentMethod?.caipNetworkId || `eip155:${intent.chainId}`} copyable onCopy={copyValue} />
+                                <FieldRow label={intentNamespace(intent) === "solana" ? t("wallet.fields.solanaNetwork") : t("wallet.fields.chainId")} value={intentNamespace(intent) === "solana" ? (intent.networkId || intent.paymentMethod?.networkId) : intent.chainId} />
+                                <FieldRow label={t("wallet.fields.caipNetworkId")} value={intent.paymentMethod?.caipNetworkId || (intentNamespace(intent) === "solana" ? `solana:${intent.networkId}` : `eip155:${intent.chainId}`)} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.token")} value={`${intent.token?.symbol || ""} (${intent.token?.decimals ?? "-"} ${t("wallet.fields.decimals")})`} />
-                                <FieldRow label={t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
+                                <FieldRow label={intentNamespace(intent) === "solana" ? t("wallet.fields.mintAddress") : t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.recipient")} value={intent.recipientAddress} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.payer")} value={intent.payerAddress || payerAddress} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.tokenAmount")} value={`${formatTokenAmount(intent.expectedTokenAmountBaseUnits, intent.token?.decimals)} ${intent.token?.symbol || ""}`.trim()} />
@@ -799,7 +1035,7 @@ const WalletPanel = () => {
                                 {paymentRequestLink && (
                                     <FieldRow label={t("wallet.qrPayment")} value={paymentRequestLink} copyable onCopy={copyValue} />
                                 )}
-                                {txHash && <FieldRow label={t("wallet.fields.txHash")} value={txHash} copyable onCopy={copyValue} />}
+                                {txHash && <FieldRow label={intentNamespace(intent) === "solana" ? t("wallet.fields.transactionSignature") : t("wallet.fields.txHash")} value={txHash} copyable onCopy={copyValue} />}
                                 {paymentRequestLink && (
                                     <p className={styles.muted}>{t("wallet.qrCompatibilityNote")}</p>
                                 )}
@@ -825,7 +1061,7 @@ const WalletPanel = () => {
                                         type="text"
                                         value={txHash}
                                         onChange={(event) => setTxHash(event.target.value)}
-                                        placeholder={t("wallet.txHashPlaceholder")}
+                                        placeholder={intentNamespace(intent) === "solana" ? t("wallet.solanaSignaturePlaceholder") : t("wallet.txHashPlaceholder")}
                                         disabled={actionLoading || intent.credited}
                                     />
                                     <button className={styles.primaryButton} type="submit" disabled={actionLoading || intent.credited}>

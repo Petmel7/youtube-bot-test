@@ -11,6 +11,10 @@ const canonicalDecimalStringPattern = /^(0|[1-9][0-9]*)$/;
 const addSession = (query, session) => session ? query.session(session) : query;
 const idsEqual = (left, right) => String(left || "") === String(right || "");
 const paymentCreditKey = (paymentIntentId) => `payment:${paymentIntentId}:credit`;
+const intentNamespace = (intent) => intent.namespace || intent.paymentMethodSnapshot?.namespace || "eip155";
+const intentNetworkId = (intent) => intent.networkId || intent.paymentMethodSnapshot?.networkId || (intent.chainId ? String(intent.chainId) : null);
+const creditNamespace = (credit) => credit?.namespace || "eip155";
+const creditNetworkId = (credit) => credit?.networkId || (credit?.chainId ? String(credit.chainId) : null);
 
 const isDuplicateKey = (error) => error?.code === 11000;
 const hasErrorLabel = (error, label) => typeof error?.hasErrorLabel === "function" && error.hasErrorLabel(label);
@@ -38,8 +42,8 @@ const assertSettlementEligible = (intent) => {
         throw conflict("PAYMENT_NOT_ELIGIBLE", "Payment intent is not eligible for settlement");
     }
 
-    if (typeof intent.txHash !== "string" || !/^0x[a-f0-9]{64}$/.test(intent.txHash)) {
-        throw conflict("PAYMENT_NOT_ELIGIBLE", "Payment intent is missing verified transaction hash");
+    if (typeof intent.txHash !== "string" || !/^(0x[a-f0-9]{64}|[1-9A-HJ-NP-Za-km-z]{64,128})$/.test(intent.txHash)) {
+        throw conflict("PAYMENT_NOT_ELIGIBLE", "Payment intent is missing verified transaction identifier");
     }
 
     assertNonNegativeInteger(intent.confirmedBlock, "PAYMENT_NOT_ELIGIBLE", "Payment intent is missing confirmed block");
@@ -90,7 +94,8 @@ const assertCreditMatchesIntent = (credit, intent) => {
         !credit ||
         credit.type !== "CREDIT" ||
         !idsEqual(credit.paymentIntentId, intent._id) ||
-        credit.chainId !== intent.chainId ||
+        creditNamespace(credit) !== intentNamespace(intent) ||
+        creditNetworkId(credit) !== intentNetworkId(intent) ||
         credit.txHash !== intent.txHash ||
         credit.amount !== intent.creditAmount
     ) {
@@ -119,8 +124,10 @@ const toSettlementDto = ({ intent, wallet, transaction, created }) => ({
         type: transaction.type,
         amount: transaction.amount,
         paymentIntentId: String(transaction.paymentIntentId),
-        chainId: transaction.chainId,
-        txHash: transaction.txHash
+            namespace: transaction.namespace,
+            networkId: transaction.networkId,
+            chainId: transaction.chainId,
+            txHash: transaction.txHash
     }
 });
 
@@ -141,9 +148,11 @@ const createPaymentSettlementService = ({
         addSession(TransactionModel.findOne({ idempotencyKey }), session)
     );
 
-    const findPaymentCreditByTx = async ({ chainId, txHash }, { session } = {}) => (
-        addSession(TransactionModel.findOne({ chainId, txHash, type: "CREDIT" }), session)
-    );
+    const findPaymentCreditByTx = async ({ namespace, networkId, chainId, txHash }, { session } = {}) => {
+        const credit = await addSession(TransactionModel.findOne({ namespace, networkId, txHash, type: "CREDIT" }), session);
+        if (credit || namespace !== "eip155") return credit;
+        return addSession(TransactionModel.findOne({ chainId, txHash, type: "CREDIT" }), session);
+    };
 
     const findPaymentCreditByPaymentIntent = async (paymentIntentId, { session } = {}) => (
         addSession(TransactionModel.findOne({ paymentIntentId, type: "CREDIT" }), session)
@@ -198,7 +207,7 @@ const createPaymentSettlementService = ({
                 assertSettlementEligible(intent);
                 const overpaidAmountBaseUnits = calculateOverpaidAmountBaseUnits(intent);
 
-                const txDuplicate = await findPaymentCreditByTx({ chainId: intent.chainId, txHash: intent.txHash }, { session });
+                const txDuplicate = await findPaymentCreditByTx({ namespace: intentNamespace(intent), networkId: intentNetworkId(intent), chainId: intent.chainId, txHash: intent.txHash }, { session });
                 if (txDuplicate && !idsEqual(txDuplicate.paymentIntentId, intent._id)) {
                     throw conflict("PAYMENT_DUPLICATE_TX", "Blockchain transaction has already credited another payment intent");
                 }
@@ -235,6 +244,9 @@ const createPaymentSettlementService = ({
                     pricingVersion: intent.pricingVersion,
                     tokenSymbol: intent.tokenSymbol,
                     tokenAddress: intent.tokenAddress,
+                    mintAddress: intent.mintAddress,
+                    namespace: intentNamespace(intent),
+                    networkId: intentNetworkId(intent),
                     expectedTokenAmountBaseUnits: intent.expectedTokenAmountBaseUnits,
                     verifiedTokenAmountBaseUnits: intent.verifiedTokenAmountBaseUnits,
                     overpaidAmountBaseUnits,
@@ -272,6 +284,9 @@ const createPaymentSettlementService = ({
                         referenceType: "paymentintent",
                         referenceId: String(intent._id),
                         paymentIntentId: intent._id,
+                        paymentMethodId: intent.paymentMethodId,
+                        namespace: intentNamespace(intent),
+                        networkId: intentNetworkId(intent),
                         chainId: intent.chainId,
                         txHash: intent.txHash,
                         idempotencyKey,
@@ -289,8 +304,11 @@ const createPaymentSettlementService = ({
                             assertCreditMatchesIntent(duplicateByIntent, intent);
                         }
 
-                        const duplicateByTx = await findPaymentCreditByTx({ chainId: intent.chainId, txHash: intent.txHash }, { session });
+                        const duplicateByTx = await findPaymentCreditByTx({ namespace: intentNamespace(intent), networkId: intentNetworkId(intent), chainId: intent.chainId, txHash: intent.txHash }, { session });
                         if (duplicateByTx) {
+                            if (!idsEqual(duplicateByTx.paymentIntentId, intent._id)) {
+                                throw conflict("PAYMENT_DUPLICATE_TX", "Blockchain transaction has already credited another payment intent");
+                            }
                             assertCreditMatchesIntent(duplicateByTx, intent);
                         }
 

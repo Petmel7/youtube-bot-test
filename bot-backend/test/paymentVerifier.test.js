@@ -8,6 +8,7 @@ const {
     PAYMENT_VERIFICATION_CODES,
     createPaymentVerifier
 } = require("../src/services/payments/paymentVerifier");
+const { createSolanaPaymentVerifier } = require("../src/services/payments/solanaPaymentVerifier");
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
@@ -15,7 +16,28 @@ const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const senderAddress = "0x2222222222222222222222222222222222222222";
 const otherAddress = "0x3333333333333333333333333333333333333333";
 const otherTokenAddress = "0x4444444444444444444444444444444444444444";
+const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const encodeBase58 = (buffer) => {
+    let digits = [0];
+    for (const byte of buffer) {
+        let carry = byte;
+        for (let index = 0; index < digits.length; index += 1) {
+            carry += digits[index] << 8;
+            digits[index] = carry % 58;
+            carry = Math.floor(carry / 58);
+        }
+        while (carry > 0) {
+            digits.push(carry % 58);
+            carry = Math.floor(carry / 58);
+        }
+    }
+    return digits.reverse().map(digit => base58Alphabet[digit]).join("");
+};
 const txHash = `0x${"a".repeat(64)}`;
+const solanaSignature = encodeBase58(Buffer.alloc(64, 7));
+const solanaPayerAddress = "9xQeWvG816bUx9EPfDTwBX7VgQZnE8qNvSgtV6fSTH3";
+const solanaTreasuryAddress = "8qbHbw2DZ7YFgfTwD5WfoG5f8XjQwP36N3WBsAtJLWqe";
+const solanaDevnetUsdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const transferInterface = new Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
 ]);
@@ -76,6 +98,62 @@ const makeIntent = (overrides = {}) => ({
     expectedTokenAmountBaseUnits: "5000000",
     txHash,
     ...overrides
+});
+
+const solanaMethodSnapshot = (overrides = {}) => ({
+    id: "solana-devnet-usdc",
+    name: "Solana devnet USDC",
+    namespace: "solana",
+    network: "solana-devnet",
+    networkId: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    cluster: "devnet",
+    rpcUrl: "https://api.devnet.solana.com",
+    assetType: "spl-token",
+    mintAddress: solanaDevnetUsdcMint,
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    treasuryAddress: solanaTreasuryAddress,
+    confirmations: 1,
+    enabled: true,
+    production: false,
+    ...overrides
+});
+
+const makeSolanaIntent = (overrides = {}) => ({
+    paymentMethodId: "solana-devnet-usdc",
+    namespace: "solana",
+    networkId: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    paymentMethodSnapshot: solanaMethodSnapshot(),
+    chainId: null,
+    tokenAddress: null,
+    mintAddress: solanaDevnetUsdcMint,
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    recipientAddress: solanaTreasuryAddress,
+    payerAddress: solanaPayerAddress,
+    expectedTokenAmountBaseUnits: "5000000",
+    txHash: solanaSignature,
+    ...overrides
+});
+
+const makeSolanaProvider = ({
+    genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    signatureStatus = { slot: 123, confirmations: null, confirmationStatus: "finalized", err: null },
+    transaction = { slot: 123, meta: { err: null } },
+    transfer = { from: solanaPayerAddress, to: solanaTreasuryAddress, value: 5000000n }
+} = {}) => ({
+    async getGenesisHash() {
+        return genesisHash;
+    },
+    async getSignatureStatus() {
+        return signatureStatus;
+    },
+    async getParsedTransaction() {
+        return transaction;
+    },
+    findTokenTransfer() {
+        return transfer;
+    }
 });
 
 const makeReceipt = (overrides = {}) => ({
@@ -510,4 +588,62 @@ test("PaymentVerifier does not invoke application persistence or settlement code
     assert.equal(provider.calls.getTransaction, 1);
     assert.equal(provider.calls.getTransactionReceipt, 1);
     assert.equal(provider.calls.parseTransferLogs, 1);
+});
+
+test("Solana verifier accepts finalized SPL token transfer from bound payer", async () => {
+    const result = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider()
+    }).verifyPaymentIntent(makeSolanaIntent());
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.code, PAYMENT_VERIFICATION_CODES.VERIFIED);
+    assert.equal(result.txHash, solanaSignature);
+    assert.equal(result.fromAddress, solanaPayerAddress);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "5000000");
+    assert.equal(result.transactionStatus, "SUCCESS");
+});
+
+test("Solana verifier rejects wrong mint, destination, and underpayment safely", async () => {
+    assert.equal((await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider()
+    }).verifyPaymentIntent(makeSolanaIntent({ mintAddress: "11111111111111111111111111111111" }))).code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+
+    assert.equal((await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({ transfer: null })
+    }).verifyPaymentIntent(makeSolanaIntent())).code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
+
+    const underpaid = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({ transfer: { from: solanaPayerAddress, to: solanaTreasuryAddress, value: 4999999n } })
+    }).verifyPaymentIntent(makeSolanaIntent());
+    assert.equal(underpaid.outcome, PAYMENT_OUTCOMES.UNDERPAID);
+});
+
+test("Solana verifier treats pending transaction as retryable and rejects wrong payer", async () => {
+    const pending = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({ signatureStatus: null })
+    }).verifyPaymentIntent(makeSolanaIntent());
+    assert.equal(pending.outcome, PAYMENT_OUTCOMES.PENDING);
+    assert.equal(pending.retryable, true);
+
+    const wrongPayer = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({ transfer: { from: "8qbHbw2DZ7YFgfTwD5WfoG5f8XjQwP36N3WBsAtJLWqe", to: solanaTreasuryAddress, value: 5000000n } })
+    }).verifyPaymentIntent(makeSolanaIntent());
+    assert.equal(wrongPayer.code, PAYMENT_VERIFICATION_CODES.WRONG_PAYER);
+});
+
+test("top-level PaymentVerifier dispatches Solana intents away from EVM verifier", async () => {
+    const result = await createPaymentVerifier({
+        solanaVerifier: {
+            async verifyPaymentIntent(intent) {
+                return {
+                    outcome: PAYMENT_OUTCOMES.VERIFIED,
+                    code: PAYMENT_VERIFICATION_CODES.VERIFIED,
+                    txHash: intent.txHash
+                };
+            }
+        }
+    }).verifyPaymentIntent(makeSolanaIntent());
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.txHash, solanaSignature);
 });

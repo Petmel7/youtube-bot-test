@@ -7,14 +7,15 @@ const paymentPayerChallengeService = require("../services/payments/paymentPayerC
 const { toPaymentIntentDto, toPaymentMethodDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toPaymentSettlementDto, toWalletDto } = require("../utils/dto");
 const {
     assertObjectBody,
-    validateEvmAddress,
     validateIdempotencyKey,
     validatePaymentIntentId,
     validatePaymentMethodId,
+    validatePaymentNamespace,
     validatePaymentPackageId,
     validatePaymentPayerChallengeId,
     validatePaymentSignature,
-    validatePaymentTxHash
+    validatePaymentTxHash,
+    validatePayerAddress
 } = require("../utils/validators");
 
 const getUserId = (req) => req.user?._id || req.user?.id;
@@ -73,9 +74,11 @@ const createPaymentController = (
     const createPayerChallengeController = async (req, res) => {
         assertObjectBody(req.body);
 
-        const payerAddress = validateEvmAddress(req.body.payerAddress);
+        const namespace = validatePaymentNamespace(req.body.namespace);
+        const payerAddress = validatePayerAddress(req.body.payerAddress, namespace);
         const { challenge } = await payerChallengeService.createChallenge({
             userId: getUserId(req),
+            namespace,
             payerAddress
         });
 

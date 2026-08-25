@@ -32,6 +32,10 @@ const createPaymentIntentService = ({
             signature
         }, { session });
 
+        if ((payerProof.challenge.namespace || "eip155") !== (paymentMethod.namespace || "eip155")) {
+            throw unprocessable("PAYER_CHALLENGE_WRONG_NAMESPACE", "Payer challenge does not match payment method");
+        }
+
         const createdAt = now();
         const expiresAt = new Date(createdAt.getTime() + (config.intentTtlMinutes * 60 * 1000));
         const doc = {
@@ -39,9 +43,12 @@ const createPaymentIntentService = ({
             idempotencyKey,
             packageId: packageSnapshot.packageId,
             paymentMethodId: paymentMethod.id,
+            namespace: paymentMethod.namespace || "eip155",
             paymentMethodSnapshot: paymentMethod,
+            networkId: paymentMethod.networkId || String(paymentMethod.chainId),
             chainId: paymentMethod.chainId,
             tokenAddress: paymentMethod.tokenAddress,
+            mintAddress: paymentMethod.mintAddress,
             tokenSymbol: paymentMethod.tokenSymbol,
             tokenDecimals: paymentMethod.tokenDecimals,
             recipientAddress: paymentMethod.treasuryAddress,

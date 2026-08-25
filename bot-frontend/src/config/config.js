@@ -10,6 +10,16 @@ const paymentNetworks = {
     "bnb-mainnet": {
         id: 56,
         name: "BNB Chain"
+    },
+    "solana-mainnet": {
+        id: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        name: "Solana mainnet",
+        namespace: "solana"
+    },
+    "solana-devnet": {
+        id: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        name: "Solana Devnet",
+        namespace: "solana"
     }
 };
 

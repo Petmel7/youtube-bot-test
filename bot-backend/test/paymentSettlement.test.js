@@ -284,6 +284,9 @@ test("PaymentIntent and WalletTransaction schemas expose payment settlement fiel
     assert(PaymentIntent.schema.path("creditedTransactionId"));
     assert(PaymentIntent.schema.path("overpaidAmountBaseUnits"));
     assert(WalletTransaction.schema.path("paymentIntentId"));
+    assert(WalletTransaction.schema.path("paymentMethodId"));
+    assert(WalletTransaction.schema.path("namespace"));
+    assert(WalletTransaction.schema.path("networkId"));
     assert(WalletTransaction.schema.path("chainId"));
     assert(WalletTransaction.schema.path("txHash"));
 
@@ -295,7 +298,8 @@ test("PaymentIntent and WalletTransaction schemas expose payment settlement fiel
         options.partialFilterExpression?.type === "CREDIT"
     )));
     assert(indexes.some(([fields, options]) => (
-        fields.chainId === 1 &&
+        fields.namespace === 1 &&
+        fields.networkId === 1 &&
         fields.txHash === 1 &&
         fields.type === 1 &&
         options.unique === true &&

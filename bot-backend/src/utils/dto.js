@@ -52,24 +52,36 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
         status: intent.status,
         packageId: intent.packageId,
         paymentMethodId: intent.paymentMethodId,
+        namespace: intent.namespace || intent.paymentMethodSnapshot?.namespace || "eip155",
         paymentMethod: intent.paymentMethodSnapshot ? {
             id: intent.paymentMethodSnapshot.id,
             name: intent.paymentMethodSnapshot.name,
+            namespace: intent.paymentMethodSnapshot.namespace || "eip155",
             network: intent.paymentMethodSnapshot.network,
+            networkId: intent.paymentMethodSnapshot.networkId,
+            caipNetworkId: intent.paymentMethodSnapshot.namespace === "solana"
+                ? `solana:${intent.paymentMethodSnapshot.networkId}`
+                : `eip155:${intent.paymentMethodSnapshot.chainId}`,
+            cluster: intent.paymentMethodSnapshot.cluster || null,
             chainId: intent.paymentMethodSnapshot.chainId,
             token: {
-                address: intent.paymentMethodSnapshot.tokenAddress,
+                address: intent.paymentMethodSnapshot.tokenAddress || intent.paymentMethodSnapshot.mintAddress,
+                mintAddress: intent.paymentMethodSnapshot.mintAddress || null,
                 symbol: intent.paymentMethodSnapshot.tokenSymbol,
-                decimals: intent.paymentMethodSnapshot.tokenDecimals
+                decimals: intent.paymentMethodSnapshot.tokenDecimals,
+                assetType: intent.paymentMethodSnapshot.assetType || "erc20"
             },
             recipientAddress: intent.paymentMethodSnapshot.treasuryAddress,
             confirmations: intent.paymentMethodSnapshot.confirmations
         } : null,
+        networkId: intent.networkId || null,
         chainId: intent.chainId,
         token: {
-            address: intent.tokenAddress,
+            address: intent.tokenAddress || intent.mintAddress,
+            mintAddress: intent.mintAddress || null,
             symbol: intent.tokenSymbol,
-            decimals: intent.tokenDecimals
+            decimals: intent.tokenDecimals,
+            assetType: intent.paymentMethodSnapshot?.assetType || "erc20"
         },
         recipientAddress: intent.recipientAddress,
         expectedTokenAmountBaseUnits: intent.expectedTokenAmountBaseUnits,
@@ -142,6 +154,8 @@ const toPaymentSettlementDto = (settlement) => {
             type: settlement.transaction.type,
             amount: settlement.transaction.amount,
             paymentIntentId: settlement.transaction.paymentIntentId,
+            namespace: settlement.transaction.namespace,
+            networkId: settlement.transaction.networkId,
             chainId: settlement.transaction.chainId,
             txHash: settlement.transaction.txHash
         } : null
@@ -166,15 +180,22 @@ const toPaymentMethodDto = (paymentMethod) => {
     return {
         id: paymentMethod.id,
         name: paymentMethod.name,
+        namespace: paymentMethod.namespace || "eip155",
         network: paymentMethod.network,
+        networkId: paymentMethod.networkId || null,
         chainId: paymentMethod.chainId,
-        caipNetworkId: `eip155:${paymentMethod.chainId}`,
+        cluster: paymentMethod.cluster || null,
+        caipNetworkId: paymentMethod.namespace === "solana"
+            ? `solana:${paymentMethod.networkId}`
+            : `eip155:${paymentMethod.chainId}`,
         testnet: paymentMethod.production === false,
         enabled: paymentMethod.enabled !== false,
         token: {
-            address: paymentMethod.tokenAddress,
+            address: paymentMethod.tokenAddress || paymentMethod.mintAddress,
+            mintAddress: paymentMethod.mintAddress || null,
             symbol: paymentMethod.tokenSymbol,
-            decimals: paymentMethod.tokenDecimals
+            decimals: paymentMethod.tokenDecimals,
+            assetType: paymentMethod.assetType || "erc20"
         }
     };
 };

@@ -24,6 +24,9 @@ const paymentIntentStatuses = [
 const canonicalDecimalStringPattern = /^(0|[1-9][0-9]*)$/;
 const evmAddressPattern = /^0x[a-f0-9]{40}$/;
 const txHashPattern = /^0x[a-f0-9]{64}$/;
+const solanaAddressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const solanaSignaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/;
+const txIdentifierPattern = /^(0x[a-f0-9]{64}|[1-9A-HJ-NP-Za-km-z]{64,128})$/;
 const paymentMethodIdPattern = /^[A-Za-z0-9_-]{1,80}$/;
 const positiveInteger = {
     validator: (value) => Number.isInteger(value) && value > 0,
@@ -109,29 +112,37 @@ const paymentIntentSchema = new mongoose.Schema({
     idempotencyKey: immutableString,
     packageId: immutableString,
     paymentMethodId: { ...immutableString, match: paymentMethodIdPattern },
+    namespace: { type: String, enum: ["eip155", "solana"], default: "eip155", required: true, immutable: true },
     paymentMethodSnapshot: {
         id: { ...immutableString, match: paymentMethodIdPattern },
         name: immutableString,
+        namespace: { type: String, enum: ["eip155", "solana"], default: "eip155", required: true, immutable: true },
         network: immutableString,
-        chainId: { ...immutableNumber, validate: positiveInteger },
+        networkId: { type: String, default: null, immutable: true },
+        cluster: nullableString,
+        chainId: { type: Number, default: null, immutable: true },
         rpcUrl: immutableString,
-        tokenAddress: { ...immutableString, match: evmAddressPattern },
+        assetType: { type: String, default: "erc20", immutable: true },
+        tokenAddress: { type: String, default: null, immutable: true },
+        mintAddress: { type: String, default: null, immutable: true },
         tokenSymbol: immutableString,
         tokenDecimals: { ...immutableNumber, min: 0 },
-        treasuryAddress: { ...immutableString, match: evmAddressPattern },
+        treasuryAddress: immutableString,
         confirmations: { ...immutableNumber, validate: positiveInteger }
     },
 
-    chainId: { ...immutableNumber, validate: positiveInteger },
-    tokenAddress: { ...immutableString, match: evmAddressPattern },
+    networkId: { type: String, default: null, immutable: true },
+    chainId: { type: Number, default: null, immutable: true, validate: nonNegativeInteger },
+    tokenAddress: { type: String, default: null, immutable: true },
+    mintAddress: { type: String, default: null, immutable: true },
     tokenSymbol: immutableString,
     tokenDecimals: { ...immutableNumber, min: 0 },
-    recipientAddress: { ...immutableString, match: evmAddressPattern },
+    recipientAddress: immutableString,
     expectedTokenAmountBaseUnits: { ...immutableString, validate: canonicalDecimalString },
     expectedUsdAmountMinor: { ...immutableNumber, validate: positiveSafeInteger },
     creditAmount: { ...immutableNumber, validate: positiveSafeInteger },
     pricingVersion: immutableString,
-    payerAddress: { ...immutableString, match: evmAddressPattern },
+    payerAddress: immutableString,
     payerChallengeId: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentPayerChallenge", required: true, immutable: true },
 
     status: {
@@ -140,9 +151,10 @@ const paymentIntentSchema = new mongoose.Schema({
         default: "PENDING",
         required: true
     },
-    candidateTxHash: { ...nullableString, match: txHashPattern },
-    txHash: { ...nullableString, match: txHashPattern },
-    fromAddress: { ...nullableString, match: evmAddressPattern },
+    candidateTxHash: { ...nullableString, match: txIdentifierPattern },
+    txHash: { ...nullableString, match: txIdentifierPattern },
+    transactionSignature: { ...nullableString, match: solanaSignaturePattern },
+    fromAddress: nullableString,
     firstSeenBlock: { ...nullableNumber, validate: nonNegativeInteger },
     confirmedBlock: { ...nullableNumber, validate: nonNegativeInteger },
     confirmationCount: { ...nullableNumber, validate: nonNegativeInteger },
@@ -164,7 +176,7 @@ paymentIntentSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true });
 paymentIntentSchema.index({ paymentMethodId: 1, createdAt: -1 });
 paymentIntentSchema.index({ userId: 1, payerAddress: 1, createdAt: -1 });
 paymentIntentSchema.index(
-    { chainId: 1, txHash: 1 },
+    { namespace: 1, networkId: 1, txHash: 1 },
     { unique: true, partialFilterExpression: { txHash: { $type: "string" } } }
 );
 paymentIntentSchema.index({ userId: 1, createdAt: -1 });

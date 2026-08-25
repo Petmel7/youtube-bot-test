@@ -8,6 +8,9 @@ const PAYMENT_PACKAGE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const PAYMENT_METHOD_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const EVM_TX_HASH_RE = /^0x[a-f0-9]{64}$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const SOLANA_TX_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/;
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const SOLANA_SIGNATURE_RE = /^[A-Za-z0-9+/]{80,100}={0,2}$/;
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -90,9 +93,18 @@ const validatePaymentIntentId = (id) => {
 };
 
 const validatePaymentTxHash = (txHash) => {
-    const value = normalizeString(txHash, "txHash", 66);
-    if (!EVM_TX_HASH_RE.test(value)) {
-        throw unprocessable("INVALID_PAYMENT_TX_HASH", "Invalid payment transaction hash");
+    const value = normalizeString(txHash, "txHash", 128);
+    if (!EVM_TX_HASH_RE.test(value) && !SOLANA_TX_SIGNATURE_RE.test(value)) {
+        throw unprocessable("INVALID_PAYMENT_TX_HASH", "Invalid payment transaction identifier");
+    }
+    return value;
+};
+
+const validatePaymentNamespace = (namespace) => {
+    if (namespace === undefined || namespace === null || namespace === "") return "eip155";
+    const value = normalizeString(namespace, "namespace", 16);
+    if (!["eip155", "solana"].includes(value)) {
+        throw unprocessable("INVALID_PAYMENT_NAMESPACE", "Invalid payment namespace");
     }
     return value;
 };
@@ -105,6 +117,18 @@ const validateEvmAddress = (address, field = "payerAddress") => {
     return value;
 };
 
+const validatePayerAddress = (address, namespace = "eip155") => {
+    if (namespace === "solana") {
+        const value = normalizeString(address, "payerAddress", 44);
+        if (!SOLANA_ADDRESS_RE.test(value)) {
+            throw unprocessable("INVALID_SOLANA_ADDRESS", "Invalid Solana address");
+        }
+        return value;
+    }
+
+    return validateEvmAddress(address);
+};
+
 const validatePaymentPayerChallengeId = (id) => {
     const value = normalizeString(id, "payerChallengeId", 64);
     if (!/^[a-f0-9]{24}$/i.test(value)) {
@@ -115,7 +139,7 @@ const validatePaymentPayerChallengeId = (id) => {
 
 const validatePaymentSignature = (signature) => {
     const value = normalizeString(signature, "signature", 512);
-    if (!/^0x[a-fA-F0-9]{130}$/.test(value)) {
+    if (!/^0x[a-fA-F0-9]{130}$/.test(value) && !SOLANA_SIGNATURE_RE.test(value)) {
         throw unprocessable("INVALID_PAYER_SIGNATURE", "Invalid payer signature");
     }
     return value;
@@ -131,8 +155,10 @@ module.exports = {
     validatePaymentIntentId,
     validatePaymentMethodId,
     validatePaymentPackageId,
+    validatePaymentNamespace,
     validatePaymentTxHash,
     validateEvmAddress,
+    validatePayerAddress,
     validatePaymentPayerChallengeId,
     validatePaymentSignature,
     MAX_PROMPT_LENGTH
