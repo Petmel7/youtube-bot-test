@@ -39,6 +39,8 @@
         "noPaymentMethods": "Способи оплати недоступні.",
         "paymentMethod": "Спосіб оплати",
         "chooseNetworkToken": "Виберіть мережу/токен",
+        "onlyOnePaymentMethod": "Доступний лише один спосіб оплати",
+        "availablePaymentMethod": "Доступний спосіб оплати",
         "testnet": "Тестова мережа",
         "unavailableMethod": "Недоступно",
         "createIntent": "Створити платіж",

@@ -120,6 +120,17 @@ const createPaymentRequestLink = (intent) => {
 };
 
 const methodLabel = (method) => method ? `${method.name || method.network} · ${method.token?.symbol || ""}`.trim() : "-";
+const methodNetworkLabel = (method) => method?.name || method?.network || method?.caipNetworkId || "-";
+const methodSecondaryLabel = (method, t) => {
+    if (!method) return "";
+    const parts = [
+        method.token?.symbol,
+        method.caipNetworkId || (method.chainId ? `eip155:${method.chainId}` : method.networkId ? `solana:${method.networkId}` : ""),
+        method.testnet ? t("wallet.testnet") : "",
+        method.enabled === false ? t("wallet.unavailableMethod") : ""
+    ].filter(Boolean);
+    return parts.join(" · ");
+};
 const bytesToBase64 = (bytes) => window.btoa(String.fromCharCode(...Array.from(bytes)));
 const getSolanaProviderAddress = (provider) => (
     provider?.publicKey?.toString?.() ||
@@ -154,6 +165,54 @@ const PrePaymentSummary = ({ selectedPackage, selectedPaymentMethod }) => {
                     <strong>{selectedPaymentMethod?.caipNetworkId || (selectedPaymentMethod?.chainId ? `eip155:${selectedPaymentMethod.chainId}` : "-")}</strong>
                 </div>
             </div>
+        </div>
+    );
+};
+
+const PaymentMethodChooser = ({
+    paymentMethods,
+    selectedPaymentMethodId,
+    setSelectedPaymentMethodId,
+    actionLoading
+}) => {
+    const { t } = useTranslation();
+    const availableMethods = paymentMethods.filter(method => method.enabled !== false);
+    const selectedMethod = paymentMethods.find(method => method.id === selectedPaymentMethodId) || availableMethods[0] || paymentMethods[0];
+
+    if (paymentMethods.length === 0) {
+        return <p className={styles.muted}>{t("wallet.noPaymentMethods")}</p>;
+    }
+
+    if (availableMethods.length <= 1 && selectedMethod) {
+        return (
+            <div className={styles.methodSummary} aria-label={t("wallet.availablePaymentMethod")}>
+                <span>{t("wallet.availablePaymentMethod")}</span>
+                <strong>{methodNetworkLabel(selectedMethod)}</strong>
+                <small>{methodSecondaryLabel(selectedMethod, t)}</small>
+            </div>
+        );
+    }
+
+    return (
+        <div className={styles.methodList} role="listbox" aria-label={t("wallet.chooseNetworkToken")}>
+            {paymentMethods.map(method => {
+                const selected = selectedPaymentMethodId === method.id;
+
+                return (
+                    <button
+                        className={`${styles.methodButton} ${selected ? styles.methodButtonSelected : ""}`}
+                        type="button"
+                        key={method.id}
+                        onClick={() => setSelectedPaymentMethodId(method.id)}
+                        disabled={actionLoading || method.enabled === false}
+                        aria-selected={selected}
+                        role="option"
+                    >
+                        <strong>{methodNetworkLabel(method)}</strong>
+                        <span>{methodSecondaryLabel(method, t)}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 };
@@ -1002,27 +1061,14 @@ const WalletPanel = () => {
 
                     <div className={styles.selectorHeader}>
                         <strong>{t("wallet.paymentMethod")}</strong>
-                        <span>{t("wallet.chooseNetworkToken")}</span>
+                        <span>{paymentMethods.filter(method => method.enabled !== false).length <= 1 ? t("wallet.onlyOnePaymentMethod") : t("wallet.chooseNetworkToken")}</span>
                     </div>
-                    <div className={styles.methodList}>
-                        {paymentMethods.map(method => (
-                            <button
-                                className={`${styles.packageButton} ${selectedPaymentMethodId === method.id ? styles.packageButtonSelected : ""}`}
-                                type="button"
-                                key={method.id}
-                                onClick={() => setSelectedPaymentMethodId(method.id)}
-                                disabled={actionLoading || method.enabled === false}
-                            >
-                                <strong>{methodLabel(method)}</strong>
-                                <span>
-                                    {method.caipNetworkId || `eip155:${method.chainId}`}
-                                    {method.testnet ? ` · ${t("wallet.testnet")}` : ""}
-                                    {method.enabled === false ? ` · ${t("wallet.unavailableMethod")}` : ""}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                    {paymentMethods.length === 0 && <p className={styles.muted}>{t("wallet.noPaymentMethods")}</p>}
+                    <PaymentMethodChooser
+                        paymentMethods={paymentMethods}
+                        selectedPaymentMethodId={selectedPaymentMethodId}
+                        setSelectedPaymentMethodId={setSelectedPaymentMethodId}
+                        actionLoading={actionLoading}
+                    />
 
                     {!intent && (
                         <PrePaymentSummary

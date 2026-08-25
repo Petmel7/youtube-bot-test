@@ -39,6 +39,8 @@
         "noPaymentMethods": "Aucun moyen de paiement disponible.",
         "paymentMethod": "Moyen de paiement",
         "chooseNetworkToken": "Choisir le réseau/token",
+        "onlyOnePaymentMethod": "Un seul moyen de paiement disponible",
+        "availablePaymentMethod": "Moyen de paiement disponible",
         "testnet": "Testnet",
         "unavailableMethod": "Indisponible",
         "createIntent": "Créer un paiement",
