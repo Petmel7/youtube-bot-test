@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAppKit } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { useAccount, useChainId, useSignMessage, useSwitchChain, useWriteContract } from "wagmi";
 import { FaCheckCircle, FaCopy, FaExternalLinkAlt, FaRedoAlt, FaWallet } from "react-icons/fa";
 import {
@@ -12,6 +12,7 @@ import {
     fetchWallet,
     verifyPaymentIntent
 } from "../services/paymentService";
+import { getInjectedSolanaProvider, sendSolanaSplTokenPayment } from "../services/solanaPaymentClient";
 import { appKitNetworks, isWalletConnectConfigured, walletConnectInitializationError } from "../wallet/appKit";
 import styles from "../styles/walletPanel.module.css";
 
@@ -28,6 +29,7 @@ const createFlowStates = {
 const paymentFlowStates = {
     idle: "idle",
     waitingWallet: "waitingWallet",
+    sendingSolanaTransfer: "sendingSolanaTransfer",
     submitted: "submitted",
     verifying: "verifying"
 };
@@ -119,6 +121,12 @@ const createPaymentRequestLink = (intent) => {
 
 const methodLabel = (method) => method ? `${method.name || method.network} · ${method.token?.symbol || ""}`.trim() : "-";
 const bytesToBase64 = (bytes) => window.btoa(String.fromCharCode(...Array.from(bytes)));
+const getSolanaProviderAddress = (provider) => (
+    provider?.publicKey?.toString?.() ||
+    provider?.account?.address ||
+    provider?.address ||
+    ""
+);
 
 const PrePaymentSummary = ({ selectedPackage, selectedPaymentMethod }) => {
     const { t } = useTranslation();
@@ -431,15 +439,20 @@ const SolanaWalletControls = ({
     setTxHash
 }) => {
     const { t } = useTranslation();
+    const { open } = useAppKit();
+    const { address: appKitAddress, isConnected: appKitConnected } = useAppKitAccount({ namespace: "solana" });
+    const { walletProvider: appKitSolanaProvider } = useAppKitProvider("solana");
     const [createFlowState, setCreateFlowState] = useState(createFlowStates.idle);
-    const [address, setAddress] = useState("");
+    const [injectedAddress, setInjectedAddress] = useState("");
     const operationIdRef = useRef(0);
     const signingAddressRef = useRef("");
     const createFlowActive = isActiveCreateFlow(createFlowState);
     const awaitingSignature = createFlowState === createFlowStates.awaitingSignature;
-    const solanaProvider = typeof window !== "undefined" ? window.solana : null;
+    const injectedProvider = getInjectedSolanaProvider();
+    const solanaProvider = appKitSolanaProvider || injectedProvider;
+    const address = appKitAddress || injectedAddress || getSolanaProviderAddress(solanaProvider);
     const isConnected = Boolean(address);
-    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !selectedPaymentMethod || !solanaProvider;
+    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !selectedPaymentMethod || (!solanaProvider && !isWalletConnectConfigured);
 
     const resetCreateFlow = useCallback(({ message = "", notice = "", cancelOperation = true } = {}) => {
         if (cancelOperation) operationIdRef.current += 1;
@@ -451,13 +464,18 @@ const SolanaWalletControls = ({
     }, [setActionLoading, setError, setNotice]);
 
     const connectSolanaWallet = async () => {
+        if (isWalletConnectConfigured && !injectedProvider && !appKitConnected) {
+            open({ view: "Connect", namespace: "solana" });
+            return "";
+        }
+
         if (!solanaProvider?.connect) {
             throw new Error(t("wallet.errors.solanaWalletProvider"));
         }
         const result = await solanaProvider.connect();
         const nextAddress = result?.publicKey?.toString?.() || solanaProvider.publicKey?.toString?.() || "";
         if (!nextAddress) throw new Error(t("wallet.errors.walletAccount"));
-        setAddress(nextAddress);
+        setInjectedAddress(nextAddress);
         return nextAddress;
     };
 
@@ -473,6 +491,9 @@ const SolanaWalletControls = ({
 
         try {
             const payer = address || await connectSolanaWallet();
+            if (!payer) {
+                throw new Error(t("wallet.connection.disabledConnect"));
+            }
             const challenge = await createPayerChallenge(payer, "solana");
             if (operationId !== operationIdRef.current) return;
             if (challenge.payerAddress !== payer) {
@@ -495,7 +516,7 @@ const SolanaWalletControls = ({
             );
             if (operationId !== operationIdRef.current) return;
 
-            const currentAddress = solanaProvider.publicKey?.toString?.() || payer;
+            const currentAddress = appKitAddress || getSolanaProviderAddress(solanaProvider) || payer;
             if (currentAddress !== signingAddressRef.current) {
                 throw new Error(t("wallet.errors.walletChanged"));
             }
@@ -515,7 +536,7 @@ const SolanaWalletControls = ({
             setIntent(nextIntent);
             setPayerAddress(nextIntent.payerAddress || challenge.payerAddress);
             setTxHash(nextIntent.txHash || "");
-            setNotice(t("wallet.solanaManualPayment"));
+            setNotice(t("wallet.solanaReadyToPay"));
         } catch (createError) {
             if (operationId !== operationIdRef.current) return;
             setError(isUserRejectedSignature(createError)
@@ -542,12 +563,12 @@ const SolanaWalletControls = ({
                     <strong>{isConnected ? t("wallet.connection.solanaConnected") : t("wallet.connection.solanaNotConnected")}</strong>
                     <p>{isConnected ? `${shortenAddress(address)} · ${selectedPaymentMethod?.name || t("wallet.solanaNetwork")}` : t("wallet.connection.solanaConnectBody")}</p>
                 </div>
-                <button className={styles.iconTextButton} type="button" onClick={connectSolanaWallet} disabled={actionLoading || !solanaProvider}>
+                <button className={styles.iconTextButton} type="button" onClick={connectSolanaWallet} disabled={actionLoading || (!solanaProvider && !isWalletConnectConfigured)}>
                     <FaWallet />
                     {isConnected ? t("wallet.connection.manage") : t("wallet.connection.connectSolana")}
                 </button>
             </div>
-            {!solanaProvider && <p className={styles.error}>{t("wallet.errors.solanaWalletProvider")}</p>}
+            {!solanaProvider && !isWalletConnectConfigured && <p className={styles.error}>{t("wallet.errors.solanaWalletProvider")}</p>}
             <button className={styles.primaryButton} type="button" onClick={handleCreateIntent} disabled={createDisabled}>
                 {createButtonText}
             </button>
@@ -693,7 +714,14 @@ const SolanaPaymentActions = ({
     loadWallet
 }) => {
     const { t } = useTranslation();
+    const { address: appKitAddress, isConnected: appKitConnected } = useAppKitAccount({ namespace: "solana" });
+    const { walletProvider: appKitSolanaProvider } = useAppKitProvider("solana");
     const [paymentFlowState, setPaymentFlowState] = useState(paymentFlowStates.idle);
+    const injectedProvider = getInjectedSolanaProvider();
+    const solanaProvider = appKitSolanaProvider || injectedProvider;
+    const connectedAddress = appKitAddress || getSolanaProviderAddress(solanaProvider);
+    const paymentActive = isActivePaymentFlow(paymentFlowState);
+    const paymentDisabled = actionLoading || paymentActive || !intent || intent.credited || !solanaProvider || !connectedAddress;
 
     const verifySubmittedSignature = async (submittedSignature) => {
         setPaymentFlowState(paymentFlowStates.verifying);
@@ -705,6 +733,45 @@ const SolanaPaymentActions = ({
             setNotice(t("wallet.paymentFlow.finalized"));
         } else if (pendingStatuses.has(result.intent.status)) {
             setNotice(t("wallet.paymentFlow.solanaPending"));
+        }
+    };
+
+    const handlePayWithSolanaWallet = async () => {
+        if (!intent) return;
+
+        setActionLoading(true);
+        setPaymentFlowState(paymentFlowStates.waitingWallet);
+        setError("");
+        setNotice(t("wallet.paymentFlow.waitingWallet"));
+
+        try {
+            if (!solanaProvider || !connectedAddress) {
+                throw new Error(t("wallet.errors.solanaWalletProvider"));
+            }
+
+            if (connectedAddress !== intent.payerAddress) {
+                throw new Error(t("wallet.errors.walletChanged"));
+            }
+
+            setPaymentFlowState(paymentFlowStates.sendingSolanaTransfer);
+            setNotice(t("wallet.paymentFlow.sendingSolanaTransfer"));
+            const submittedSignature = await sendSolanaSplTokenPayment({
+                intent,
+                provider: solanaProvider,
+                payerAddress: connectedAddress
+            });
+
+            setPaymentFlowState(paymentFlowStates.submitted);
+            setTxHash(submittedSignature);
+            setNotice(t("wallet.paymentFlow.submitted"));
+            await verifySubmittedSignature(submittedSignature);
+        } catch (paymentError) {
+            setError(isUserRejectedTransaction(paymentError)
+                ? t("wallet.errors.paymentCancelled")
+                : (paymentError.message || t("wallet.errors.solanaPayment")));
+        } finally {
+            setPaymentFlowState(paymentFlowStates.idle);
+            setActionLoading(false);
         }
     };
 
@@ -730,9 +797,20 @@ const SolanaPaymentActions = ({
 
     return (
         <div className={styles.paymentActions}>
-            <p className={styles.muted}>{t("wallet.solanaManualPayment")}</p>
+            <button className={styles.primaryButton} type="button" onClick={handlePayWithSolanaWallet} disabled={paymentDisabled}>
+                {{
+                    [paymentFlowStates.waitingWallet]: t("wallet.paymentFlow.waitingWallet"),
+                    [paymentFlowStates.sendingSolanaTransfer]: t("wallet.paymentFlow.sendingSolanaTransfer"),
+                    [paymentFlowStates.submitted]: t("wallet.paymentFlow.submitted"),
+                    [paymentFlowStates.verifying]: t("wallet.paymentFlow.verifying"),
+                    [paymentFlowStates.idle]: t("wallet.payWithSolanaWallet")
+                }[paymentFlowState]}
+            </button>
+            {!solanaProvider && <p className={styles.error}>{t("wallet.errors.solanaWalletProvider")}</p>}
+            {solanaProvider && !connectedAddress && <p className={styles.muted}>{appKitConnected ? t("wallet.errors.walletAccount") : t("wallet.connection.disabledConnect")}</p>}
+            <p className={styles.muted}>{t("wallet.solanaAutomaticPayment")}</p>
             {pendingStatuses.has(intent.status) && txHash && (
-                <button className={styles.secondaryButton} type="button" onClick={handleRetryVerify} disabled={actionLoading || isActivePaymentFlow(paymentFlowState)}>
+                <button className={styles.secondaryButton} type="button" onClick={handleRetryVerify} disabled={actionLoading || paymentActive}>
                     {paymentFlowState === paymentFlowStates.verifying ? t("wallet.paymentFlow.verifying") : t("wallet.paymentFlow.retryVerify")}
                 </button>
             )}

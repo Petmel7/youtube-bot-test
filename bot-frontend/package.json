@@ -4,7 +4,10 @@
   "private": true,
   "dependencies": {
     "@reown/appkit": "^1.8.23",
+    "@reown/appkit-adapter-solana": "^1.8.23",
     "@reown/appkit-adapter-wagmi": "^1.8.23",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.98.4",
     "@tanstack/react-query": "^5.101.4",
     "ajv": "^6.12.6",
     "ajv-keywords": "^3.5.2",
