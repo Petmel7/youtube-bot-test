@@ -37,6 +37,10 @@
         "available": "Доступно",
         "noPackages": "Пакети кредитів недоступні.",
         "noPaymentMethods": "Способи оплати недоступні.",
+        "paymentMethod": "Спосіб оплати",
+        "chooseNetworkToken": "Виберіть мережу/токен",
+        "testnet": "Тестова мережа",
+        "unavailableMethod": "Недоступно",
         "createIntent": "Створити платіж",
         "payWithWallet": "Оплатити гаманцем",
         "paymentSummary": "Підсумок платежу",
@@ -51,6 +55,8 @@
             "verifying": "Перевіряємо платіж",
             "pendingConfirmations": "Платіж очікує підтверджень. Можна повторити перевірку трохи пізніше.",
             "confirmed": "Платіж підтверджено",
+            "failed": "Платіж не вдався",
+            "expired": "Платіж прострочено",
             "retryVerify": "Повторити перевірку"
         },
         "signing": {
@@ -102,6 +108,8 @@
         },
         "fields": {
             "chainId": "ID мережі",
+            "caipNetworkId": "CAIP ID мережі",
+            "paymentIntentId": "ID платіжного наміру",
             "network": "Мережа",
             "token": "Токен",
             "decimals": "десяткових",
@@ -113,7 +121,8 @@
             "usd": "USD",
             "credits": "Кредити",
             "expires": "Діє до",
-            "confirmations": "Підтвердження"
+            "confirmations": "Підтвердження",
+            "txHash": "Хеш транзакції"
         },
         "status": {
             "pending": "Очікує",

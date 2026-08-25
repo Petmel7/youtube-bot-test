@@ -7,8 +7,12 @@ export const fetchWallet = async () => {
 
 export const fetchPaymentPackages = async () => {
     const data = await apiRequest("/api/payments/packages");
+    return data.packages || [];
+};
+
+export const fetchPaymentMethods = async () => {
+    const data = await apiRequest("/api/payments/methods");
     return {
-        packages: data.packages || [],
         paymentMethods: data.paymentMethods || [],
         defaultPaymentMethodId: data.defaultPaymentMethodId || data.paymentMethods?.[0]?.id || ""
     };

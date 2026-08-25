@@ -37,6 +37,10 @@
         "available": "Disponible",
         "noPackages": "Aucun pack de crédits disponible.",
         "noPaymentMethods": "Aucun moyen de paiement disponible.",
+        "paymentMethod": "Moyen de paiement",
+        "chooseNetworkToken": "Choisir le réseau/token",
+        "testnet": "Testnet",
+        "unavailableMethod": "Indisponible",
         "createIntent": "Créer un paiement",
         "payWithWallet": "Payer avec le portefeuille",
         "paymentSummary": "Résumé du paiement",
@@ -51,6 +55,8 @@
             "verifying": "Vérification du paiement",
             "pendingConfirmations": "Le paiement attend des confirmations. Vous pouvez relancer la vérification bientôt.",
             "confirmed": "Paiement confirmé",
+            "failed": "Paiement échoué",
+            "expired": "Paiement expiré",
             "retryVerify": "Relancer la vérification"
         },
         "signing": {
@@ -102,6 +108,8 @@
         },
         "fields": {
             "chainId": "ID de chaîne",
+            "caipNetworkId": "ID réseau CAIP",
+            "paymentIntentId": "ID d'intention de paiement",
             "network": "Réseau",
             "token": "Token",
             "decimals": "décimales",
@@ -113,7 +121,8 @@
             "usd": "USD",
             "credits": "Crédits",
             "expires": "Expire",
-            "confirmations": "Confirmations"
+            "confirmations": "Confirmations",
+            "txHash": "Hash de transaction"
         },
         "status": {
             "pending": "En attente",

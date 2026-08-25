@@ -168,6 +168,9 @@ const toPaymentMethodDto = (paymentMethod) => {
         name: paymentMethod.name,
         network: paymentMethod.network,
         chainId: paymentMethod.chainId,
+        caipNetworkId: `eip155:${paymentMethod.chainId}`,
+        testnet: paymentMethod.production === false,
+        enabled: paymentMethod.enabled !== false,
         token: {
             address: paymentMethod.tokenAddress,
             symbol: paymentMethod.tokenSymbol,

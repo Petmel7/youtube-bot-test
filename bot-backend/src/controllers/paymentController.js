@@ -51,6 +51,16 @@ const createPaymentController = (
         });
     };
 
+    const getPaymentMethodsController = async (req, res) => {
+        const availablePaymentMethods = paymentMethods || getEnabledPaymentMethods(paymentConfig).filter(method => method.enabled);
+
+        res.json({
+            success: true,
+            paymentMethods: availablePaymentMethods.map(toPaymentMethodDto),
+            defaultPaymentMethodId: paymentConfig.defaultMethodId || availablePaymentMethods[0]?.id || null
+        });
+    };
+
     const getWalletController = async (req, res) => {
         const wallet = await walletService.getWallet({ userId: getUserId(req) });
 
@@ -137,6 +147,7 @@ const createPaymentController = (
 
     return {
         getPaymentPackagesController,
+        getPaymentMethodsController,
         getWalletController,
         createPayerChallengeController,
         createPaymentIntentController,

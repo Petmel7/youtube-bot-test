@@ -7,6 +7,7 @@ import {
     createPayerChallenge,
     createPaymentIntent,
     fetchPaymentIntent,
+    fetchPaymentMethods,
     fetchPaymentPackages,
     fetchWallet,
     verifyPaymentIntent
@@ -110,6 +111,38 @@ const createPaymentRequestLink = (intent) => {
     }
 
     return `ethereum:${intent.token.address}@${intent.chainId}/transfer?address=${intent.recipientAddress}&uint256=${intent.expectedTokenAmountBaseUnits}`;
+};
+
+const methodLabel = (method) => method ? `${method.name || method.network} · ${method.token?.symbol || ""}`.trim() : "-";
+
+const PrePaymentSummary = ({ selectedPackage, selectedPaymentMethod }) => {
+    const { t } = useTranslation();
+
+    if (!selectedPackage && !selectedPaymentMethod) return null;
+
+    return (
+        <div className={styles.paymentSummary}>
+            <h4>{t("wallet.paymentSummary")}</h4>
+            <div className={styles.summaryGrid}>
+                <div>
+                    <span>{t("wallet.fields.credits")}</span>
+                    <strong>{selectedPackage?.creditAmount ?? "-"}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.usd")}</span>
+                    <strong>{selectedPackage ? formatUsdMinor(selectedPackage.expectedUsdAmountMinor) : "-"}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.paymentMethod")}</span>
+                    <strong>{methodLabel(selectedPaymentMethod)}</strong>
+                </div>
+                <div>
+                    <span>{t("wallet.fields.network")}</span>
+                    <strong>{selectedPaymentMethod?.caipNetworkId || (selectedPaymentMethod?.chainId ? `eip155:${selectedPaymentMethod.chainId}` : "-")}</strong>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const PaymentSummary = ({ intent }) => {
@@ -535,17 +568,18 @@ const WalletPanel = () => {
             setLoading(true);
             setError("");
             try {
-                const [nextWallet, paymentOptions] = await Promise.all([
+                const [nextWallet, nextPackages, methodOptions] = await Promise.all([
                     fetchWallet(),
-                    fetchPaymentPackages()
+                    fetchPaymentPackages(),
+                    fetchPaymentMethods()
                 ]);
 
                 if (ignore) return;
                 setWallet(nextWallet);
-                setPackages(paymentOptions.packages);
-                setPaymentMethods(paymentOptions.paymentMethods);
-                setSelectedPackageId(current => current || paymentOptions.packages[0]?.packageId || "");
-                setSelectedPaymentMethodId(current => current || paymentOptions.defaultPaymentMethodId || paymentOptions.paymentMethods[0]?.id || "");
+                setPackages(nextPackages);
+                setPaymentMethods(methodOptions.paymentMethods);
+                setSelectedPackageId(current => current || nextPackages[0]?.packageId || "");
+                setSelectedPaymentMethodId(current => current || methodOptions.defaultPaymentMethodId || methodOptions.paymentMethods[0]?.id || "");
             } catch (loadError) {
                 if (!ignore) setError(loadError.message || t("wallet.errors.load"));
             } finally {
@@ -559,6 +593,18 @@ const WalletPanel = () => {
             ignore = true;
         };
     }, [t]);
+
+    useEffect(() => {
+        if (!intent) return;
+        if (intent.packageId === selectedPackageId && intent.paymentMethodId === selectedPaymentMethodId) return;
+
+        setIntent(null);
+        setTxHash("");
+        setPayerAddress("");
+        setShowManualTxHash(false);
+        setNotice("");
+        setError("");
+    }, [intent, selectedPackageId, selectedPaymentMethodId]);
 
     const copyValue = async (value) => {
         if (!navigator.clipboard) return;
@@ -664,6 +710,10 @@ const WalletPanel = () => {
                     </div>
                     {packages.length === 0 && <p className={styles.muted}>{t("wallet.noPackages")}</p>}
 
+                    <div className={styles.selectorHeader}>
+                        <strong>{t("wallet.paymentMethod")}</strong>
+                        <span>{t("wallet.chooseNetworkToken")}</span>
+                    </div>
                     <div className={styles.methodList}>
                         {paymentMethods.map(method => (
                             <button
@@ -671,14 +721,25 @@ const WalletPanel = () => {
                                 type="button"
                                 key={method.id}
                                 onClick={() => setSelectedPaymentMethodId(method.id)}
-                                disabled={actionLoading}
+                                disabled={actionLoading || method.enabled === false}
                             >
-                                <strong>{method.token?.symbol}</strong>
-                                <span>{method.name}</span>
+                                <strong>{methodLabel(method)}</strong>
+                                <span>
+                                    {method.caipNetworkId || `eip155:${method.chainId}`}
+                                    {method.testnet ? ` · ${t("wallet.testnet")}` : ""}
+                                    {method.enabled === false ? ` · ${t("wallet.unavailableMethod")}` : ""}
+                                </span>
                             </button>
                         ))}
                     </div>
                     {paymentMethods.length === 0 && <p className={styles.muted}>{t("wallet.noPaymentMethods")}</p>}
+
+                    {!intent && (
+                        <PrePaymentSummary
+                            selectedPackage={selectedPackage}
+                            selectedPaymentMethod={selectedPaymentMethod}
+                        />
+                    )}
 
                     {isWalletConnectConfigured ? (
                         <AppKitWalletControls
@@ -723,7 +784,9 @@ const WalletPanel = () => {
 
                             <details className={styles.collapsibleBlock}>
                                 <summary>{t("wallet.advancedDetails")}</summary>
+                                <FieldRow label={t("wallet.fields.paymentIntentId")} value={intent.id} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.chainId")} value={intent.chainId} />
+                                <FieldRow label={t("wallet.fields.caipNetworkId")} value={intent.paymentMethod?.caipNetworkId || `eip155:${intent.chainId}`} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.token")} value={`${intent.token?.symbol || ""} (${intent.token?.decimals ?? "-"} ${t("wallet.fields.decimals")})`} />
                                 <FieldRow label={t("wallet.fields.tokenAddress")} value={intent.token?.address} copyable onCopy={copyValue} />
                                 <FieldRow label={t("wallet.fields.recipient")} value={intent.recipientAddress} copyable onCopy={copyValue} />
@@ -736,6 +799,7 @@ const WalletPanel = () => {
                                 {paymentRequestLink && (
                                     <FieldRow label={t("wallet.qrPayment")} value={paymentRequestLink} copyable onCopy={copyValue} />
                                 )}
+                                {txHash && <FieldRow label={t("wallet.fields.txHash")} value={txHash} copyable onCopy={copyValue} />}
                                 {paymentRequestLink && (
                                     <p className={styles.muted}>{t("wallet.qrCompatibilityNote")}</p>
                                 )}

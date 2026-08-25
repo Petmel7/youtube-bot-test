@@ -63,6 +63,19 @@
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+.selectorHeader {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0 8px;
+}
+
+.selectorHeader span {
+    color: #666;
+    font-size: 13px;
+}
+
 .packageButton,
 .primaryButton,
 .secondaryButton,
@@ -439,6 +452,10 @@
 }
 
 :global(body.dark-mode) .summaryGrid span {
+    color: #c8c8c8;
+}
+
+:global(body.dark-mode) .selectorHeader span {
     color: #c8c8c8;
 }
 

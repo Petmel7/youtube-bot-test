@@ -282,6 +282,7 @@ test("payment API requires authentication", async () => {
     const app = createApp(createFakeLifecycle());
 
     assert.equal((await request(app, { path: "/api/payments/packages" })).status, 401);
+    assert.equal((await request(app, { path: "/api/payments/methods" })).status, 401);
     assert.equal((await request(app, { path: "/api/payments/wallet" })).status, 401);
     assert.equal((await request(app, { method: "POST", path: "/api/payments/payer-challenges", body: {} })).status, 401);
     assert.equal((await request(app, { method: "POST", path: "/api/payments/intents", body: {} })).status, 401);
@@ -309,6 +310,7 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
     const app = createApp(createFakeLifecycle(), createFakePaymentDependencies());
 
     const packages = await request(app, { path: "/api/payments/packages", userId: userA });
+    const methods = await request(app, { path: "/api/payments/methods", userId: userA });
     const wallet = await request(app, { path: "/api/payments/wallet", userId: userA });
 
     assert.equal(packages.status, 200);
@@ -324,6 +326,9 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
         name: "Base mainnet USDC",
         network: "base-mainnet",
         chainId: 8453,
+        caipNetworkId: "eip155:8453",
+        testnet: false,
+        enabled: true,
         token: {
             address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
             symbol: "USDC",
@@ -331,6 +336,9 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
         }
     }]);
     assert.equal(packages.body.defaultPaymentMethodId, "base-mainnet-usdc");
+    assert.equal(methods.status, 200);
+    assert.deepEqual(methods.body.paymentMethods, packages.body.paymentMethods);
+    assert.equal(methods.body.defaultPaymentMethodId, "base-mainnet-usdc");
     assert.equal(packages.body.packages[0].internalRate, undefined);
 
     assert.equal(wallet.status, 200);
