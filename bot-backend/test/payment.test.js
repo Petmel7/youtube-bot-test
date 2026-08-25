@@ -19,6 +19,7 @@ const {
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
+const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const payerAddress = "0x2222222222222222222222222222222222222222";
 const payerChallengeId = new mongoose.Types.ObjectId();
@@ -56,10 +57,28 @@ const validPaymentConfig = (overrides = {}) => ({
     ...overrides
 });
 
+const baseMethodSnapshot = (overrides = {}) => ({
+    id: "base-mainnet-usdc",
+    name: "Base mainnet USDC",
+    network: "base-mainnet",
+    chainId: 8453,
+    rpcUrl: "https://base.example.invalid/rpc",
+    tokenAddress: baseUsdcAddress,
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    treasuryAddress,
+    confirmations: 60,
+    enabled: true,
+    production: true,
+    ...overrides
+});
+
 const validPaymentIntentDocument = (overrides = {}) => ({
     userId: new mongoose.Types.ObjectId(),
     idempotencyKey: "idem-1",
     packageId: "starter_credits",
+    paymentMethodId: "base-mainnet-usdc",
+    paymentMethodSnapshot: baseMethodSnapshot(),
     chainId: 8453,
     tokenAddress: normalizeEvmAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
     tokenSymbol: "USDC",
@@ -245,6 +264,75 @@ test("payment config validation rejects supported chain and token mismatches", (
     }), { nodeEnv: "development" }), /PAYMENT_CHAIN_ID/);
 });
 
+test("payment config validation accepts explicit BNB Chain methods only from whitelist", () => {
+    const bnbConfig = validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "bnb-mainnet-usdt",
+            enabled: true,
+            chainId: 56,
+            rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 30
+        }]),
+        defaultMethodId: "bnb-mainnet-usdt"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(bnbConfig, { nodeEnv: "production" }));
+    assert.throws(() => validatePaymentConfig({
+        ...bnbConfig,
+        methodsJson: JSON.stringify([{
+            id: "bnb-mainnet-usdt",
+            enabled: true,
+            chainId: 56,
+            rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: baseUsdcAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 30
+        }])
+    }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
+});
+
+test("payment config validation rejects unknown, disabled, and production testnet payment methods", () => {
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "unknown-usdc",
+            enabled: true,
+            rpcUrl: "https://example.invalid",
+            treasuryAddress
+        }])
+    }), { nodeEnv: "development" }), /PAYMENT_METHOD_ID/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: false,
+            rpcUrl: "https://base.example.invalid/rpc",
+            treasuryAddress
+        }])
+    }), { nodeEnv: "production" }), /PAYMENT_METHODS_JSON/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-sepolia-usdc",
+            enabled: true,
+            chainId: 84532,
+            rpcUrl: "https://sepolia.base.org",
+            tokenAddress: baseSepoliaUsdcAddress,
+            tokenSymbol: "USDC",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 12
+        }]),
+        allowTestnetPayments: true,
+        defaultMethodId: "base-sepolia-usdc"
+    }), { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+});
+
 test("payment config validation rejects wrong token decimals", () => {
     assert.throws(() => validatePaymentConfig(validPaymentConfig({ tokenDecimals: 18 }), baseUsdcAddress), /PAYMENT_TOKEN_DECIMALS/);
 });
@@ -419,6 +507,7 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     const result = await service.createPaymentIntent({
         userId: "64b000000000000000000000",
         packageId: "starter_credits",
+        paymentMethodId: "base-mainnet-usdc",
         idempotencyKey: "idem-1",
         payerChallengeId: String(payerChallengeId),
         signature: validSignature
@@ -426,6 +515,9 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
 
     assert.equal(result.created, true);
     assert.equal(result.intent.status, "PENDING");
+    assert.equal(result.intent.paymentMethodId, "base-mainnet-usdc");
+    assert.equal(result.intent.paymentMethodSnapshot.id, "base-mainnet-usdc");
+    assert.equal(result.intent.paymentMethodSnapshot.tokenSymbol, "USDC");
     assert.equal(result.intent.chainId, 8453);
     assert.equal(result.intent.tokenAddress, baseUsdcAddress);
     assert.equal(result.intent.tokenDecimals, 6);
@@ -462,10 +554,53 @@ test("payment intent creation rejects invalid payer proof before creating intent
     await assert.rejects(() => service.createPaymentIntent({
         userId: "64b000000000000000000000",
         packageId: "starter_credits",
+        paymentMethodId: "base-mainnet-usdc",
         idempotencyKey: "idem-1",
         payerChallengeId: String(payerChallengeId),
         signature: validSignature
     }), { code: "INVALID_PAYER_SIGNATURE" });
+    assert.equal(PaymentIntentModel.intents.length, 0);
+});
+
+test("payment intent creation rejects invalid or disabled payment method", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const pricingService = createPaymentPricingService({
+        packagesJson: validPackagesJson,
+        pricingVersion: "pricing-v1"
+    });
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService,
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "base-mainnet-usdc",
+                enabled: false,
+                rpcUrl: "https://base.example.invalid/rpc",
+                treasuryAddress
+            }])
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    await assert.rejects(() => service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "starter_credits",
+        paymentMethodId: "base-mainnet-usdc",
+        idempotencyKey: "idem-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    }), { code: "PAYMENT_METHOD_UNAVAILABLE" });
+
+    await assert.rejects(() => service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "starter_credits",
+        paymentMethodId: "base-sepolia-usdc",
+        idempotencyKey: "idem-2",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    }), { code: "PAYMENT_METHOD_UNAVAILABLE" });
     assert.equal(PaymentIntentModel.intents.length, 0);
 });
 
@@ -483,10 +618,10 @@ test("payment intent creation is idempotent by user and idempotency key", async 
         now: () => new Date("2026-08-17T10:00:00.000Z")
     });
 
-    const first = await service.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "same-key", payerChallengeId: String(payerChallengeId), signature: validSignature });
+    const first = await service.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "same-key", payerChallengeId: String(payerChallengeId), signature: validSignature });
     const duplicate = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", idempotencyKey: "same-key" });
-    const differentKey = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", idempotencyKey: "other-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
-    const differentUser = await service.createPaymentIntent({ userId: "user-2", packageId: "starter_credits", idempotencyKey: "same-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
+    const differentKey = await service.createPaymentIntent({ userId: "user-1", packageId: "growth_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "other-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
+    const differentUser = await service.createPaymentIntent({ userId: "user-2", packageId: "starter_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "same-key", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
 
     assert.equal(first.created, true);
     assert.equal(duplicate.created, false);
@@ -505,7 +640,7 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
         config: validPaymentConfig({ pricingVersion: "pricing-v1" }),
         now: () => new Date("2026-08-17T10:00:00.000Z")
     });
-    const first = await serviceV1.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-1", payerChallengeId: String(payerChallengeId), signature: validSignature });
+    const first = await serviceV1.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "idem-1", payerChallengeId: String(payerChallengeId), signature: validSignature });
 
     const serviceV2 = createPaymentIntentService({
         PaymentIntentModel,
@@ -519,7 +654,7 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
         config: validPaymentConfig({ pricingVersion: "pricing-v2" }),
         now: () => new Date("2026-08-17T11:00:00.000Z")
     });
-    const second = await serviceV2.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", idempotencyKey: "idem-2", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
+    const second = await serviceV2.createPaymentIntent({ userId: "user-1", packageId: "starter_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "idem-2", payerChallengeId: String(new mongoose.Types.ObjectId()), signature: validSignature });
 
     assert.equal(first.intent.creditAmount, 750);
     assert.equal(first.intent.expectedTokenAmountBaseUnits, "5000000");
@@ -545,6 +680,9 @@ test("PaymentIntent schema has required states, immutability, validation, and in
         "CANCELLED"
     ]);
 
+    assert.equal(PaymentIntent.schema.path("paymentMethodId").options.immutable, true);
+    assert.equal(PaymentIntent.schema.path("paymentMethodSnapshot.id").options.immutable, true);
+    assert.equal(PaymentIntent.schema.path("paymentMethodSnapshot.tokenAddress").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("chainId").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("expectedTokenAmountBaseUnits").options.immutable, true);
     assert.equal(PaymentIntent.schema.path("creditAmount").options.immutable, true);
@@ -563,6 +701,7 @@ test("PaymentIntent schema has required states, immutability, validation, and in
     assert(indexes.some(([fields, options]) => fields.userId === 1 && fields.idempotencyKey === 1 && options.unique === true));
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.payerAddress === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields, options]) => fields.chainId === 1 && fields.txHash === 1 && options.unique === true && options.partialFilterExpression?.txHash?.$type === "string"));
+    assert(indexes.some(([fields]) => fields.paymentMethodId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.userId === 1 && fields.createdAt === -1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.updatedAt === 1));
     assert(indexes.some(([fields]) => fields.status === 1 && fields.expiresAt === 1));

@@ -7,7 +7,11 @@ export const fetchWallet = async () => {
 
 export const fetchPaymentPackages = async () => {
     const data = await apiRequest("/api/payments/packages");
-    return data.packages || [];
+    return {
+        packages: data.packages || [],
+        paymentMethods: data.paymentMethods || [],
+        defaultPaymentMethodId: data.defaultPaymentMethodId || data.paymentMethods?.[0]?.id || ""
+    };
 };
 
 export const createPayerChallenge = async (payerAddress) => {
@@ -19,12 +23,12 @@ export const createPayerChallenge = async (payerAddress) => {
     return data.challenge;
 };
 
-export const createPaymentIntent = async ({ packageId, payerChallengeId, signature }) => {
+export const createPaymentIntent = async ({ packageId, paymentMethodId, payerChallengeId, signature }) => {
     const idempotencyKey = createIdempotencyKey();
     const data = await apiRequest("/api/payments/intents", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({ packageId, payerChallengeId, signature })
+        body: JSON.stringify({ packageId, paymentMethodId, payerChallengeId, signature })
     });
 
     return data.intent;

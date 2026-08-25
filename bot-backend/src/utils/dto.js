@@ -51,6 +51,20 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
         id: String(intent._id || intent.id),
         status: intent.status,
         packageId: intent.packageId,
+        paymentMethodId: intent.paymentMethodId,
+        paymentMethod: intent.paymentMethodSnapshot ? {
+            id: intent.paymentMethodSnapshot.id,
+            name: intent.paymentMethodSnapshot.name,
+            network: intent.paymentMethodSnapshot.network,
+            chainId: intent.paymentMethodSnapshot.chainId,
+            token: {
+                address: intent.paymentMethodSnapshot.tokenAddress,
+                symbol: intent.paymentMethodSnapshot.tokenSymbol,
+                decimals: intent.paymentMethodSnapshot.tokenDecimals
+            },
+            recipientAddress: intent.paymentMethodSnapshot.treasuryAddress,
+            confirmations: intent.paymentMethodSnapshot.confirmations
+        } : null,
         chainId: intent.chainId,
         token: {
             address: intent.tokenAddress,
@@ -67,7 +81,7 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
         txHash: intent.txHash || null,
         verifiedTokenAmountBaseUnits: intent.verifiedTokenAmountBaseUnits || null,
         confirmationCount: intent.confirmationCount ?? null,
-        requiredConfirmations: requiredConfirmations ?? null,
+        requiredConfirmations: intent.paymentMethodSnapshot?.confirmations ?? requiredConfirmations ?? null,
         expiresAt: intent.expiresAt || null,
         confirmedAt: intent.confirmedAt || null,
         credited: Boolean(intent.creditedTransactionId),
@@ -146,6 +160,22 @@ const toPaymentPackageDto = (paymentPackage) => {
     };
 };
 
+const toPaymentMethodDto = (paymentMethod) => {
+    if (!paymentMethod) return null;
+
+    return {
+        id: paymentMethod.id,
+        name: paymentMethod.name,
+        network: paymentMethod.network,
+        chainId: paymentMethod.chainId,
+        token: {
+            address: paymentMethod.tokenAddress,
+            symbol: paymentMethod.tokenSymbol,
+            decimals: paymentMethod.tokenDecimals
+        }
+    };
+};
+
 module.exports = {
     toSafeUser,
     toPromptDto,
@@ -154,5 +184,6 @@ module.exports = {
     toPaymentPayerChallengeDto,
     toWalletDto,
     toPaymentSettlementDto,
-    toPaymentPackageDto
+    toPaymentPackageDto,
+    toPaymentMethodDto
 };

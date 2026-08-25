@@ -37,6 +37,22 @@ const sepoliaConfig = {
     tokenAddress: baseSepoliaUsdcAddress
 };
 
+const methodSnapshot = (overrides = {}) => ({
+    id: "base-mainnet-usdc",
+    name: "Base mainnet USDC",
+    network: "base-mainnet",
+    chainId: 8453,
+    rpcUrl: config.rpcUrl,
+    tokenAddress: baseUsdcAddress,
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    treasuryAddress,
+    confirmations: 60,
+    enabled: true,
+    production: true,
+    ...overrides
+});
+
 const makeTransferLog = ({
     tokenAddress = baseUsdcAddress,
     from = senderAddress,
@@ -49,8 +65,11 @@ const makeTransferLog = ({
 };
 
 const makeIntent = (overrides = {}) => ({
+    paymentMethodId: "base-mainnet-usdc",
+    paymentMethodSnapshot: methodSnapshot(),
     chainId: 8453,
     tokenAddress: baseUsdcAddress,
+    tokenSymbol: "USDC",
     tokenDecimals: 6,
     recipientAddress: treasuryAddress,
     payerAddress: senderAddress,
@@ -182,10 +201,38 @@ test("PaymentVerifier rejects wrong provider network and frontend cannot overrid
     assert.equal(result.code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
 });
 
+test("PaymentVerifier rejects missing or tampered payment method snapshot", async () => {
+    assert.equal((await verifyWith({
+        intent: makeIntent({ paymentMethodSnapshot: null })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_METHOD);
+
+    assert.equal((await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "base-mainnet-usdc",
+            paymentMethodSnapshot: methodSnapshot({ id: "base-sepolia-usdc" })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_METHOD);
+
+    assert.equal((await verifyWith({
+        intent: makeIntent({
+            paymentMethodSnapshot: methodSnapshot({ chainId: 84532 })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
+});
+
 test("PaymentVerifier accepts configured Base Sepolia chain and token", async () => {
     const result = await verifyWith({
         verifierConfig: sepoliaConfig,
         intent: makeIntent({
+            paymentMethodId: "base-sepolia-usdc",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "base-sepolia-usdc",
+                name: "Base Sepolia USDC",
+                network: "base-sepolia",
+                chainId: 84532,
+                rpcUrl: sepoliaConfig.rpcUrl,
+                tokenAddress: baseSepoliaUsdcAddress
+            }),
             chainId: 84532,
             tokenAddress: baseSepoliaUsdcAddress
         }),
@@ -228,14 +275,24 @@ test("PaymentVerifier rejects wrong token contract and frontend cannot override 
     });
     assert.equal(wrongIntentToken.code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
 
-    const wrongConfigToken = await verifyWith({
-        verifierConfig: { ...config, tokenAddress: otherTokenAddress }
+    const wrongSnapshotToken = await verifyWith({
+        intent: makeIntent({
+            paymentMethodSnapshot: methodSnapshot({ tokenAddress: otherTokenAddress })
+        })
     });
-    assert.equal(wrongConfigToken.code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+    assert.equal(wrongSnapshotToken.code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
 
     const mismatchedSepoliaToken = await verifyWith({
-        verifierConfig: { ...sepoliaConfig, tokenAddress: baseUsdcAddress },
         intent: makeIntent({
+            paymentMethodId: "base-sepolia-usdc",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "base-sepolia-usdc",
+                name: "Base Sepolia USDC",
+                network: "base-sepolia",
+                chainId: 84532,
+                rpcUrl: sepoliaConfig.rpcUrl,
+                tokenAddress: baseUsdcAddress
+            }),
             chainId: 84532,
             tokenAddress: baseUsdcAddress
         }),

@@ -6,6 +6,10 @@ const paymentNetworks = {
     "base-sepolia": {
         id: 84532,
         name: "Base Sepolia"
+    },
+    "bnb-mainnet": {
+        id: 56,
+        name: "BNB Chain"
     }
 };
 

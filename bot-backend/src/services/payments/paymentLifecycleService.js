@@ -72,11 +72,12 @@ const createPaymentLifecycleService = ({
         return expired || intent;
     };
 
-    const createIntent = async ({ userId, packageId, idempotencyKey, payerChallengeId, signature }) => (
+    const createIntent = async ({ userId, packageId, paymentMethodId, idempotencyKey, payerChallengeId, signature }) => (
         withTransaction(async (session) => {
             const result = await intentService.createPaymentIntent({
                 userId,
                 packageId,
+                paymentMethodId,
                 idempotencyKey,
                 payerChallengeId,
                 signature

@@ -12,7 +12,8 @@ const {
     aiEstimatedInputCharsPerToken
 } = require("./config");
 const { isValidEvmAddress, normalizeEvmAddress } = require("../utils/evmAddress");
-const { BASE_MAINNET_CHAIN_ID, getSupportedPaymentNetworkByName } = require("./paymentNetworks");
+const { BASE_MAINNET_CHAIN_ID, getAllowedPaymentMethod, getAllowedPaymentMethodByLegacyNetwork } = require("./paymentNetworks");
+const { buildPaymentMethods } = require("./paymentMethods");
 const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
 
 const requiredEnv = [
@@ -83,57 +84,6 @@ const validatePaymentConfig = (config, options = {}) => {
     const {
         nodeEnv = process.env.NODE_ENV
     } = normalizeValidationOptions(options);
-    const supportedNetwork = getSupportedPaymentNetworkByName(config.network);
-
-    if (!supportedNetwork) {
-        throw new Error("Invalid PAYMENT_NETWORK configuration");
-    }
-
-    if (nodeEnv === "production" && config.network !== "base-mainnet") {
-        throw new Error("Invalid PAYMENT_NETWORK configuration");
-    }
-
-    if (!supportedNetwork.production && config.allowTestnetPayments !== true) {
-        throw new Error("Invalid ALLOW_TESTNET_PAYMENTS configuration");
-    }
-
-    if (!supportedNetwork.production && !["development", "test", "local"].includes(nodeEnv)) {
-        throw new Error("Invalid NODE_ENV configuration for testnet payments");
-    }
-
-    if (!Number.isInteger(config.chainId) || config.chainId <= 0 || config.chainId !== supportedNetwork.chainId) {
-        throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
-    }
-
-    if (nodeEnv === "production" && config.chainId !== BASE_MAINNET_CHAIN_ID) {
-        throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
-    }
-
-    try {
-        const url = new URL(config.rpcUrl);
-        if (!["http:", "https:"].includes(url.protocol)) {
-            throw new Error("invalid protocol");
-        }
-    } catch {
-        throw new Error("Invalid PAYMENT_RPC_URL configuration");
-    }
-
-    const configuredTokenAddress = normalizeEvmAddress(config.tokenAddress);
-    if (!isValidEvmAddress(config.tokenAddress) || configuredTokenAddress !== supportedNetwork.tokenAddress) {
-        throw new Error("Invalid PAYMENT_TOKEN_ADDRESS configuration");
-    }
-
-    if (config.tokenSymbol !== "USDC") {
-        throw new Error("Invalid PAYMENT_TOKEN_SYMBOL configuration");
-    }
-
-    if (!Number.isInteger(config.tokenDecimals) || config.tokenDecimals !== 6) {
-        throw new Error("Invalid PAYMENT_TOKEN_DECIMALS configuration");
-    }
-
-    if (!isValidEvmAddress(config.treasuryAddress)) {
-        throw new Error("Invalid PAYMENT_TREASURY_ADDRESS configuration");
-    }
 
     if (!Number.isInteger(config.confirmations) || config.confirmations < 1) {
         throw new Error("Invalid PAYMENT_CONFIRMATIONS configuration");
@@ -156,7 +106,106 @@ const validatePaymentConfig = (config, options = {}) => {
     }
 
     parsePaymentPackages(config.packagesJson, { pricingVersion: config.pricingVersion });
+    validatePaymentMethodsConfig(config, { nodeEnv });
+};
+
+const validateUrl = (value, envName) => {
+    try {
+        const url = new URL(value);
+        if (!["http:", "https:"].includes(url.protocol)) {
+            throw new Error("invalid protocol");
+        }
+    } catch {
+        throw new Error(`Invalid ${envName} configuration`);
+    }
+};
+
+const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV } = {}) => {
+    if (!config.methodsJson) {
+        const legacyMethod = getAllowedPaymentMethodByLegacyNetwork(config.network);
+        if (!legacyMethod) {
+            throw new Error("Invalid PAYMENT_NETWORK configuration");
+        }
+        if (nodeEnv === "production" && !legacyMethod.production) {
+            throw new Error("Invalid PAYMENT_NETWORK configuration");
+        }
+        if (!Number.isInteger(config.chainId) || config.chainId !== legacyMethod.chainId) {
+            throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
+        }
+        validateUrl(config.rpcUrl, "PAYMENT_RPC_URL");
+        if (normalizeEvmAddress(config.tokenAddress) !== legacyMethod.tokenAddress) {
+            throw new Error("Invalid PAYMENT_TOKEN_ADDRESS configuration");
+        }
+        if (config.tokenSymbol !== legacyMethod.tokenSymbol) {
+            throw new Error("Invalid PAYMENT_TOKEN_SYMBOL configuration");
+        }
+        if (config.tokenDecimals !== legacyMethod.tokenDecimals) {
+            throw new Error("Invalid PAYMENT_TOKEN_DECIMALS configuration");
+        }
+        if (!isValidEvmAddress(config.treasuryAddress)) {
+            throw new Error("Invalid PAYMENT_TREASURY_ADDRESS configuration");
+        }
+    }
+
+    const methods = buildPaymentMethods(config);
+    const enabledMethods = methods.filter(method => method.enabled);
+
+    if (enabledMethods.length === 0) {
+        throw new Error("Invalid PAYMENT_METHODS_JSON configuration");
+    }
+
+    const defaultMethodId = config.defaultMethodId || enabledMethods[0].id;
+    if (!enabledMethods.some(method => method.id === defaultMethodId)) {
+        throw new Error("Invalid PAYMENT_DEFAULT_METHOD_ID configuration");
+    }
+
+    enabledMethods.forEach((method) => {
+        const allowed = getAllowedPaymentMethod(method.id);
+        if (!allowed) {
+            throw new Error("Invalid PAYMENT_METHOD_ID configuration");
+        }
+
+        if (nodeEnv === "production" && !allowed.production) {
+            throw new Error("Invalid PAYMENT_METHOD_ID configuration");
+        }
+
+        if (!allowed.production && config.allowTestnetPayments !== true) {
+            throw new Error("Invalid ALLOW_TESTNET_PAYMENTS configuration");
+        }
+
+        if (!allowed.production && !["development", "test", "local"].includes(nodeEnv)) {
+            throw new Error("Invalid NODE_ENV configuration for testnet payments");
+        }
+
+        if (!Number.isInteger(method.chainId) || method.chainId <= 0 || method.chainId !== allowed.chainId) {
+            throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
+        }
+
+        if (nodeEnv === "production" && method.chainId !== BASE_MAINNET_CHAIN_ID && method.network !== "bnb-mainnet") {
+            throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
+        }
+
+        validateUrl(method.rpcUrl, "PAYMENT_METHOD_RPC_URL");
+
+        const configuredTokenAddress = normalizeEvmAddress(method.tokenAddress);
+        if (!isValidEvmAddress(method.tokenAddress) || configuredTokenAddress !== allowed.tokenAddress) {
+            throw new Error("Invalid PAYMENT_METHOD_TOKEN_ADDRESS configuration");
+        }
+
+        if (method.tokenSymbol !== allowed.tokenSymbol) {
+            throw new Error("Invalid PAYMENT_METHOD_TOKEN_SYMBOL configuration");
+        }
+
+        if (!Number.isInteger(method.tokenDecimals) || method.tokenDecimals !== allowed.tokenDecimals) {
+            throw new Error("Invalid PAYMENT_METHOD_TOKEN_DECIMALS configuration");
+        }
+
+        if (!isValidEvmAddress(method.treasuryAddress)) {
+            throw new Error("Invalid PAYMENT_METHOD_TREASURY_ADDRESS configuration");
+        }
+    });
 };
 
 module.exports = validateEnv;
 module.exports.validatePaymentConfig = validatePaymentConfig;
+module.exports.validatePaymentMethodsConfig = validatePaymentMethodsConfig;

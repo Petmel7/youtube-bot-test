@@ -1,6 +1,7 @@
 const PaymentIntent = require("../../models/PaymentIntent");
 const { paymentConfig } = require("../../config/config");
-const { conflict } = require("../../utils/errors");
+const { getPaymentMethodById } = require("../../config/paymentMethods");
+const { conflict, unprocessable } = require("../../utils/errors");
 const { createPaymentPricingService } = require("./paymentPricingService");
 const paymentPayerChallengeService = require("../payments/paymentPayerChallengeService");
 
@@ -13,13 +14,18 @@ const createPaymentIntentService = ({
     config = paymentConfig,
     now = () => new Date()
 } = {}) => {
-    const createPaymentIntent = async ({ userId, packageId, idempotencyKey, payerChallengeId, signature }, { session } = {}) => {
+    const createPaymentIntent = async ({ userId, packageId, paymentMethodId, idempotencyKey, payerChallengeId, signature }, { session } = {}) => {
         const existing = await addSession(PaymentIntentModel.findOne({ userId, idempotencyKey }), session);
         if (existing) {
             return { intent: existing, created: false };
         }
 
         const packageSnapshot = pricingService.getPackageSnapshot(packageId);
+        const paymentMethod = getPaymentMethodById(config, paymentMethodId);
+        if (!paymentMethod) {
+            throw unprocessable("PAYMENT_METHOD_UNAVAILABLE", "Payment method is not available");
+        }
+
         const payerProof = await payerChallengeService.verifyAndUseChallenge({
             userId,
             payerChallengeId,
@@ -32,11 +38,13 @@ const createPaymentIntentService = ({
             userId,
             idempotencyKey,
             packageId: packageSnapshot.packageId,
-            chainId: config.chainId,
-            tokenAddress: config.tokenAddress,
-            tokenSymbol: config.tokenSymbol,
-            tokenDecimals: config.tokenDecimals,
-            recipientAddress: config.treasuryAddress,
+            paymentMethodId: paymentMethod.id,
+            paymentMethodSnapshot: paymentMethod,
+            chainId: paymentMethod.chainId,
+            tokenAddress: paymentMethod.tokenAddress,
+            tokenSymbol: paymentMethod.tokenSymbol,
+            tokenDecimals: paymentMethod.tokenDecimals,
+            recipientAddress: paymentMethod.treasuryAddress,
             expectedTokenAmountBaseUnits: packageSnapshot.expectedTokenAmountBaseUnits,
             expectedUsdAmountMinor: packageSnapshot.expectedUsdAmountMinor,
             creditAmount: packageSnapshot.creditAmount,

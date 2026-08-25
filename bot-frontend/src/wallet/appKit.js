@@ -1,12 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { base, baseSepolia } from "viem/chains";
+import { base, baseSepolia, bsc } from "viem/chains";
 import { WagmiProvider } from "wagmi";
 import config from "../config/config";
 
-const networks = [base, baseSepolia];
-const expectedNetwork = config.paymentNetworkName === "base-sepolia" ? baseSepolia : base;
+const networks = [base, baseSepolia, bsc];
+const networkByName = {
+    "base-mainnet": base,
+    "base-sepolia": baseSepolia,
+    "bnb-mainnet": bsc
+};
+const expectedNetwork = networkByName[config.paymentNetworkName] || base;
 const queryClient = new QueryClient();
 const appKitStateKey = "__youtubeBotAppKit";
 

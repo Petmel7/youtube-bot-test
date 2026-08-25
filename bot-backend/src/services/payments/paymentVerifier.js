@@ -1,5 +1,5 @@
 const { paymentConfig } = require("../../config/config");
-const { getSupportedPaymentNetwork } = require("../../config/paymentNetworks");
+const { getAllowedPaymentMethod } = require("../../config/paymentNetworks");
 const { normalizeEvmAddress } = require("../../utils/evmAddress");
 const { createEvmProvider } = require("./evmProvider");
 
@@ -15,6 +15,7 @@ const PAYMENT_OUTCOMES = Object.freeze({
 const PAYMENT_VERIFICATION_CODES = Object.freeze({
     INVALID_TX_HASH: "PAYMENT_INVALID_TX_HASH",
     WRONG_NETWORK: "PAYMENT_WRONG_NETWORK",
+    WRONG_METHOD: "PAYMENT_WRONG_METHOD",
     TX_NOT_FOUND: "PAYMENT_TRANSACTION_NOT_FOUND",
     RECEIPT_NOT_FOUND: "PAYMENT_RECEIPT_NOT_FOUND",
     TX_REVERTED: "PAYMENT_TRANSACTION_REVERTED",
@@ -52,11 +53,11 @@ const createResult = ({
     outcome,
     code,
     retryable,
-    chainId: intent?.chainId ?? config.chainId,
+    chainId: intent?.chainId ?? intent?.paymentMethodSnapshot?.chainId ?? config.chainId,
     txHash: txHash || intent?.txHash || null,
-    tokenAddress: intent?.tokenAddress || config.tokenAddress,
-    tokenDecimals: intent?.tokenDecimals ?? config.tokenDecimals,
-    recipientAddress: intent?.recipientAddress || config.treasuryAddress,
+    tokenAddress: intent?.tokenAddress || intent?.paymentMethodSnapshot?.tokenAddress || config.tokenAddress,
+    tokenDecimals: intent?.tokenDecimals ?? intent?.paymentMethodSnapshot?.tokenDecimals ?? config.tokenDecimals,
+    recipientAddress: intent?.recipientAddress || intent?.paymentMethodSnapshot?.treasuryAddress || config.treasuryAddress,
     payerAddress: intent?.payerAddress || null,
     fromAddress,
     verifiedTokenAmountBaseUnits,
@@ -87,8 +88,9 @@ const isValidExpectedAmount = (value) => (
 );
 
 const createPaymentVerifier = ({
-    provider = createEvmProvider(),
-    config = paymentConfig
+    provider = null,
+    config = paymentConfig,
+    providerFactory = (method) => createEvmProvider({ rpcUrl: method.rpcUrl })
 } = {}) => {
     const verifyPaymentIntent = async (paymentIntent) => {
         const txHash = paymentIntent?.txHash;
@@ -99,29 +101,42 @@ const createPaymentVerifier = ({
         }
 
         try {
-            const configuredTokenAddress = normalizeEvmAddress(config.tokenAddress);
+            const method = paymentIntent.paymentMethodSnapshot || null;
+            const allowedMethod = method?.id ? getAllowedPaymentMethod(method.id) : null;
+
+            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id) {
+                return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_METHOD, context);
+            }
+
+            const configuredTokenAddress = normalizeEvmAddress(method.tokenAddress);
             const intentTokenAddress = normalizeEvmAddress(paymentIntent.tokenAddress);
-            const configuredTreasuryAddress = normalizeEvmAddress(config.treasuryAddress);
+            const configuredTreasuryAddress = normalizeEvmAddress(method.treasuryAddress);
             const intentRecipientAddress = normalizeEvmAddress(paymentIntent.recipientAddress);
             const intentPayerAddress = normalizeEvmAddress(paymentIntent.payerAddress);
-            const supportedNetwork = getSupportedPaymentNetwork(config.chainId);
 
-            if (!supportedNetwork || paymentIntent.chainId !== config.chainId) {
+            if (
+                paymentIntent.chainId !== method.chainId ||
+                method.chainId !== allowedMethod.chainId ||
+                method.network !== allowedMethod.network
+            ) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);
             }
 
-            const networkChainId = await provider.getNetworkChainId();
-            if (networkChainId !== config.chainId) {
+            const verifierProvider = provider || providerFactory(method);
+            const networkChainId = await verifierProvider.getNetworkChainId();
+            if (networkChainId !== method.chainId) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);
             }
 
             if (
                 !configuredTokenAddress ||
                 !intentTokenAddress ||
-                configuredTokenAddress !== supportedNetwork.tokenAddress ||
+                configuredTokenAddress !== allowedMethod.tokenAddress ||
                 intentTokenAddress !== configuredTokenAddress ||
-                paymentIntent.tokenDecimals !== config.tokenDecimals ||
-                config.tokenDecimals !== 6
+                paymentIntent.tokenSymbol !== method.tokenSymbol ||
+                paymentIntent.tokenDecimals !== method.tokenDecimals ||
+                method.tokenSymbol !== allowedMethod.tokenSymbol ||
+                method.tokenDecimals !== allowedMethod.tokenDecimals
             ) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_TOKEN, context);
             }
@@ -138,12 +153,12 @@ const createPaymentVerifier = ({
                 return rejectResult(PAYMENT_VERIFICATION_CODES.INVALID_AMOUNT, context);
             }
 
-            const transaction = await provider.getTransaction(txHash);
+            const transaction = await verifierProvider.getTransaction(txHash);
             if (!transaction) {
                 return pendingResult(PAYMENT_VERIFICATION_CODES.TX_NOT_FOUND, context);
             }
 
-            const receipt = await provider.getTransactionReceipt(txHash);
+            const receipt = await verifierProvider.getTransactionReceipt(txHash);
             if (!receipt) {
                 return pendingResult(PAYMENT_VERIFICATION_CODES.RECEIPT_NOT_FOUND, context);
             }
@@ -160,7 +175,7 @@ const createPaymentVerifier = ({
 
             const confirmedBlock = receipt.blockNumber;
             const firstSeenBlock = transaction.blockNumber ?? confirmedBlock;
-            const currentBlock = await provider.getBlockNumber();
+            const currentBlock = await verifierProvider.getBlockNumber();
             const confirmationCount = Math.max(0, currentBlock - confirmedBlock + 1);
             const receiptContext = {
                 ...context,
@@ -174,7 +189,7 @@ const createPaymentVerifier = ({
                 return rejectResult(PAYMENT_VERIFICATION_CODES.TX_REVERTED, receiptContext);
             }
 
-            const transfers = provider.parseTransferLogs(receipt, configuredTokenAddress);
+            const transfers = verifierProvider.parseTransferLogs(receipt, configuredTokenAddress);
             const matchingTransfers = transfers.filter(transfer => transfer.to === configuredTreasuryAddress);
 
             if (matchingTransfers.length === 0) {
@@ -198,7 +213,7 @@ const createPaymentVerifier = ({
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_PAYER, transferContext);
             }
 
-            if (confirmationCount < config.confirmations) {
+            if (confirmationCount < method.confirmations) {
                 return createResult({
                     ...transferContext,
                     outcome: PAYMENT_OUTCOMES.CONFIRMING,

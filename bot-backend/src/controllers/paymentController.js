@@ -1,13 +1,16 @@
 const defaultPaymentLifecycleService = require("../services/payments/paymentLifecycleService");
 const defaultWalletService = require("../services/billing/walletService");
 const { createPaymentPricingService } = require("../services/billing/paymentPricingService");
+const { getEnabledPaymentMethods } = require("../config/paymentMethods");
+const { paymentConfig } = require("../config/config");
 const paymentPayerChallengeService = require("../services/payments/paymentPayerChallengeService");
-const { toPaymentIntentDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toPaymentSettlementDto, toWalletDto } = require("../utils/dto");
+const { toPaymentIntentDto, toPaymentMethodDto, toPaymentPackageDto, toPaymentPayerChallengeDto, toPaymentSettlementDto, toWalletDto } = require("../utils/dto");
 const {
     assertObjectBody,
     validateEvmAddress,
     validateIdempotencyKey,
     validatePaymentIntentId,
+    validatePaymentMethodId,
     validatePaymentPackageId,
     validatePaymentPayerChallengeId,
     validatePaymentSignature,
@@ -30,17 +33,21 @@ const createPaymentController = (
     {
         walletService = defaultWalletService,
         payerChallengeService = paymentPayerChallengeService,
-        paymentPricingService = null
+        paymentPricingService = null,
+        paymentMethods = null
     } = {}
 ) => {
     const getPaymentPricingService = () => paymentPricingService || getDefaultPaymentPricingService();
 
     const getPaymentPackagesController = async (req, res) => {
         const packages = getPaymentPricingService().listPackageSnapshots();
+        const availablePaymentMethods = paymentMethods || getEnabledPaymentMethods(paymentConfig).filter(method => method.enabled);
 
         res.json({
             success: true,
-            packages: packages.map(toPaymentPackageDto)
+            packages: packages.map(toPaymentPackageDto),
+            paymentMethods: availablePaymentMethods.map(toPaymentMethodDto),
+            defaultPaymentMethodId: paymentConfig.defaultMethodId || availablePaymentMethods[0]?.id || null
         });
     };
 
@@ -72,12 +79,14 @@ const createPaymentController = (
         assertObjectBody(req.body);
 
         const packageId = validatePaymentPackageId(req.body.packageId);
+        const paymentMethodId = validatePaymentMethodId(req.body.paymentMethodId);
         const payerChallengeId = validatePaymentPayerChallengeId(req.body.payerChallengeId);
         const signature = validatePaymentSignature(req.body.signature);
         const idempotencyKey = validateIdempotencyKey(req.get("Idempotency-Key") || req.body.idempotencyKey);
         const { intent, created } = await paymentLifecycleService.createIntent({
             userId: getUserId(req),
             packageId,
+            paymentMethodId,
             idempotencyKey,
             payerChallengeId,
             signature

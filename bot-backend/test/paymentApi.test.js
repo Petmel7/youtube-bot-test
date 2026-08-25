@@ -37,6 +37,19 @@ const makeIntent = (overrides = {}) => ({
     userId: userA,
     idempotencyKey: "idem-key-123456",
     packageId: "starter_credits",
+    paymentMethodId: "base-mainnet-usdc",
+    paymentMethodSnapshot: {
+        id: "base-mainnet-usdc",
+        name: "Base mainnet USDC",
+        network: "base-mainnet",
+        chainId: 8453,
+        rpcUrl: "https://base.example.invalid/rpc",
+        tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        tokenSymbol: "USDC",
+        tokenDecimals: 6,
+        treasuryAddress: "0x1111111111111111111111111111111111111111",
+        confirmations: 12
+    },
     chainId: 8453,
     tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
     tokenSymbol: "USDC",
@@ -170,6 +183,15 @@ const createFakePaymentDependencies = () => ({
             }];
         }
     },
+    paymentMethods: [{
+        id: "base-mainnet-usdc",
+        name: "Base mainnet USDC",
+        network: "base-mainnet",
+        chainId: 8453,
+        tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        tokenSymbol: "USDC",
+        tokenDecimals: 6
+    }],
     payerChallengeService: {
         async createChallenge(args) {
             return {
@@ -226,6 +248,7 @@ const createLifecycleHarness = ({ intent = makeIntent(), verifierResult, settlem
                     _id: `65e00000000000000000000${PaymentIntentModel.intents.size + 2}`,
                     userId: args.userId,
                     packageId: args.packageId,
+                    paymentMethodId: args.paymentMethodId || "base-mainnet-usdc",
                     idempotencyKey: args.idempotencyKey,
                     payerChallengeId: args.payerChallengeId,
                     payerAddress
@@ -296,6 +319,18 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
         expectedTokenAmountBaseUnits: "5000000",
         pricingVersion: "pricing-v1"
     }]);
+    assert.deepEqual(packages.body.paymentMethods, [{
+        id: "base-mainnet-usdc",
+        name: "Base mainnet USDC",
+        network: "base-mainnet",
+        chainId: 8453,
+        token: {
+            address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            symbol: "USDC",
+            decimals: 6
+        }
+    }]);
+    assert.equal(packages.body.defaultPaymentMethodId, "base-mainnet-usdc");
     assert.equal(packages.body.packages[0].internalRate, undefined);
 
     assert.equal(wallet.status, 200);
@@ -320,10 +355,12 @@ test("payment API create validates input and sends only backend-safe arguments t
         headers: { "X-CSRF-Protection": "1", "Idempotency-Key": "client-key-123456" },
         body: {
             packageId: "starter_credits",
+            paymentMethodId: "base-mainnet-usdc",
             payerChallengeId,
             signature,
             creditAmount: 999999,
             chainId: 1,
+            tokenAddress: "0x0000000000000000000000000000000000000000",
             recipientAddress: "0x0000000000000000000000000000000000000000"
         }
     });
@@ -336,7 +373,7 @@ test("payment API create validates input and sends only backend-safe arguments t
     assert.equal(response.body.intent.requiredConfirmations, 12);
     assert.deepEqual(lifecycle.calls[0], {
         method: "createIntent",
-        args: { userId: userA, packageId: "starter_credits", idempotencyKey: "client-key-123456", payerChallengeId, signature }
+        args: { userId: userA, packageId: "starter_credits", paymentMethodId: "base-mainnet-usdc", idempotencyKey: "client-key-123456", payerChallengeId, signature }
     });
 });
 

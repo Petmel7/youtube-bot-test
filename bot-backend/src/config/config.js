@@ -31,6 +31,8 @@ module.exports = {
     paymentConfig: {
         network: process.env.PAYMENT_NETWORK,
         allowTestnetPayments: process.env.ALLOW_TESTNET_PAYMENTS === "true",
+        defaultMethodId: process.env.PAYMENT_DEFAULT_METHOD_ID,
+        methodsJson: process.env.PAYMENT_METHODS_JSON,
         chainId: Number(process.env.PAYMENT_CHAIN_ID || BASE_MAINNET_CHAIN_ID),
         rpcUrl: process.env.PAYMENT_RPC_URL,
         tokenAddress: normalizeEvmAddress(process.env.PAYMENT_TOKEN_ADDRESS || baseMainnetUsdcAddress),

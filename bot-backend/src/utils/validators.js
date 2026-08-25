@@ -5,6 +5,7 @@ const MAX_THEME_LENGTH = 120;
 const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,80}$/;
 const PAYMENT_PACKAGE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const PAYMENT_METHOD_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const EVM_TX_HASH_RE = /^0x[a-f0-9]{64}$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -72,6 +73,14 @@ const validatePaymentPackageId = (packageId) => {
     return value;
 };
 
+const validatePaymentMethodId = (paymentMethodId) => {
+    const value = normalizeString(paymentMethodId, "paymentMethodId", 80);
+    if (!PAYMENT_METHOD_ID_RE.test(value)) {
+        throw unprocessable("INVALID_PAYMENT_METHOD", "Invalid payment method");
+    }
+    return value;
+};
+
 const validatePaymentIntentId = (id) => {
     const value = normalizeString(id, "paymentIntentId", 64);
     if (!/^[a-f0-9]{24}$/i.test(value)) {
@@ -120,6 +129,7 @@ module.exports = {
     validateGender,
     validateIdempotencyKey,
     validatePaymentIntentId,
+    validatePaymentMethodId,
     validatePaymentPackageId,
     validatePaymentTxHash,
     validateEvmAddress,

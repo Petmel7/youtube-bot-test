@@ -24,6 +24,7 @@ const paymentIntentStatuses = [
 const canonicalDecimalStringPattern = /^(0|[1-9][0-9]*)$/;
 const evmAddressPattern = /^0x[a-f0-9]{40}$/;
 const txHashPattern = /^0x[a-f0-9]{64}$/;
+const paymentMethodIdPattern = /^[A-Za-z0-9_-]{1,80}$/;
 const positiveInteger = {
     validator: (value) => Number.isInteger(value) && value > 0,
     message: "{PATH} must be a positive integer"
@@ -107,6 +108,19 @@ const paymentIntentSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true, immutable: true },
     idempotencyKey: immutableString,
     packageId: immutableString,
+    paymentMethodId: { ...immutableString, match: paymentMethodIdPattern },
+    paymentMethodSnapshot: {
+        id: { ...immutableString, match: paymentMethodIdPattern },
+        name: immutableString,
+        network: immutableString,
+        chainId: { ...immutableNumber, validate: positiveInteger },
+        rpcUrl: immutableString,
+        tokenAddress: { ...immutableString, match: evmAddressPattern },
+        tokenSymbol: immutableString,
+        tokenDecimals: { ...immutableNumber, min: 0 },
+        treasuryAddress: { ...immutableString, match: evmAddressPattern },
+        confirmations: { ...immutableNumber, validate: positiveInteger }
+    },
 
     chainId: { ...immutableNumber, validate: positiveInteger },
     tokenAddress: { ...immutableString, match: evmAddressPattern },
@@ -147,6 +161,7 @@ const paymentIntentSchema = new mongoose.Schema({
 });
 
 paymentIntentSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true });
+paymentIntentSchema.index({ paymentMethodId: 1, createdAt: -1 });
 paymentIntentSchema.index({ userId: 1, payerAddress: 1, createdAt: -1 });
 paymentIntentSchema.index(
     { chainId: 1, txHash: 1 },

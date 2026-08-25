@@ -51,11 +51,16 @@
     font-size: 22px;
 }
 
-.packageList {
+.packageList,
+.methodList {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 10px;
     margin-bottom: 12px;
+}
+
+.methodList {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .packageButton,

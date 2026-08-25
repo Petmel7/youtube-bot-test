@@ -11,8 +11,7 @@ import {
     fetchWallet,
     verifyPaymentIntent
 } from "../services/paymentService";
-import config from "../config/config";
-import { appKitExpectedNetwork, isWalletConnectConfigured, walletConnectInitializationError } from "../wallet/appKit";
+import { appKitNetworks, isWalletConnectConfigured, walletConnectInitializationError } from "../wallet/appKit";
 import styles from "../styles/walletPanel.module.css";
 
 const txHashPattern = /^0x[a-fA-F0-9]{64}$/;
@@ -135,7 +134,7 @@ const PaymentSummary = ({ intent }) => {
                 </div>
                 <div>
                     <span>{t("wallet.fields.network")}</span>
-                    <strong>{config.paymentNetwork.name}</strong>
+                    <strong>{intent.paymentMethod?.name || `Chain ${intent.chainId}`}</strong>
                 </div>
                 <div>
                     <span>{t("wallet.fields.recipient")}</span>
@@ -177,6 +176,7 @@ const WalletFallbackPanel = () => {
 
 const AppKitWalletControls = ({
     selectedPackage,
+    selectedPaymentMethod,
     actionLoading,
     setActionLoading,
     setError,
@@ -191,10 +191,10 @@ const AppKitWalletControls = ({
     const chainId = useChainId();
     const { signMessageAsync } = useSignMessage();
     const { switchChainAsync, isPending: switchingNetwork } = useSwitchChain();
-    const expectedChainId = config.paymentNetwork.id;
-    const expectedNetworkName = config.paymentNetwork.name;
+    const expectedChainId = selectedPaymentMethod?.chainId;
+    const expectedNetworkName = selectedPaymentMethod?.name || "-";
     const connectedNetworkName = chainId === expectedChainId ? expectedNetworkName : (chainId ? `Chain ${chainId}` : "-");
-    const wrongNetwork = isConnected && chainId !== expectedChainId;
+    const wrongNetwork = isConnected && Boolean(expectedChainId) && chainId !== expectedChainId;
     const [createFlowState, setCreateFlowState] = useState(createFlowStates.idle);
     const operationIdRef = useRef(0);
     const signingAddressRef = useRef("");
@@ -203,7 +203,7 @@ const AppKitWalletControls = ({
     const chainIdRef = useRef(chainId);
     const createFlowActive = isActiveCreateFlow(createFlowState);
     const awaitingSignature = createFlowState === createFlowStates.awaitingSignature;
-    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !isConnected || wrongNetwork || status === "connecting";
+    const createDisabled = actionLoading || createFlowActive || !selectedPackage || !selectedPaymentMethod || !isConnected || wrongNetwork || status === "connecting";
 
     useEffect(() => {
         addressRef.current = address;
@@ -237,7 +237,8 @@ const AppKitWalletControls = ({
     const handleSwitchNetwork = async () => {
         setError("");
         try {
-            await switchChainAsync({ chainId: appKitExpectedNetwork.id });
+            const network = appKitNetworks.find(item => item.id === expectedChainId);
+            await switchChainAsync({ chainId: network?.id || expectedChainId });
         } catch (switchError) {
             setError(switchError.message || t("wallet.errors.switchNetwork"));
         }
@@ -286,6 +287,7 @@ const AppKitWalletControls = ({
             setCreateFlowState(createFlowStates.creatingIntent);
             const nextIntent = await createPaymentIntent({
                 packageId: selectedPackage.packageId,
+                paymentMethodId: selectedPaymentMethod.id,
                 payerChallengeId: challenge.id,
                 signature
             });
@@ -370,7 +372,9 @@ const AppKitWalletControls = ({
                         ? t("wallet.connection.disabledConnect")
                         : wrongNetwork
                             ? t("wallet.connection.disabledNetwork", { network: expectedNetworkName })
-                            : t("wallet.connection.disabledPackage")}
+                            : !selectedPaymentMethod
+                                ? t("wallet.connection.disabledMethod")
+                                : t("wallet.connection.disabledPackage")}
                 </p>
             )}
         </div>
@@ -393,8 +397,8 @@ const AppKitPaymentActions = ({
     const chainId = useChainId();
     const { writeContractAsync } = useWriteContract();
     const [paymentFlowState, setPaymentFlowState] = useState(paymentFlowStates.idle);
-    const expectedChainId = config.paymentNetwork.id;
-    const wrongNetwork = isConnected && chainId !== expectedChainId;
+    const expectedChainId = intent.chainId;
+    const wrongNetwork = isConnected && Boolean(expectedChainId) && chainId !== expectedChainId;
     const paymentActive = isActivePaymentFlow(paymentFlowState);
     const paymentDisabled = actionLoading || paymentActive || !intent || intent.credited || !isConnected || wrongNetwork;
 
@@ -421,7 +425,7 @@ const AppKitPaymentActions = ({
 
         try {
             if (chainId !== expectedChainId) {
-                throw new Error(t("wallet.errors.wrongNetwork", { network: config.paymentNetwork.name }));
+                throw new Error(t("wallet.errors.wrongNetwork", { network: intent.paymentMethod?.name || `Chain ${intent.chainId}` }));
             }
 
             if (normalizeAddress(intent.payerAddress) !== normalizeAddress(address)) {
@@ -488,7 +492,7 @@ const AppKitPaymentActions = ({
                     {t("wallet.paymentFlow.retryVerify")}
                 </button>
             )}
-            {wrongNetwork && <p className={styles.error}>{t("wallet.connection.wrongNetwork", { network: config.paymentNetwork.name })}</p>}
+            {wrongNetwork && <p className={styles.error}>{t("wallet.connection.wrongNetwork", { network: intent.paymentMethod?.name || `Chain ${intent.chainId}` })}</p>}
             {!isConnected && <p className={styles.muted}>{t("wallet.connection.disabledConnect")}</p>}
         </div>
     );
@@ -498,7 +502,9 @@ const WalletPanel = () => {
     const { t } = useTranslation();
     const [wallet, setWallet] = useState(null);
     const [packages, setPackages] = useState([]);
+    const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedPackageId, setSelectedPackageId] = useState("");
+    const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
     const [intent, setIntent] = useState(null);
     const [txHash, setTxHash] = useState("");
     const [payerAddress, setPayerAddress] = useState("");
@@ -511,6 +517,10 @@ const WalletPanel = () => {
     const selectedPackage = useMemo(
         () => packages.find(paymentPackage => paymentPackage.packageId === selectedPackageId) || packages[0],
         [packages, selectedPackageId]
+    );
+    const selectedPaymentMethod = useMemo(
+        () => paymentMethods.find(method => method.id === selectedPaymentMethodId) || paymentMethods[0],
+        [paymentMethods, selectedPaymentMethodId]
     );
 
     const loadWallet = async () => {
@@ -525,15 +535,17 @@ const WalletPanel = () => {
             setLoading(true);
             setError("");
             try {
-                const [nextWallet, nextPackages] = await Promise.all([
+                const [nextWallet, paymentOptions] = await Promise.all([
                     fetchWallet(),
                     fetchPaymentPackages()
                 ]);
 
                 if (ignore) return;
                 setWallet(nextWallet);
-                setPackages(nextPackages);
-                setSelectedPackageId(current => current || nextPackages[0]?.packageId || "");
+                setPackages(paymentOptions.packages);
+                setPaymentMethods(paymentOptions.paymentMethods);
+                setSelectedPackageId(current => current || paymentOptions.packages[0]?.packageId || "");
+                setSelectedPaymentMethodId(current => current || paymentOptions.defaultPaymentMethodId || paymentOptions.paymentMethods[0]?.id || "");
             } catch (loadError) {
                 if (!ignore) setError(loadError.message || t("wallet.errors.load"));
             } finally {
@@ -652,9 +664,26 @@ const WalletPanel = () => {
                     </div>
                     {packages.length === 0 && <p className={styles.muted}>{t("wallet.noPackages")}</p>}
 
+                    <div className={styles.methodList}>
+                        {paymentMethods.map(method => (
+                            <button
+                                className={`${styles.packageButton} ${selectedPaymentMethodId === method.id ? styles.packageButtonSelected : ""}`}
+                                type="button"
+                                key={method.id}
+                                onClick={() => setSelectedPaymentMethodId(method.id)}
+                                disabled={actionLoading}
+                            >
+                                <strong>{method.token?.symbol}</strong>
+                                <span>{method.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {paymentMethods.length === 0 && <p className={styles.muted}>{t("wallet.noPaymentMethods")}</p>}
+
                     {isWalletConnectConfigured ? (
                         <AppKitWalletControls
                             selectedPackage={selectedPackage}
+                            selectedPaymentMethod={selectedPaymentMethod}
                             actionLoading={actionLoading}
                             setActionLoading={setActionLoading}
                             setError={setError}
