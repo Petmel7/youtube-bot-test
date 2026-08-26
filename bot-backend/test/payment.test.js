@@ -8,6 +8,7 @@ const PaymentIntent = require("../src/models/PaymentIntent");
 const PaymentPayerChallenge = require("../src/models/PaymentPayerChallenge");
 const { normalizeEvmAddress } = require("../src/utils/evmAddress");
 const { validatePaymentConfig } = require("../src/config/validateEnv");
+const { allowedPaymentMethods } = require("../src/config/paymentNetworks");
 const {
     calculateStablecoinBaseUnits,
     createPaymentPricingService,
@@ -69,16 +70,23 @@ const validPaymentConfig = (overrides = {}) => ({
 const baseMethodSnapshot = (overrides = {}) => ({
     id: "base-mainnet-usdc",
     name: "Base mainnet USDC",
+    namespace: "eip155",
     network: "base-mainnet",
+    networkId: "8453",
+    caipNetworkId: "eip155:8453",
     chainId: 8453,
     rpcUrl: "https://base.example.invalid/rpc",
+    assetType: "erc20",
     tokenAddress: baseUsdcAddress,
     tokenSymbol: "USDC",
     tokenDecimals: 6,
+    assetProvenance: "circle-native",
     treasuryAddress,
     confirmations: 60,
     enabled: true,
     production: true,
+    testnet: false,
+    smoke: false,
     ...overrides
 });
 
@@ -699,6 +707,105 @@ test("payment config validation rejects unknown, disabled, and production testne
     }), { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
 });
 
+test("payment config validation rejects every testnet smoke method in production and without opt-in", () => {
+    const testnetMethods = Object.values(allowedPaymentMethods).filter(method => method.production === false);
+    assert.ok(testnetMethods.length > 0);
+
+    for (const method of testnetMethods) {
+        const configured = {
+            id: method.id,
+            enabled: true,
+            rpcUrl: "https://rpc.example.invalid",
+            tokenSymbol: method.tokenSymbol,
+            tokenDecimals: method.tokenDecimals,
+            confirmations: 12
+        };
+
+        if ((method.namespace || "eip155") === "solana") {
+            configured.networkId = method.networkId;
+            configured.cluster = method.cluster;
+            configured.mintAddress = method.mintAddress;
+            configured.treasuryAddress = solanaTreasuryAddress;
+        } else {
+            configured.chainId = method.chainId;
+            configured.tokenAddress = method.tokenAddress;
+            configured.treasuryAddress = treasuryAddress;
+        }
+
+        const config = validPaymentConfig({
+            allowTestnetPayments: true,
+            methodsJson: JSON.stringify([configured]),
+            defaultMethodId: method.id
+        });
+
+        assert.throws(() => validatePaymentConfig(config, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/, method.id);
+        assert.throws(() => validatePaymentConfig({
+            ...config,
+            allowTestnetPayments: false
+        }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/, method.id);
+        assert.doesNotThrow(() => validatePaymentConfig(config, { nodeEnv: "development" }), undefined, method.id);
+    }
+});
+
+test("payment config validation rejects unsafe payment method overrides", () => {
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: true,
+            treasuryAddress
+        }])
+    }), { nodeEnv: "production" }), /PAYMENT_METHOD_RPC_URL/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: true,
+            rpcUrl: "https://base.example.invalid/rpc",
+            treasuryAddress: "0xabc"
+        }])
+    }), { nodeEnv: "production" }), /PAYMENT_METHOD_TREASURY_ADDRESS/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: true,
+            rpcUrl: "https://base.example.invalid/rpc",
+            assetType: "native",
+            treasuryAddress
+        }])
+    }), { nodeEnv: "production" }), /PAYMENT_METHOD_ASSET_TYPE/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: true,
+            networkId: "1",
+            rpcUrl: "https://base.example.invalid/rpc",
+            treasuryAddress
+        }])
+    }), { nodeEnv: "production" }), /PAYMENT_METHOD_NETWORK_ID/);
+});
+
+test("payment config validation uses PAYMENT_METHODS_JSON ahead of legacy payment config", () => {
+    const config = validPaymentConfig({
+        network: "base-mainnet",
+        chainId: 1,
+        rpcUrl: "not-a-url",
+        tokenAddress: ethereumUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 18,
+        methodsJson: JSON.stringify([{
+            id: "base-mainnet-usdc",
+            enabled: true,
+            rpcUrl: "https://base.example.invalid/rpc",
+            treasuryAddress
+        }]),
+        defaultMethodId: "base-mainnet-usdc"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(config, { nodeEnv: "production" }));
+});
+
 test("payment config validation rejects wrong token decimals", () => {
     assert.throws(() => validatePaymentConfig(validPaymentConfig({ tokenDecimals: 18 }), baseUsdcAddress), /PAYMENT_TOKEN_DECIMALS/);
 });
@@ -936,7 +1043,19 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     assert.equal(result.intent.status, "PENDING");
     assert.equal(result.intent.paymentMethodId, "base-mainnet-usdc");
     assert.equal(result.intent.paymentMethodSnapshot.id, "base-mainnet-usdc");
+    assert.equal(result.intent.paymentMethodSnapshot.namespace, "eip155");
+    assert.equal(result.intent.paymentMethodSnapshot.networkId, "8453");
+    assert.equal(result.intent.paymentMethodSnapshot.caipNetworkId, "eip155:8453");
+    assert.equal(result.intent.paymentMethodSnapshot.assetType, "erc20");
     assert.equal(result.intent.paymentMethodSnapshot.tokenSymbol, "USDC");
+    assert.equal(result.intent.paymentMethodSnapshot.tokenAddress, baseUsdcAddress);
+    assert.equal(result.intent.paymentMethodSnapshot.tokenDecimals, 6);
+    assert.equal(result.intent.paymentMethodSnapshot.treasuryAddress, treasuryAddress);
+    assert.equal(result.intent.paymentMethodSnapshot.production, true);
+    assert.equal(result.intent.paymentMethodSnapshot.testnet, false);
+    assert.equal(result.intent.paymentMethodSnapshot.smoke, false);
+    assert.equal(result.intent.namespace, "eip155");
+    assert.equal(result.intent.networkId, "8453");
     assert.equal(result.intent.chainId, 8453);
     assert.equal(result.intent.tokenAddress, baseUsdcAddress);
     assert.equal(result.intent.tokenDecimals, 6);

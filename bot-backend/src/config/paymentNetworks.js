@@ -22,8 +22,37 @@ const solanaMainnetUsdcMintAddress = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt
 const solanaMainnetUsdtMintAddress = "Es9vMFrzaCERmJfrF4H2FYD4uqwEcj4x2tYfJ9Q3K4x";
 const solanaDevnetUsdcMintAddress = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
+const makeEvmPaymentMethod = ({
+    id,
+    network,
+    name,
+    chainId,
+    tokenAddress,
+    tokenSymbol,
+    tokenDecimals,
+    assetProvenance,
+    production,
+    smoke = false
+}) => Object.freeze({
+    id,
+    namespace: "eip155",
+    network,
+    networkId: String(chainId),
+    caipNetworkId: `eip155:${chainId}`,
+    name,
+    chainId,
+    assetType: "erc20",
+    tokenAddress,
+    tokenSymbol,
+    tokenDecimals,
+    assetProvenance,
+    production,
+    testnet: production === false,
+    smoke
+});
+
 const allowedPaymentMethods = Object.freeze({
-    "ethereum-mainnet-usdc": Object.freeze({
+    "ethereum-mainnet-usdc": makeEvmPaymentMethod({
         id: "ethereum-mainnet-usdc",
         network: "ethereum-mainnet",
         name: "Ethereum · USDC",
@@ -34,7 +63,7 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "circle-native",
         production: true
     }),
-    "ethereum-mainnet-usdt": Object.freeze({
+    "ethereum-mainnet-usdt": makeEvmPaymentMethod({
         id: "ethereum-mainnet-usdt",
         network: "ethereum-mainnet",
         name: "Ethereum · USDT",
@@ -45,7 +74,7 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "tether-native",
         production: true
     }),
-    "ethereum-sepolia-usdt": Object.freeze({
+    "ethereum-sepolia-usdt": makeEvmPaymentMethod({
         id: "ethereum-sepolia-usdt",
         network: "ethereum-sepolia",
         name: "Ethereum Sepolia · USDT",
@@ -54,9 +83,10 @@ const allowedPaymentMethods = Object.freeze({
         tokenSymbol: "USDT",
         tokenDecimals: 6,
         assetProvenance: "ethereum-sepolia-smoke",
-        production: false
+        production: false,
+        smoke: true
     }),
-    "base-mainnet-usdc": Object.freeze({
+    "base-mainnet-usdc": makeEvmPaymentMethod({
         id: "base-mainnet-usdc",
         network: "base-mainnet",
         name: "Base mainnet USDC",
@@ -67,7 +97,7 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "circle-native",
         production: true
     }),
-    "base-sepolia-usdc": Object.freeze({
+    "base-sepolia-usdc": makeEvmPaymentMethod({
         id: "base-sepolia-usdc",
         network: "base-sepolia",
         name: "Base Sepolia USDC",
@@ -76,9 +106,10 @@ const allowedPaymentMethods = Object.freeze({
         tokenSymbol: "USDC",
         tokenDecimals: 6,
         assetProvenance: "circle-native",
-        production: false
+        production: false,
+        smoke: true
     }),
-    "bnb-mainnet-usdc": Object.freeze({
+    "bnb-mainnet-usdc": makeEvmPaymentMethod({
         id: "bnb-mainnet-usdc",
         network: "bnb-mainnet",
         name: "BNB Chain · Binance-Peg USDC",
@@ -89,7 +120,7 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "binance-peg",
         production: true
     }),
-    "bnb-mainnet-usdt": Object.freeze({
+    "bnb-mainnet-usdt": makeEvmPaymentMethod({
         id: "bnb-mainnet-usdt",
         network: "bnb-mainnet",
         name: "BNB Chain · Binance-Peg USDT",
@@ -100,7 +131,7 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "binance-peg",
         production: true
     }),
-    "bnb-testnet-usdc": Object.freeze({
+    "bnb-testnet-usdc": makeEvmPaymentMethod({
         id: "bnb-testnet-usdc",
         network: "bnb-testnet",
         name: "BNB Chain testnet USDC",
@@ -109,9 +140,10 @@ const allowedPaymentMethods = Object.freeze({
         tokenSymbol: "USDC",
         tokenDecimals: 18,
         assetProvenance: "bnb-testnet",
-        production: false
+        production: false,
+        smoke: true
     }),
-    "bnb-testnet-usdt": Object.freeze({
+    "bnb-testnet-usdt": makeEvmPaymentMethod({
         id: "bnb-testnet-usdt",
         network: "bnb-testnet",
         name: "BNB Chain testnet · USDT",
@@ -120,46 +152,56 @@ const allowedPaymentMethods = Object.freeze({
         tokenSymbol: "USDT",
         tokenDecimals: 18,
         assetProvenance: "bnb-testnet",
-        production: false
+        production: false,
+        smoke: true
     }),
     "solana-mainnet-usdc": Object.freeze({
         id: "solana-mainnet-usdc",
         namespace: "solana",
         network: "solana-mainnet",
         networkId: SOLANA_MAINNET_NETWORK_ID,
+        caipNetworkId: `solana:${SOLANA_MAINNET_NETWORK_ID}`,
         cluster: "mainnet-beta",
         name: "Solana mainnet USDC",
         assetType: "spl-token",
         mintAddress: solanaMainnetUsdcMintAddress,
         tokenSymbol: "USDC",
         tokenDecimals: 6,
-        production: true
+        production: true,
+        testnet: false,
+        smoke: false
     }),
     "solana-mainnet-usdt": Object.freeze({
         id: "solana-mainnet-usdt",
         namespace: "solana",
         network: "solana-mainnet",
         networkId: SOLANA_MAINNET_NETWORK_ID,
+        caipNetworkId: `solana:${SOLANA_MAINNET_NETWORK_ID}`,
         cluster: "mainnet-beta",
         name: "Solana mainnet USDT",
         assetType: "spl-token",
         mintAddress: solanaMainnetUsdtMintAddress,
         tokenSymbol: "USDT",
         tokenDecimals: 6,
-        production: true
+        production: true,
+        testnet: false,
+        smoke: false
     }),
     "solana-devnet-usdc": Object.freeze({
         id: "solana-devnet-usdc",
         namespace: "solana",
         network: "solana-devnet",
         networkId: SOLANA_DEVNET_NETWORK_ID,
+        caipNetworkId: `solana:${SOLANA_DEVNET_NETWORK_ID}`,
         cluster: "devnet",
         name: "Solana devnet USDC",
         assetType: "spl-token",
         mintAddress: solanaDevnetUsdcMintAddress,
         tokenSymbol: "USDC",
         tokenDecimals: 6,
-        production: false
+        production: false,
+        testnet: true,
+        smoke: true
     })
 });
 

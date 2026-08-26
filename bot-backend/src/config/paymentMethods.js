@@ -13,6 +13,9 @@ const freezeMethodSnapshot = (method) => Object.freeze({
     namespace: method.namespace || "eip155",
     network: method.network,
     networkId: method.networkId || (method.chainId ? String(method.chainId) : undefined),
+    caipNetworkId: method.caipNetworkId || (method.namespace === "solana"
+        ? `solana:${method.networkId}`
+        : `eip155:${method.chainId}`),
     cluster: method.cluster,
     chainId: method.chainId,
     rpcUrl: method.rpcUrl,
@@ -25,7 +28,9 @@ const freezeMethodSnapshot = (method) => Object.freeze({
     treasuryAddress: method.namespace === "solana" ? method.treasuryAddress : normalizeEvmAddress(method.treasuryAddress),
     confirmations: method.confirmations,
     enabled: Boolean(method.enabled),
-    production: Boolean(method.production)
+    production: Boolean(method.production),
+    testnet: method.testnet === true || method.production === false,
+    smoke: method.smoke === true
 });
 
 const parsePaymentMethodsJson = (methodsJson) => {
@@ -86,8 +91,10 @@ const buildPaymentMethods = (config) => {
             enabled: isTruthy(configured.enabled),
             chainId: Number(configured.chainId ?? allowed.chainId),
             networkId: configured.networkId ?? allowed.networkId,
+            caipNetworkId: configured.caipNetworkId ?? allowed.caipNetworkId,
             cluster: configured.cluster ?? allowed.cluster,
             rpcUrl: configured.rpcUrl,
+            assetType: configured.assetType ?? allowed.assetType,
             tokenAddress: configured.tokenAddress ?? allowed.tokenAddress,
             mintAddress: configured.mintAddress ?? allowed.mintAddress,
             tokenSymbol: configured.tokenSymbol ?? allowed.tokenSymbol,

@@ -59,11 +59,13 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
             namespace: intent.paymentMethodSnapshot.namespace || "eip155",
             network: intent.paymentMethodSnapshot.network,
             networkId: intent.paymentMethodSnapshot.networkId,
-            caipNetworkId: intent.paymentMethodSnapshot.namespace === "solana"
+            caipNetworkId: intent.paymentMethodSnapshot.caipNetworkId || (intent.paymentMethodSnapshot.namespace === "solana"
                 ? `solana:${intent.paymentMethodSnapshot.networkId}`
-                : `eip155:${intent.paymentMethodSnapshot.chainId}`,
+                : `eip155:${intent.paymentMethodSnapshot.chainId}`),
             cluster: intent.paymentMethodSnapshot.cluster || null,
             chainId: intent.paymentMethodSnapshot.chainId,
+            testnet: intent.paymentMethodSnapshot.testnet === true || intent.paymentMethodSnapshot.production === false,
+            smoke: intent.paymentMethodSnapshot.smoke === true,
             token: {
                 address: intent.paymentMethodSnapshot.tokenAddress || intent.paymentMethodSnapshot.mintAddress,
                 mintAddress: intent.paymentMethodSnapshot.mintAddress || null,
@@ -186,10 +188,11 @@ const toPaymentMethodDto = (paymentMethod) => {
         networkId: paymentMethod.networkId || null,
         chainId: paymentMethod.chainId,
         cluster: paymentMethod.cluster || null,
-        caipNetworkId: paymentMethod.namespace === "solana"
+        caipNetworkId: paymentMethod.caipNetworkId || (paymentMethod.namespace === "solana"
             ? `solana:${paymentMethod.networkId}`
-            : `eip155:${paymentMethod.chainId}`,
-        testnet: paymentMethod.production === false,
+            : `eip155:${paymentMethod.chainId}`),
+        testnet: paymentMethod.testnet === true || paymentMethod.production === false,
+        smoke: paymentMethod.smoke === true,
         enabled: paymentMethod.enabled !== false,
         token: {
             address: paymentMethod.tokenAddress || paymentMethod.mintAddress,

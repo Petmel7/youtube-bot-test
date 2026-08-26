@@ -68,6 +68,18 @@ For development smoke testing, `bnb-testnet-usdt` enables the BSC testnet USDT t
 
 For Ethereum testnet smoke testing, `ethereum-sepolia-usdt` enables the Sepolia token at `0x7169d38820dfd117c3fa1f22a697dba58d90ba06` with 6 decimals. This is a smoke-only Sepolia test token, not documented here as official Tether issuance, and it requires `ALLOW_TESTNET_PAYMENTS=true` outside production. A single-line dotenv value can be `[{"id":"ethereum-sepolia-usdt","enabled":true,"rpcUrl":"https://YOUR_ETHEREUM_SEPOLIA_RPC","treasuryAddress":"0xYOUR_TREASURY"}]`.
 
+## Phase 3L Payment Configuration Hardening
+
+Payment methods are backend-owned and whitelist-based. `PAYMENT_METHODS_JSON` is the preferred multi-method configuration surface and, when present, takes precedence over legacy single-method `PAYMENT_NETWORK`, `PAYMENT_CHAIN_ID`, `PAYMENT_RPC_URL`, and `PAYMENT_TOKEN_ADDRESS` values. Legacy config remains a compatibility path for the Base USDC methods only.
+
+Enabled methods must match the whitelist exactly for namespace, network identity, token or mint address, token symbol, token decimals, asset type, and asset provenance. Environment config may enable a method and provide method-specific `rpcUrl`, `treasuryAddress`, and confirmations, but it must not redefine token identity. Production accepts production methods only. Testnet and smoke methods require `ALLOW_TESTNET_PAYMENTS=true` and a local non-production `NODE_ENV`.
+
+Public payment method DTOs intentionally omit RPC URLs and internal env details. They expose display and wallet-transfer fields only: id, name, namespace, network, CAIP network id, enabled/testnet/smoke indicators, and token or mint metadata. Existing `PaymentIntent` documents keep immutable snapshots, so later config changes must not alter verification, settlement, recipient, amount, payer, pricing, or credit expectations for already-created intents.
+
+### Future Admin Payment Configuration
+
+An admin UI for treasury or payment method management is intentionally not implemented in Phase 3L. A future admin design must keep RPC URLs and secrets server-side and include admin-only authorization, two-step confirmation for treasury changes, an audit log with actor, timestamp, old and new method config, and reason, staged config changes, production allowlist approval, optional dual-control or multi-admin approval before treasury changes, a rollback plan, monitoring and reconciliation for paid-but-uncredited transactions, and an explicit guarantee that existing `PaymentIntent` snapshots are never mutated by admin config changes.
+
 ## Phase 3B Payment Verification
 
 Phase 3B adds backend-only Base Mainnet USDC verification. Blockchain access is isolated behind `src/services/payments/evmProvider.js`, and payment verification lives in `src/services/payments/paymentVerifier.js`.

@@ -184,13 +184,17 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
 
         validateUrl(method.rpcUrl, "PAYMENT_METHOD_RPC_URL");
 
-        if ((allowed.namespace || "eip155") === "solana") {
-            if (method.networkId !== allowed.networkId || method.cluster !== allowed.cluster) {
-                throw new Error("Invalid PAYMENT_METHOD_NETWORK_ID configuration");
-            }
+        if (method.networkId !== allowed.networkId || method.caipNetworkId !== allowed.caipNetworkId) {
+            throw new Error("Invalid PAYMENT_METHOD_NETWORK_ID configuration");
+        }
 
-            if (method.assetType !== allowed.assetType) {
-                throw new Error("Invalid PAYMENT_METHOD_ASSET_TYPE configuration");
+        if (method.assetType !== allowed.assetType) {
+            throw new Error("Invalid PAYMENT_METHOD_ASSET_TYPE configuration");
+        }
+
+        if ((allowed.namespace || "eip155") === "solana") {
+            if (method.cluster !== allowed.cluster) {
+                throw new Error("Invalid PAYMENT_METHOD_NETWORK_ID configuration");
             }
 
             if (!isValidSolanaPublicKey(method.mintAddress) || method.mintAddress !== allowed.mintAddress) {
@@ -225,6 +229,10 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
 
         if ((method.assetProvenance || null) !== (allowed.assetProvenance || null)) {
             throw new Error("Invalid PAYMENT_METHOD_ASSET_PROVENANCE configuration");
+        }
+
+        if (method.testnet !== allowed.testnet || method.smoke !== allowed.smoke) {
+            throw new Error("Invalid PAYMENT_METHOD_ENVIRONMENT configuration");
         }
 
     });

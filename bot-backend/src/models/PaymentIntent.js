@@ -119,6 +119,7 @@ const paymentIntentSchema = new mongoose.Schema({
         namespace: { type: String, enum: ["eip155", "solana"], default: "eip155", required: true, immutable: true },
         network: immutableString,
         networkId: { type: String, default: null, immutable: true },
+        caipNetworkId: { type: String, default: null, immutable: true },
         cluster: nullableString,
         chainId: { type: Number, default: null, immutable: true },
         rpcUrl: immutableString,
@@ -129,7 +130,10 @@ const paymentIntentSchema = new mongoose.Schema({
         tokenSymbol: immutableString,
         tokenDecimals: { ...immutableNumber, min: 0 },
         treasuryAddress: immutableString,
-        confirmations: { ...immutableNumber, validate: positiveInteger }
+        confirmations: { ...immutableNumber, validate: positiveInteger },
+        production: { type: Boolean, default: null, immutable: true },
+        testnet: { type: Boolean, default: false, immutable: true },
+        smoke: { type: Boolean, default: false, immutable: true }
     },
 
     networkId: { type: String, default: null, immutable: true },

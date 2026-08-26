@@ -187,12 +187,21 @@ const createFakePaymentDependencies = () => ({
     paymentMethods: [{
         id: "base-mainnet-usdc",
         name: "Base mainnet USDC",
+        namespace: "eip155",
         network: "base-mainnet",
+        networkId: "8453",
+        caipNetworkId: "eip155:8453",
         chainId: 8453,
+        rpcUrl: "https://secret-rpc.example.invalid/key",
+        assetType: "erc20",
         tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
         tokenSymbol: "USDC",
         tokenDecimals: 6,
-        assetProvenance: "circle-native"
+        assetProvenance: "circle-native",
+        production: true,
+        testnet: false,
+        smoke: false,
+        enabled: true
     }],
     payerChallengeService: {
         async createChallenge(args) {
@@ -327,11 +336,12 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
         name: "Base mainnet USDC",
         namespace: "eip155",
         network: "base-mainnet",
-        networkId: null,
+        networkId: "8453",
         chainId: 8453,
         cluster: null,
         caipNetworkId: "eip155:8453",
         testnet: false,
+        smoke: false,
         enabled: true,
         token: {
             address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
@@ -347,6 +357,8 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
     assert.deepEqual(methods.body.paymentMethods, packages.body.paymentMethods);
     assert.equal(methods.body.defaultPaymentMethodId, "base-mainnet-usdc");
     assert.equal(packages.body.packages[0].internalRate, undefined);
+    assert.equal(packages.body.paymentMethods[0].rpcUrl, undefined);
+    assert.equal(methods.body.paymentMethods[0].rpcUrl, undefined);
 
     assert.equal(wallet.status, 200);
     assert.deepEqual(wallet.body.wallet, {
