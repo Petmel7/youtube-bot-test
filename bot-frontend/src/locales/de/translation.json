@@ -45,7 +45,8 @@
         "unavailableMethod": "Nicht verfügbar",
         "assetProvenance": {
             "circleNative": "Circle-nativ",
-            "binancePeg": "Binance-Peg"
+            "binancePeg": "Binance-Peg",
+            "bnbTestnet": "BNB-Testnet-Token"
         },
         "createIntent": "Zahlung erstellen",
         "payWithWallet": "Mit Wallet bezahlen",

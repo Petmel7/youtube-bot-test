@@ -4,6 +4,7 @@ const ETHEREUM_MAINNET_CHAIN_ID = 1;
 const BASE_MAINNET_CHAIN_ID = 8453;
 const BASE_SEPOLIA_CHAIN_ID = 84532;
 const BNB_MAINNET_CHAIN_ID = 56;
+const BNB_TESTNET_CHAIN_ID = 97;
 const SOLANA_MAINNET_NETWORK_ID = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const SOLANA_DEVNET_NETWORK_ID = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 
@@ -11,6 +12,7 @@ const ethereumMainnetUsdcAddress = normalizeEvmAddress("0xA0b86991c6218b36c1d19D
 const baseMainnetUsdcAddress = normalizeEvmAddress("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
 const baseSepoliaUsdcAddress = normalizeEvmAddress("0x036CbD53842c5426634e7929541eC2318f3dCF7e");
 const bnbMainnetUsdcAddress = normalizeEvmAddress("0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d");
+const bnbTestnetUsdcAddress = normalizeEvmAddress("0x64544969ed7EBf5f083679233325356EbE738930");
 const solanaMainnetUsdcMintAddress = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const solanaMainnetUsdtMintAddress = "Es9vMFrzaCERmJfrF4H2FYD4uqwEcj4x2tYfJ9Q3K4x";
 const solanaDevnetUsdcMintAddress = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -59,6 +61,17 @@ const allowedPaymentMethods = Object.freeze({
         tokenDecimals: 18,
         assetProvenance: "binance-peg",
         production: true
+    }),
+    "bnb-testnet-usdc": Object.freeze({
+        id: "bnb-testnet-usdc",
+        network: "bnb-testnet",
+        name: "BNB Chain testnet USDC",
+        chainId: BNB_TESTNET_CHAIN_ID,
+        tokenAddress: bnbTestnetUsdcAddress,
+        tokenSymbol: "USDC",
+        tokenDecimals: 18,
+        assetProvenance: "bnb-testnet",
+        production: false
     }),
     "solana-mainnet-usdc": Object.freeze({
         id: "solana-mainnet-usdc",
@@ -114,12 +127,14 @@ module.exports = {
     BASE_MAINNET_CHAIN_ID,
     BASE_SEPOLIA_CHAIN_ID,
     BNB_MAINNET_CHAIN_ID,
+    BNB_TESTNET_CHAIN_ID,
     SOLANA_MAINNET_NETWORK_ID,
     SOLANA_DEVNET_NETWORK_ID,
     ethereumMainnetUsdcAddress,
     baseMainnetUsdcAddress,
     baseSepoliaUsdcAddress,
     bnbMainnetUsdcAddress,
+    bnbTestnetUsdcAddress,
     solanaMainnetUsdcMintAddress,
     solanaMainnetUsdtMintAddress,
     solanaDevnetUsdcMintAddress,

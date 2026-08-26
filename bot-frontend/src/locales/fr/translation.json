@@ -45,7 +45,8 @@
         "unavailableMethod": "Indisponible",
         "assetProvenance": {
             "circleNative": "Natif Circle",
-            "binancePeg": "Binance-Peg"
+            "binancePeg": "Binance-Peg",
+            "bnbTestnet": "Token testnet BNB"
         },
         "createIntent": "Créer un paiement",
         "payWithWallet": "Payer avec le portefeuille",

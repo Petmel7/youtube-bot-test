@@ -60,6 +60,8 @@ Phase 3I moves payment package configuration to business pricing only. `PAYMENT_
 
 Phase 3J adds production EVM USDC payment methods through `PAYMENT_METHODS_JSON`: `ethereum-mainnet-usdc` for Circle native USDC on Ethereum mainnet and `bnb-mainnet-usdc` for Binance-Peg USDC on BNB Chain. Do not label the BNB Chain token as native Circle USDC. A production dotenv value may enable both methods as a single-line JSON array such as `[{"id":"ethereum-mainnet-usdc","enabled":true,"rpcUrl":"https://YOUR_ETHEREUM_RPC","treasuryAddress":"0xYOUR_TREASURY"},{"id":"bnb-mainnet-usdc","enabled":true,"rpcUrl":"https://bsc-dataseed.bnbchain.org","treasuryAddress":"0xYOUR_TREASURY"}]`.
 
+For development smoke testing, `bnb-testnet-usdc` enables the BSC testnet USDC token at `0x64544969ed7ebf5f083679233325356ebe738930` with 18 decimals. It is non-production only and requires `ALLOW_TESTNET_PAYMENTS=true`. A Base Sepolia plus BNB testnet smoke `PAYMENT_METHODS_JSON` value can be `[{"id":"base-sepolia-usdc","enabled":true,"rpcUrl":"https://base-sepolia.drpc.org","treasuryAddress":"0xYOUR_TREASURY"},{"id":"bnb-testnet-usdc","enabled":true,"rpcUrl":"https://data-seed-prebsc-1-s1.binance.org:8545","treasuryAddress":"0xYOUR_TREASURY"}]`.
+
 ## Phase 3B Payment Verification
 
 Phase 3B adds backend-only Base Mainnet USDC verification. Blockchain access is isolated behind `src/services/payments/evmProvider.js`, and payment verification lives in `src/services/payments/paymentVerifier.js`.

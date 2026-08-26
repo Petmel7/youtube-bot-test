@@ -14,6 +14,7 @@ const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
+const bnbTestnetUsdcAddress = "0x64544969ed7ebf5f083679233325356ebe738930";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const senderAddress = "0x2222222222222222222222222222222222222222";
 const otherAddress = "0x3333333333333333333333333333333333333333";
@@ -406,6 +407,94 @@ test("PaymentVerifier accepts configured BNB Chain Binance-Peg USDC transfer", a
     assert.equal(result.tokenAddress, bnbUsdcAddress);
     assert.equal(result.tokenDecimals, 18);
     assert.equal(result.verifiedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("PaymentVerifier accepts configured BNB testnet USDC smoke transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "bnb-testnet-usdc",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "bnb-testnet-usdc",
+                name: "BNB Chain testnet USDC",
+                network: "bnb-testnet",
+                chainId: 97,
+                rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+                tokenAddress: bnbTestnetUsdcAddress,
+                tokenDecimals: 18,
+                assetProvenance: "bnb-testnet",
+                production: false
+            }),
+            chainId: 97,
+            tokenAddress: bnbTestnetUsdcAddress,
+            tokenDecimals: 18,
+            expectedTokenAmountBaseUnits: "10000000000000000000"
+        }),
+        provider: makeProvider({
+            chainId: 97,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: bnbTestnetUsdcAddress, value: 10000000000000000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 97);
+    assert.equal(result.tokenAddress, bnbTestnetUsdcAddress);
+    assert.equal(result.tokenDecimals, 18);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("PaymentVerifier rejects invalid BNB testnet USDC smoke transfers", async () => {
+    const intent = makeIntent({
+        paymentMethodId: "bnb-testnet-usdc",
+        paymentMethodSnapshot: methodSnapshot({
+            id: "bnb-testnet-usdc",
+            name: "BNB Chain testnet USDC",
+            network: "bnb-testnet",
+            chainId: 97,
+            rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+            tokenAddress: bnbTestnetUsdcAddress,
+            tokenDecimals: 18,
+            assetProvenance: "bnb-testnet",
+            production: false
+        }),
+        chainId: 97,
+        tokenAddress: bnbTestnetUsdcAddress,
+        tokenDecimals: 18,
+        expectedTokenAmountBaseUnits: "10000000000000000000"
+    });
+
+    assert.equal((await verifyWith({ intent, provider: makeProvider({ chainId: 56 }) })).code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
+    assert.equal((await verifyWith({
+        intent: { ...intent, tokenAddress: bnbUsdcAddress },
+        provider: makeProvider({ chainId: 97 })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 97,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: bnbTestnetUsdcAddress,
+                    from: otherAddress,
+                    value: 10000000000000000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_PAYER);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 97,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: bnbTestnetUsdcAddress,
+                    to: otherAddress,
+                    value: 10000000000000000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
 });
 
 test("PaymentVerifier returns pending when transaction or receipt is missing", async () => {

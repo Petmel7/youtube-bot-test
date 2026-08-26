@@ -45,7 +45,8 @@
         "unavailableMethod": "Недоступно",
         "assetProvenance": {
             "circleNative": "Нативний Circle",
-            "binancePeg": "Binance-Peg"
+            "binancePeg": "Binance-Peg",
+            "bnbTestnet": "Тестовий токен BNB"
         },
         "createIntent": "Створити платіж",
         "payWithWallet": "Оплатити гаманцем",
