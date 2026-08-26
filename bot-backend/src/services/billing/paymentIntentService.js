@@ -12,6 +12,7 @@ const createPaymentIntentService = ({
     pricingService = createPaymentPricingService(),
     payerChallengeService = paymentPayerChallengeService,
     config = paymentConfig,
+    configService = null,
     now = () => new Date()
 } = {}) => {
     const createPaymentIntent = async ({ userId, packageId, paymentMethodId, idempotencyKey, payerChallengeId, signature }, { session } = {}) => {
@@ -20,8 +21,11 @@ const createPaymentIntentService = ({
             return { intent: existing, created: false };
         }
 
+        const effectiveConfig = configService
+            ? (await configService.getEffectivePaymentConfig()).config
+            : config;
         const packageSnapshot = pricingService.getPackageSnapshot(packageId);
-        const paymentMethod = getPaymentMethodById(config, paymentMethodId);
+        const paymentMethod = getPaymentMethodById(effectiveConfig, paymentMethodId);
         if (!paymentMethod) {
             throw unprocessable("PAYMENT_METHOD_UNAVAILABLE", "Payment method is not available");
         }
@@ -37,7 +41,7 @@ const createPaymentIntentService = ({
         }
 
         const createdAt = now();
-        const expiresAt = new Date(createdAt.getTime() + (config.intentTtlMinutes * 60 * 1000));
+        const expiresAt = new Date(createdAt.getTime() + (effectiveConfig.intentTtlMinutes * 60 * 1000));
         const expectedTokenAmountBaseUnits = calculateStablecoinBaseUnits(
             packageSnapshot.expectedUsdAmountMinor,
             paymentMethod.tokenDecimals

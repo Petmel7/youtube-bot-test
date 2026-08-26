@@ -5,6 +5,7 @@ const { conflict, notFound, unavailable } = require("../../utils/errors");
 const { createPaymentIntentService } = require("../billing/paymentIntentService");
 const paymentSettlementService = require("./paymentSettlementService");
 const { createPaymentVerifier, PAYMENT_OUTCOMES } = require("./paymentVerifier");
+const paymentConfigService = require("./paymentConfigService");
 
 const addSession = (query, session) => session ? query.session(session) : query;
 const isDuplicateKey = (error) => error?.code === 11000;
@@ -48,11 +49,12 @@ const createPaymentLifecycleService = ({
     paymentIntentService,
     paymentVerifier = createPaymentVerifier(),
     settlementService = paymentSettlementService,
+    configService = paymentConfigService,
     config = paymentConfig,
     withTransaction = (callback) => mongoose.connection.transaction(callback),
     now = () => new Date()
 } = {}) => {
-    const intentService = paymentIntentService || createPaymentIntentService({ PaymentIntentModel });
+    const intentService = paymentIntentService || createPaymentIntentService({ PaymentIntentModel, config, configService });
 
     const findOwnedIntent = async ({ userId, paymentIntentId }, { session } = {}) => (
         addSession(PaymentIntentModel.findOne({ _id: paymentIntentId, userId }), session)

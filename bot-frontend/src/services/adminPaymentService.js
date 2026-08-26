@@ -41,3 +41,51 @@ export const reviewAdminPaymentIntent = async (paymentIntentId, { action, note }
         body: JSON.stringify({ action, note })
     })
 );
+
+export const fetchAdminPaymentConfig = async () => (
+    apiRequest("/api/admin/payments/config")
+);
+
+export const fetchAdminPaymentConfigProposals = async (params = {}) => (
+    apiRequest(`/api/admin/payments/config/proposals${toQueryString(params)}`)
+);
+
+export const createAdminPaymentConfigProposal = async ({ reason, methodChanges }) => (
+    apiRequest("/api/admin/payments/config/proposals", {
+        method: "POST",
+        body: JSON.stringify({ reason, methodChanges })
+    })
+);
+
+export const confirmAdminPaymentConfigProposal = async (proposalId, confirmationPhrase) => (
+    apiRequest(`/api/admin/payments/config/proposals/${proposalId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ confirmationPhrase })
+    })
+);
+
+export const approveAdminPaymentConfigProposal = async (proposalId) => (
+    apiRequest(`/api/admin/payments/config/proposals/${proposalId}/approve`, {
+        method: "POST"
+    })
+);
+
+export const activateAdminPaymentConfigProposal = async (proposalId) => (
+    apiRequest(`/api/admin/payments/config/proposals/${proposalId}/activate`, {
+        method: "POST"
+    })
+);
+
+export const rejectAdminPaymentConfigProposal = async (proposalId, note) => (
+    apiRequest(`/api/admin/payments/config/proposals/${proposalId}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ note })
+    })
+);
+
+export const cancelAdminPaymentConfigProposal = async (proposalId, note) => (
+    apiRequest(`/api/admin/payments/config/proposals/${proposalId}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ note })
+    })
+);

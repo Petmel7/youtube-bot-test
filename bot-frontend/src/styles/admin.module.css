@@ -130,6 +130,46 @@
     font: inherit;
 }
 
+.configGrid {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.configPanel {
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px;
+}
+
+.configPanel h3 {
+    margin: 0 0 10px;
+    font-size: 16px;
+}
+
+.configPanel p {
+    margin: 6px 0;
+    color: #52606d;
+}
+
+.configPanel select,
+.configPanel input,
+.configPanel textarea {
+    width: 100%;
+    margin-bottom: 8px;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    padding: 8px;
+    font: inherit;
+}
+
+.configPanel textarea {
+    min-height: 70px;
+    resize: vertical;
+}
+
 .actionButton {
     border: 1px solid #bcccdc;
     background: #f5f7fa;
@@ -233,5 +273,9 @@
 
     .filters {
         flex-direction: column;
+    }
+
+    .configGrid {
+        grid-template-columns: 1fr;
     }
 }

@@ -76,9 +76,28 @@ Enabled methods must match the whitelist exactly for namespace, network identity
 
 Public payment method DTOs intentionally omit RPC URLs and internal env details. They expose display and wallet-transfer fields only: id, name, namespace, network, CAIP network id, enabled/testnet/smoke indicators, and token or mint metadata. Existing `PaymentIntent` documents keep immutable snapshots, so later config changes must not alter verification, settlement, recipient, amount, payer, pricing, or credit expectations for already-created intents.
 
-### Future Admin Payment Configuration
+## Phase 3O Admin Payment Config Change Workflow
 
-An admin UI for treasury or payment method management is intentionally not implemented in Phase 3L. A future admin design must keep RPC URLs and secrets server-side and include admin-only authorization, two-step confirmation for treasury changes, an audit log with actor, timestamp, old and new method config, and reason, staged config changes, production allowlist approval, optional dual-control or multi-admin approval before treasury changes, a rollback plan, monitoring and reconciliation for paid-but-uncredited transactions, and an explicit guarantee that existing `PaymentIntent` snapshots are never mutated by admin config changes.
+Admin payment config changes are staged proposals, not direct live edits. The environment whitelist remains the maximum allowed payment surface: admins can only change `enabled`, `treasuryAddress`, and `confirmations` for methods already present in the validated server environment. They cannot add arbitrary method IDs, networks, chain IDs, token or mint addresses, decimals, asset provenance, or RPC URLs.
+
+RPC URLs and any provider credentials remain environment-managed and are not stored or returned by the admin workflow. Proposal previews and audit records use safe method summaries only.
+
+The proposal lifecycle is:
+
+```text
+PENDING_CONFIRMATION
+  -> exact phrase confirmation
+  -> APPROVED in non-production
+  -> PENDING_APPROVAL in production
+  -> second distinct admin approval in production
+  -> APPROVED
+  -> transactional activation
+  -> ACTIVATED
+```
+
+Proposals may also be rejected, cancelled, or expire before activation. Activation writes a new `PaymentConfigActive` version and an audit record in the same MongoDB transaction. The active runtime config is built by overlaying those safe active fields onto the current environment methods, so removing a method from env config fails closed.
+
+Activated changes affect only future `PaymentIntent` creation. Existing `PaymentIntent` snapshots are immutable and keep their original recipient, confirmations, token identity, amount, pricing, and payer binding for verification and settlement. Emergency rollback should be performed by creating and activating a new proposal that restores the previous safe values; secret/RPC rollback remains an environment/deploy operation.
 
 ## Phase 3B Payment Verification
 

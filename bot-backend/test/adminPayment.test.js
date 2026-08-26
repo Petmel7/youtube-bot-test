@@ -505,3 +505,103 @@ test("admin mark reviewed requires note, does not credit, and writes audit log",
     assert.equal(PaymentAuditLogModel.entries[0].action, "MARK_UNDERPAYMENT_ACKNOWLEDGED");
     assert.equal(PaymentAuditLogModel.entries[0].note, "User contacted support about underpayment.");
 });
+
+test("admin payment config proposal endpoints are admin-only and staged", async () => {
+    const proposalId = "65e000000000000000000001";
+    const calls = [];
+    const paymentConfigService = {
+        async getCurrentConfigSummary() {
+            calls.push({ method: "getCurrentConfigSummary" });
+            return { source: "env", version: null, paymentMethods: [], defaultMethodId: null };
+        },
+        async listProposals() {
+            calls.push({ method: "listProposals" });
+            return { proposals: [], limit: 25 };
+        },
+        async createProposal(args) {
+            calls.push({ method: "createProposal", args });
+            return {
+                _id: proposalId,
+                status: "PENDING_CONFIRMATION",
+                proposedBy: args.actorUserId,
+                methodChanges: args.methodChanges,
+                normalizedPreview: { diff: [{ methodId: "base-mainnet-usdc", before: { confirmations: 20 }, after: { confirmations: 25 } }] },
+                reason: args.reason,
+                confirmationPhrase: "CONFIRM PAYMENT CONFIG CHANGE",
+                expiresAt: "2026-08-19T10:00:00.000Z",
+                createdAt: "2026-08-18T10:00:00.000Z",
+                updatedAt: "2026-08-18T10:00:00.000Z"
+            };
+        },
+        async findProposal(id) {
+            calls.push({ method: "findProposal", id });
+            return {
+                _id: id,
+                status: "PENDING_CONFIRMATION",
+                proposedBy: adminUserId,
+                methodChanges: [],
+                normalizedPreview: { diff: [] },
+                reason: "Review config",
+                confirmationPhrase: "CONFIRM PAYMENT CONFIG CHANGE",
+                expiresAt: "2026-08-19T10:00:00.000Z"
+            };
+        },
+        async listAudits() {
+            calls.push({ method: "listAudits" });
+            return [];
+        },
+        async confirmProposal(args) {
+            calls.push({ method: "confirmProposal", args });
+            return {
+                _id: args.proposalId,
+                status: "APPROVED",
+                proposedBy: adminUserId,
+                methodChanges: [],
+                normalizedPreview: { diff: [] },
+                reason: "Review config",
+                confirmationPhrase: "CONFIRM PAYMENT CONFIG CHANGE",
+                expiresAt: "2026-08-19T10:00:00.000Z"
+            };
+        },
+        async approveProposal(args) { return this.confirmProposal(args); },
+        async activateProposal(args) {
+            const proposal = await this.confirmProposal(args);
+            proposal.status = "ACTIVATED";
+            return { proposal, active: { source: "db-proposal", version: 1, activatedProposalId: args.proposalId } };
+        },
+        async rejectProposal(args) { return this.confirmProposal(args); },
+        async cancelProposal(args) { return this.confirmProposal(args); }
+    };
+    const app = createApp({ paymentConfigService });
+
+    const unauthenticated = await request(app, { path: "/api/admin/payments/config", userId: null });
+    const forbidden = await request(app, { path: "/api/admin/payments/config", userId: regularUserId, role: "user" });
+    const current = await request(app, { path: "/api/admin/payments/config" });
+    const created = await request(app, {
+        method: "POST",
+        path: "/api/admin/payments/config/proposals",
+        headers: { "X-CSRF-Protection": "1" },
+        body: {
+            reason: "Change confirmations",
+            methodChanges: [{ methodId: "base-mainnet-usdc", confirmations: 25 }]
+        }
+    });
+    const confirmed = await request(app, {
+        method: "POST",
+        path: `/api/admin/payments/config/proposals/${proposalId}/confirm`,
+        headers: { "X-CSRF-Protection": "1" },
+        body: { confirmationPhrase: "CONFIRM PAYMENT CONFIG CHANGE" }
+    });
+
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(forbidden.status, 403);
+    assert.equal(current.status, 200);
+    assert.equal(current.body.config.source, "env");
+    assert.equal(created.status, 201);
+    assert.equal(created.body.proposal.status, "PENDING_CONFIRMATION");
+    assert.equal(created.body.proposal.normalizedPreview.diff[0].after.confirmations, 25);
+    assert.equal(created.body.proposal.normalizedPreview.rpcUrl, undefined);
+    assert.equal(confirmed.status, 200);
+    assert.equal(confirmed.body.proposal.status, "APPROVED");
+    assert.equal(calls.some(call => call.method === "createProposal"), true);
+});

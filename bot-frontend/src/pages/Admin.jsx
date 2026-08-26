@@ -2,10 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchUsers } from "../services/userService";
 import {
+    activateAdminPaymentConfigProposal,
+    approveAdminPaymentConfigProposal,
+    cancelAdminPaymentConfigProposal,
+    confirmAdminPaymentConfigProposal,
+    createAdminPaymentConfigProposal,
+    fetchAdminPaymentConfig,
+    fetchAdminPaymentConfigProposals,
     fetchAdminPaymentIntents,
     fetchAdminPaymentLedger,
     fetchAdminPaymentMethods,
     fetchAdminPaymentReconciliation,
+    rejectAdminPaymentConfigProposal,
     retryAdminPaymentVerification,
     reviewAdminPaymentIntent
 } from "../services/adminPaymentService";
@@ -44,6 +52,8 @@ const Admin = () => {
     const [intents, setIntents] = useState([]);
     const [ledger, setLedger] = useState([]);
     const [reconciliation, setReconciliation] = useState([]);
+    const [paymentConfigSummary, setPaymentConfigSummary] = useState(null);
+    const [configProposals, setConfigProposals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(null);
     const [error, setError] = useState(null);
@@ -51,13 +61,21 @@ const Admin = () => {
     const [methodFilter, setMethodFilter] = useState("");
     const [reviewStatusFilter, setReviewStatusFilter] = useState("");
     const [reviewNotes, setReviewNotes] = useState({});
+    const [proposalForm, setProposalForm] = useState({
+        methodId: "",
+        enabled: "",
+        treasuryAddress: "",
+        confirmations: "",
+        reason: ""
+    });
+    const [proposalConfirmations, setProposalConfirmations] = useState({});
 
     const loadAdminData = useCallback(async () => {
         setLoading(true);
         setError(null);
 
         try {
-            const [usersData, methodsData, intentsData, ledgerData, reconciliationData] = await Promise.all([
+            const [usersData, methodsData, intentsData, ledgerData, reconciliationData, configData, proposalsData] = await Promise.all([
                 fetchUsers(),
                 fetchAdminPaymentMethods(),
                 fetchAdminPaymentIntents({
@@ -71,7 +89,9 @@ const Admin = () => {
                     methodId: methodFilter,
                     reviewStatus: reviewStatusFilter,
                     limit: 25
-                })
+                }),
+                fetchAdminPaymentConfig(),
+                fetchAdminPaymentConfigProposals({ limit: 25 })
             ]);
 
             setUsers(usersData || []);
@@ -79,6 +99,8 @@ const Admin = () => {
             setIntents(intentsData.intents || []);
             setLedger(ledgerData.ledger || []);
             setReconciliation(reconciliationData.candidates || []);
+            setPaymentConfigSummary(configData.config || null);
+            setConfigProposals(proposalsData.proposals || []);
         } catch (err) {
             console.error("Error fetching admin payment data:", err);
             setError(t("admin.payments.errors.load"));
@@ -147,6 +169,65 @@ const Admin = () => {
         }
     };
 
+    const submitConfigProposal = async (event) => {
+        event.preventDefault();
+        const change = { methodId: proposalForm.methodId };
+
+        if (!change.methodId) {
+            setError(t("admin.payments.errors.methodRequired"));
+            return;
+        }
+
+        if (proposalForm.enabled !== "") change.enabled = proposalForm.enabled === "true";
+        if (proposalForm.treasuryAddress.trim()) change.treasuryAddress = proposalForm.treasuryAddress.trim();
+        if (proposalForm.confirmations !== "") change.confirmations = Number(proposalForm.confirmations);
+
+        setActionLoading("config:create");
+        setError(null);
+        try {
+            await createAdminPaymentConfigProposal({
+                reason: proposalForm.reason,
+                methodChanges: [change]
+            });
+            setProposalForm({ methodId: "", enabled: "", treasuryAddress: "", confirmations: "", reason: "" });
+            await loadAdminData();
+        } catch (err) {
+            console.error("Error creating payment config proposal:", err);
+            setError(t("admin.payments.errors.configProposal"));
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const runProposalAction = async (proposal, action) => {
+        const proposalId = proposal.id;
+        setActionLoading(`config:${action}:${proposalId}`);
+        setError(null);
+        try {
+            if (action === "confirm") {
+                await confirmAdminPaymentConfigProposal(proposalId, proposalConfirmations[proposalId] || "");
+            } else if (action === "approve") {
+                await approveAdminPaymentConfigProposal(proposalId);
+            } else if (action === "activate") {
+                await activateAdminPaymentConfigProposal(proposalId);
+            } else if (action === "reject") {
+                const note = window.prompt(t("admin.payments.configActionNote"));
+                if (note === null) return;
+                await rejectAdminPaymentConfigProposal(proposalId, note);
+            } else if (action === "cancel") {
+                const note = window.prompt(t("admin.payments.configActionNote"));
+                if (note === null) return;
+                await cancelAdminPaymentConfigProposal(proposalId, note);
+            }
+            await loadAdminData();
+        } catch (err) {
+            console.error("Error updating payment config proposal:", err);
+            setError(t("admin.payments.errors.configAction"));
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     return (
         <main className={styles.adminPage}>
             <header className={styles.header}>
@@ -181,6 +262,101 @@ const Admin = () => {
                 <div className={styles.metric}>
                     <span>{t("admin.payments.reconciliation")}</span>
                     <strong>{reconciliation.length}</strong>
+                </div>
+            </section>
+
+            <section className={styles.section}>
+                <div className={styles.sectionHeader}>
+                    <h2>{t("admin.payments.configWorkflow")}</h2>
+                </div>
+                <div className={styles.configGrid}>
+                    <div className={styles.configPanel}>
+                        <h3>{t("admin.payments.currentConfig")}</h3>
+                        <p>{t("admin.payments.configSource")}: {paymentConfigSummary?.source || "-"}</p>
+                        <p>{t("admin.payments.configVersion")}: {paymentConfigSummary?.version ?? "-"}</p>
+                        <p>{t("admin.payments.futureOnlyWarning")}</p>
+                    </div>
+                    <form className={styles.configPanel} onSubmit={submitConfigProposal}>
+                        <h3>{t("admin.payments.createProposal")}</h3>
+                        <select value={proposalForm.methodId} onChange={(event) => setProposalForm(current => ({ ...current, methodId: event.target.value }))}>
+                            <option value="">{t("admin.payments.selectMethod")}</option>
+                            {methods.map(method => <option key={method.id} value={method.id}>{method.name}</option>)}
+                        </select>
+                        <select value={proposalForm.enabled} onChange={(event) => setProposalForm(current => ({ ...current, enabled: event.target.value }))}>
+                            <option value="">{t("admin.payments.leaveEnabledUnchanged")}</option>
+                            <option value="true">{t("admin.payments.enabled")}</option>
+                            <option value="false">{t("admin.payments.disabled")}</option>
+                        </select>
+                        <input value={proposalForm.treasuryAddress} onChange={(event) => setProposalForm(current => ({ ...current, treasuryAddress: event.target.value }))} placeholder={t("admin.payments.newTreasury")} />
+                        <input type="number" min="1" max="500" value={proposalForm.confirmations} onChange={(event) => setProposalForm(current => ({ ...current, confirmations: event.target.value }))} placeholder={t("admin.payments.newConfirmations")} />
+                        <textarea value={proposalForm.reason} onChange={(event) => setProposalForm(current => ({ ...current, reason: event.target.value }))} placeholder={t("admin.payments.proposalReason")} maxLength={1000} required />
+                        <button className={styles.actionButton} type="submit" disabled={Boolean(actionLoading)}>
+                            {actionLoading === "config:create" ? t("loading") : t("admin.payments.createProposal")}
+                        </button>
+                    </form>
+                </div>
+                <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th>{t("admin.payments.status")}</th>
+                                <th>{t("admin.payments.reason")}</th>
+                                <th>{t("admin.payments.configDiff")}</th>
+                                <th>{t("admin.payments.confirmation")}</th>
+                                <th>{t("admin.payments.actions")}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {configProposals.map(proposal => (
+                                <tr key={proposal.id}>
+                                    <td><Badge tone={proposal.status === "ACTIVATED" ? "success" : "neutral"}>{proposal.status}</Badge></td>
+                                    <td>
+                                        <strong>{proposal.reason}</strong>
+                                        <span>{formatDate(proposal.createdAt)}</span>
+                                    </td>
+                                    <td>
+                                        {(proposal.normalizedPreview?.diff || []).map(diff => (
+                                            <span key={diff.methodId}>{diff.methodId}: {Object.keys(diff.after || {}).join(", ")}</span>
+                                        ))}
+                                    </td>
+                                    <td>
+                                        {proposal.status === "PENDING_CONFIRMATION" ? (
+                                            <input value={proposalConfirmations[proposal.id] || ""} onChange={(event) => setProposalConfirmations(current => ({ ...current, [proposal.id]: event.target.value }))} placeholder={proposal.confirmationPhrase || "CONFIRM PAYMENT CONFIG CHANGE"} />
+                                        ) : "-"}
+                                    </td>
+                                    <td>
+                                        <div className={styles.actions}>
+                                            {proposal.status === "PENDING_CONFIRMATION" && (
+                                                <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "confirm")} disabled={Boolean(actionLoading)}>
+                                                    {t("admin.payments.confirmProposal")}
+                                                </button>
+                                            )}
+                                            {proposal.status === "PENDING_APPROVAL" && (
+                                                <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "approve")} disabled={Boolean(actionLoading)}>
+                                                    {t("admin.payments.approveProposal")}
+                                                </button>
+                                            )}
+                                            {proposal.status === "APPROVED" && (
+                                                <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "activate")} disabled={Boolean(actionLoading)}>
+                                                    {t("admin.payments.activateProposal")}
+                                                </button>
+                                            )}
+                                            {["PENDING_CONFIRMATION", "PENDING_APPROVAL", "APPROVED"].includes(proposal.status) && (
+                                                <>
+                                                    <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "reject")} disabled={Boolean(actionLoading)}>
+                                                        {t("admin.payments.rejectProposal")}
+                                                    </button>
+                                                    <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "cancel")} disabled={Boolean(actionLoading)}>
+                                                        {t("admin.payments.cancelProposal")}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </section>
 

@@ -1,18 +1,22 @@
 const defaultAdminPaymentObservabilityService = require("../services/payments/adminPaymentObservabilityService");
 const defaultPaymentReconciliationService = require("../services/payments/paymentReconciliationService");
+const defaultPaymentConfigService = require("../services/payments/paymentConfigService");
 const {
     toAdminPaymentReconciliationCandidateDto,
     toAdminPaymentIntentDto,
     toAdminPaymentLedgerDto,
     toAdminPaymentMethodDto,
+    toPaymentConfigProposalDto,
     toPaymentAuditLogDto,
     toPaymentSettlementDto
 } = require("../utils/dto");
 const { assertObjectBody, validatePaymentIntentId } = require("../utils/validators");
+const { CONFIRMATION_PHRASE } = require("../services/payments/paymentConfigService");
 
 const createAdminPaymentController = (
     adminPaymentObservabilityService = defaultAdminPaymentObservabilityService,
-    paymentReconciliationService = defaultPaymentReconciliationService
+    paymentReconciliationService = defaultPaymentReconciliationService,
+    paymentConfigService = defaultPaymentConfigService
 ) => {
     const getPaymentMethodsController = async (req, res) => {
         const { paymentMethods } = await adminPaymentObservabilityService.listPaymentMethods();
@@ -103,13 +107,135 @@ const createAdminPaymentController = (
         });
     };
 
+    const getPaymentConfigController = async (req, res) => {
+        const config = await paymentConfigService.getCurrentConfigSummary();
+
+        res.json({
+            success: true,
+            config
+        });
+    };
+
+    const listPaymentConfigProposalsController = async (req, res) => {
+        const { proposals, limit } = await paymentConfigService.listProposals({
+            status: req.query.status,
+            limit: req.query.limit
+        });
+
+        res.json({
+            success: true,
+            proposals: proposals.map(proposal => toPaymentConfigProposalDto(proposal)),
+            limit
+        });
+    };
+
+    const createPaymentConfigProposalController = async (req, res) => {
+        assertObjectBody(req.body);
+
+        const proposal = await paymentConfigService.createProposal({
+            actorUserId: req.user?._id || req.user?.id,
+            reason: req.body.reason,
+            methodChanges: req.body.methodChanges
+        });
+
+        res.status(201).json({
+            success: true,
+            proposal: toPaymentConfigProposalDto(proposal),
+            requiredConfirmationPhrase: CONFIRMATION_PHRASE
+        });
+    };
+
+    const getPaymentConfigProposalController = async (req, res) => {
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const proposal = await paymentConfigService.findProposal(proposalId);
+        const audits = await paymentConfigService.listAudits(proposal._id);
+
+        res.json({
+            success: true,
+            proposal: toPaymentConfigProposalDto(proposal, { audits })
+        });
+    };
+
+    const confirmPaymentConfigProposalController = async (req, res) => {
+        assertObjectBody(req.body);
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const proposal = await paymentConfigService.confirmProposal({
+            proposalId,
+            actorUserId: req.user?._id || req.user?.id,
+            confirmationPhrase: req.body.confirmationPhrase
+        });
+
+        res.json({ success: true, proposal: toPaymentConfigProposalDto(proposal) });
+    };
+
+    const approvePaymentConfigProposalController = async (req, res) => {
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const proposal = await paymentConfigService.approveProposal({
+            proposalId,
+            actorUserId: req.user?._id || req.user?.id
+        });
+
+        res.json({ success: true, proposal: toPaymentConfigProposalDto(proposal) });
+    };
+
+    const activatePaymentConfigProposalController = async (req, res) => {
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const { proposal, active } = await paymentConfigService.activateProposal({
+            proposalId,
+            actorUserId: req.user?._id || req.user?.id
+        });
+
+        res.json({
+            success: true,
+            proposal: toPaymentConfigProposalDto(proposal),
+            activeConfig: {
+                source: active.source,
+                version: active.version,
+                activatedProposalId: String(active.activatedProposalId)
+            }
+        });
+    };
+
+    const rejectPaymentConfigProposalController = async (req, res) => {
+        assertObjectBody(req.body);
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const proposal = await paymentConfigService.rejectProposal({
+            proposalId,
+            actorUserId: req.user?._id || req.user?.id,
+            note: req.body.note
+        });
+
+        res.json({ success: true, proposal: toPaymentConfigProposalDto(proposal) });
+    };
+
+    const cancelPaymentConfigProposalController = async (req, res) => {
+        assertObjectBody(req.body);
+        const proposalId = validatePaymentIntentId(req.params.id);
+        const proposal = await paymentConfigService.cancelProposal({
+            proposalId,
+            actorUserId: req.user?._id || req.user?.id,
+            note: req.body.note
+        });
+
+        res.json({ success: true, proposal: toPaymentConfigProposalDto(proposal) });
+    };
+
     return {
         getPaymentMethodsController,
         getPaymentIntentsController,
         getPaymentLedgerController,
         getPaymentReconciliationController,
         retryPaymentVerificationController,
-        reviewPaymentIntentController
+        reviewPaymentIntentController,
+        getPaymentConfigController,
+        listPaymentConfigProposalsController,
+        createPaymentConfigProposalController,
+        getPaymentConfigProposalController,
+        confirmPaymentConfigProposalController,
+        approvePaymentConfigProposalController,
+        activatePaymentConfigProposalController,
+        rejectPaymentConfigProposalController,
+        cancelPaymentConfigProposalController
     };
 };
 

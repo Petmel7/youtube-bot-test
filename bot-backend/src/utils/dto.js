@@ -325,6 +325,51 @@ const toAdminPaymentReconciliationCandidateDto = (candidate) => {
     };
 };
 
+const toPaymentConfigAuditDto = (audit) => {
+    if (!audit) return null;
+
+    return {
+        id: String(audit._id || audit.id),
+        proposalId: audit.proposalId ? String(audit.proposalId) : null,
+        actorUserId: audit.actorUserId ? String(audit.actorUserId) : null,
+        action: audit.action,
+        statusBefore: audit.statusBefore || null,
+        statusAfter: audit.statusAfter || null,
+        reason: audit.reason || null,
+        note: audit.note || null,
+        metadata: audit.metadata || null,
+        createdAt: audit.createdAt
+    };
+};
+
+const toPaymentConfigProposalDto = (proposal, { audits = [] } = {}) => {
+    if (!proposal) return null;
+
+    return {
+        id: String(proposal._id || proposal.id),
+        status: proposal.status,
+        proposedBy: proposal.proposedBy ? String(proposal.proposedBy) : null,
+        confirmedBy: proposal.confirmedBy ? String(proposal.confirmedBy) : null,
+        approvedBy: proposal.approvedBy ? String(proposal.approvedBy) : null,
+        activatedBy: proposal.activatedBy ? String(proposal.activatedBy) : null,
+        rejectedBy: proposal.rejectedBy ? String(proposal.rejectedBy) : null,
+        cancelledBy: proposal.cancelledBy ? String(proposal.cancelledBy) : null,
+        methodChanges: proposal.methodChanges || [],
+        normalizedPreview: proposal.normalizedPreview || null,
+        reason: proposal.reason,
+        confirmationPhrase: proposal.confirmationPhrase || null,
+        expiresAt: proposal.expiresAt,
+        confirmedAt: proposal.confirmedAt || null,
+        approvedAt: proposal.approvedAt || null,
+        activatedAt: proposal.activatedAt || null,
+        rejectedAt: proposal.rejectedAt || null,
+        cancelledAt: proposal.cancelledAt || null,
+        createdAt: proposal.createdAt,
+        updatedAt: proposal.updatedAt,
+        audits: audits.map(toPaymentConfigAuditDto)
+    };
+};
+
 module.exports = {
     toSafeUser,
     toPromptDto,
@@ -339,5 +384,7 @@ module.exports = {
     toAdminPaymentIntentDto,
     toAdminPaymentLedgerDto,
     toPaymentAuditLogDto,
-    toAdminPaymentReconciliationCandidateDto
+    toAdminPaymentReconciliationCandidateDto,
+    toPaymentConfigAuditDto,
+    toPaymentConfigProposalDto
 };
