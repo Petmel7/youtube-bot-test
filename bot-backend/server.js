@@ -22,6 +22,7 @@ const userRoutes = require("./src/routes/userRoutes");
 const userPromptRoutes = require("./src/routes/userPromptRoutes");
 const youtubeRoutes = require("./src/routes/youtubeRoutes");
 const paymentRoutes = require("./src/routes/paymentRoutes");
+const adminRoutes = require("./src/routes/adminRoutes");
 
 // ✅ Ініціалізація додатку
 const app = express();
@@ -49,6 +50,7 @@ app.use("/user", userRoutes);
 app.use("/user-prompt", userPromptRoutes);
 app.use("/youtube", youtubeRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/admin", adminRoutes);
 app.use(errorHandler);
 
 // ✅ Запуск сервера

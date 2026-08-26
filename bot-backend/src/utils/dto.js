@@ -205,6 +205,95 @@ const toPaymentMethodDto = (paymentMethod) => {
     };
 };
 
+const toAdminPaymentMethodDto = (paymentMethod) => {
+    if (!paymentMethod) return null;
+
+    return {
+        id: paymentMethod.id,
+        name: paymentMethod.name,
+        namespace: paymentMethod.namespace || "eip155",
+        network: paymentMethod.network,
+        networkId: paymentMethod.networkId || null,
+        caipNetworkId: paymentMethod.caipNetworkId || (paymentMethod.namespace === "solana"
+            ? `solana:${paymentMethod.networkId}`
+            : `eip155:${paymentMethod.chainId}`),
+        chainId: paymentMethod.chainId ?? null,
+        cluster: paymentMethod.cluster || null,
+        assetType: paymentMethod.assetType || "erc20",
+        assetProvenance: paymentMethod.assetProvenance || null,
+        production: paymentMethod.production === true,
+        testnet: paymentMethod.testnet === true || paymentMethod.production === false,
+        smoke: paymentMethod.smoke === true,
+        enabled: paymentMethod.enabled === true,
+        treasuryAddress: paymentMethod.treasuryAddress,
+        confirmations: paymentMethod.confirmations,
+        token: {
+            address: paymentMethod.tokenAddress || paymentMethod.mintAddress,
+            mintAddress: paymentMethod.mintAddress || null,
+            symbol: paymentMethod.tokenSymbol,
+            decimals: paymentMethod.tokenDecimals
+        }
+    };
+};
+
+const toAdminPaymentIntentDto = (intent) => {
+    if (!intent) return null;
+
+    return {
+        id: String(intent._id || intent.id),
+        userId: String(intent.userId),
+        status: intent.status,
+        paymentMethodId: intent.paymentMethodId,
+        namespace: intent.namespace || intent.paymentMethodSnapshot?.namespace || "eip155",
+        network: intent.paymentMethodSnapshot?.network || null,
+        networkId: intent.networkId || intent.paymentMethodSnapshot?.networkId || null,
+        caipNetworkId: intent.paymentMethodSnapshot?.caipNetworkId || (intent.namespace === "solana" || intent.paymentMethodSnapshot?.namespace === "solana"
+            ? `solana:${intent.networkId || intent.paymentMethodSnapshot?.networkId}`
+            : `eip155:${intent.chainId || intent.paymentMethodSnapshot?.chainId}`),
+        chainId: intent.chainId ?? intent.paymentMethodSnapshot?.chainId ?? null,
+        tokenSymbol: intent.tokenSymbol,
+        tokenDecimals: intent.tokenDecimals,
+        expectedUsdAmountMinor: intent.expectedUsdAmountMinor,
+        creditAmount: intent.creditAmount,
+        expectedTokenAmountBaseUnits: intent.expectedTokenAmountBaseUnits,
+        txHash: intent.txHash || null,
+        transactionSignature: intent.transactionSignature || null,
+        candidateTxHash: intent.candidateTxHash || null,
+        payerAddress: intent.payerAddress || null,
+        confirmationCount: intent.confirmationCount ?? null,
+        requiredConfirmations: intent.paymentMethodSnapshot?.confirmations ?? null,
+        credited: Boolean(intent.creditedTransactionId),
+        failureCode: intent.failureCode || null,
+        failureReason: intent.failureReason || null,
+        createdAt: intent.createdAt,
+        updatedAt: intent.updatedAt,
+        expiresAt: intent.expiresAt || null,
+        confirmedAt: intent.confirmedAt || null
+    };
+};
+
+const toAdminPaymentLedgerDto = (transaction) => {
+    if (!transaction) return null;
+
+    return {
+        id: String(transaction._id || transaction.id),
+        userId: String(transaction.userId),
+        walletId: String(transaction.walletId),
+        type: transaction.type,
+        amount: transaction.amount,
+        unit: transaction.unit,
+        balanceBefore: transaction.balanceBefore ?? null,
+        balanceAfter: transaction.balanceAfter ?? null,
+        paymentIntentId: transaction.paymentIntentId ? String(transaction.paymentIntentId) : null,
+        paymentMethodId: transaction.paymentMethodId || null,
+        namespace: transaction.namespace || null,
+        networkId: transaction.networkId || null,
+        chainId: transaction.chainId ?? null,
+        txHash: transaction.txHash || null,
+        createdAt: transaction.createdAt
+    };
+};
+
 module.exports = {
     toSafeUser,
     toPromptDto,
@@ -214,5 +303,8 @@ module.exports = {
     toWalletDto,
     toPaymentSettlementDto,
     toPaymentPackageDto,
-    toPaymentMethodDto
+    toPaymentMethodDto,
+    toAdminPaymentMethodDto,
+    toAdminPaymentIntentDto,
+    toAdminPaymentLedgerDto
 };

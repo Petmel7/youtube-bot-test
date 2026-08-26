@@ -172,6 +172,45 @@
             "cancelled": "Cancelled"
         }
     },
+    "admin": {
+        "title": "Admin",
+        "users": "Users",
+        "refresh": "Refresh",
+        "payments": {
+            "readOnlyNote": "Payment configuration is managed server-side. This dashboard is read-only.",
+            "methods": "Payment methods",
+            "recentIntents": "Recent intents",
+            "recentCredits": "Recent credits",
+            "method": "Method",
+            "token": "Token",
+            "network": "Network",
+            "flags": "Flags",
+            "treasury": "Treasury",
+            "confirmations": "Confirmations",
+            "enabled": "Enabled",
+            "disabled": "Disabled",
+            "production": "Production",
+            "testnet": "Testnet",
+            "smoke": "Smoke",
+            "allStatuses": "All statuses",
+            "allMethods": "All methods",
+            "status": "Status",
+            "amount": "Amount",
+            "credits": "credits",
+            "user": "User",
+            "payer": "Payer",
+            "transaction": "Transaction",
+            "dates": "Dates",
+            "created": "Created",
+            "expires": "Expires",
+            "confirmed": "Confirmed",
+            "failure": "Failure",
+            "balance": "Balance",
+            "errors": {
+                "load": "Could not load admin payment data."
+            }
+        }
+    },
     "privacy.sections": {
         "1.title": "1. Introduction",
         "1.body": "Welcome to YouTube PetMel Comment Bot. Your privacy is important to us. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our application.",

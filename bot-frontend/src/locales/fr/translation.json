@@ -172,6 +172,45 @@
             "cancelled": "Annulé"
         }
     },
+    "admin": {
+        "title": "Admin",
+        "users": "Utilisateurs",
+        "refresh": "Actualiser",
+        "payments": {
+            "readOnlyNote": "La configuration des paiements est geree cote serveur. Ce tableau de bord est en lecture seule.",
+            "methods": "Methodes de paiement",
+            "recentIntents": "Intentions recentes",
+            "recentCredits": "Credits recents",
+            "method": "Methode",
+            "token": "Token",
+            "network": "Reseau",
+            "flags": "Badges",
+            "treasury": "Tresorerie",
+            "confirmations": "Confirmations",
+            "enabled": "Active",
+            "disabled": "Desactive",
+            "production": "Production",
+            "testnet": "Testnet",
+            "smoke": "Smoke",
+            "allStatuses": "Tous les statuts",
+            "allMethods": "Toutes les methodes",
+            "status": "Statut",
+            "amount": "Montant",
+            "credits": "credits",
+            "user": "Utilisateur",
+            "payer": "Payeur",
+            "transaction": "Transaction",
+            "dates": "Dates",
+            "created": "Cree",
+            "expires": "Expire",
+            "confirmed": "Confirme",
+            "failure": "Echec",
+            "balance": "Solde",
+            "errors": {
+                "load": "Impossible de charger les donnees admin des paiements."
+            }
+        }
+    },
     "privacy.sections": {
         "1.title": "1. Introduction",
         "1.body": "Bienvenue sur le bot de commentaires YouTube PetMel. Votre vie privée est importante pour nous. Cette politique de confidentialité explique comment nous collectons, utilisons, divulguons et protégeons vos informations lorsque vous utilisez notre application.",

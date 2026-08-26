@@ -172,6 +172,45 @@
             "cancelled": "Abgebrochen"
         }
     },
+    "admin": {
+        "title": "Admin",
+        "users": "Benutzer",
+        "refresh": "Aktualisieren",
+        "payments": {
+            "readOnlyNote": "Die Zahlungskonfiguration wird serverseitig verwaltet. Dieses Dashboard ist schreibgeschuetzt.",
+            "methods": "Zahlungsmethoden",
+            "recentIntents": "Neueste Intents",
+            "recentCredits": "Neueste Gutschriften",
+            "method": "Methode",
+            "token": "Token",
+            "network": "Netzwerk",
+            "flags": "Flags",
+            "treasury": "Treasury",
+            "confirmations": "Bestaetigungen",
+            "enabled": "Aktiv",
+            "disabled": "Inaktiv",
+            "production": "Produktion",
+            "testnet": "Testnet",
+            "smoke": "Smoke",
+            "allStatuses": "Alle Status",
+            "allMethods": "Alle Methoden",
+            "status": "Status",
+            "amount": "Betrag",
+            "credits": "Credits",
+            "user": "Benutzer",
+            "payer": "Zahler",
+            "transaction": "Transaktion",
+            "dates": "Daten",
+            "created": "Erstellt",
+            "expires": "Laeuft ab",
+            "confirmed": "Bestaetigt",
+            "failure": "Fehler",
+            "balance": "Saldo",
+            "errors": {
+                "load": "Admin-Zahlungsdaten konnten nicht geladen werden."
+            }
+        }
+    },
     "privacy.sections": {
         "1.title": "1. Einführung",
         "1.body": "Willkommen beim YouTube PetMel Kommentar-Bot. Ihre Privatsphäre ist uns wichtig. Diese Datenschutzerklärung erklärt, wie wir Ihre Informationen erfassen, verwenden, offenlegen und schützen, wenn Sie unsere Anwendung verwenden.",
