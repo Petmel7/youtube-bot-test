@@ -34,7 +34,10 @@ const createIntentDocument = ({ userId, paymentIntentId = new mongoose.Types.Obj
     paymentMethodSnapshot: {
         id: "base-mainnet-usdc",
         name: "Base mainnet USDC",
+        namespace: "eip155",
         network: "base-mainnet",
+        networkId: "8453",
+        caipNetworkId: "eip155:8453",
         chainId: 8453,
         rpcUrl: "https://base.example.invalid/rpc",
         tokenAddress: `0x${"b".repeat(40)}`,
@@ -43,6 +46,8 @@ const createIntentDocument = ({ userId, paymentIntentId = new mongoose.Types.Obj
         treasuryAddress: `0x${"c".repeat(40)}`,
         confirmations: 12
     },
+    namespace: "eip155",
+    networkId: "8453",
     chainId: 8453,
     tokenAddress: `0x${"b".repeat(40)}`,
     tokenSymbol: "USDC",
@@ -103,16 +108,18 @@ const assertPaymentIndexes = async () => {
     ));
     const hasTxHashCredit = indexes.some(index => (
         index.unique === true &&
-        index.key.chainId === 1 &&
+        index.key.namespace === 1 &&
+        index.key.networkId === 1 &&
         index.key.txHash === 1 &&
         index.key.type === 1 &&
         index.partialFilterExpression?.type === "CREDIT" &&
-        index.partialFilterExpression?.chainId?.$type === "number" &&
+        index.partialFilterExpression?.namespace?.$type === "string" &&
+        index.partialFilterExpression?.networkId?.$type === "string" &&
         index.partialFilterExpression?.txHash?.$type === "string"
     ));
 
     assert.equal(hasPaymentIntentCredit, true, "missing paymentIntentId CREDIT unique partial index");
-    assert.equal(hasTxHashCredit, true, "missing chainId/txHash CREDIT unique partial index");
+    assert.equal(hasTxHashCredit, true, "missing namespace/networkId/txHash CREDIT unique partial index");
 };
 
 const assertSettlementState = async ({ userId, paymentIntentId, expectedBalance, expectedCredits = 1, expectedReserved = 0 }) => {
@@ -282,6 +289,9 @@ test("payment settlement integration uses real MongoDB transactions and payment 
                 referenceType: "paymentintent",
                 referenceId: String(firstIntent._id),
                 paymentIntentId: firstIntent._id,
+                paymentMethodId: firstIntent.paymentMethodId,
+                namespace: firstIntent.namespace,
+                networkId: firstIntent.networkId,
                 chainId: 8453,
                 txHash: firstIntent.txHash,
                 idempotencyKey: `duplicate-${firstIntent._id}`
