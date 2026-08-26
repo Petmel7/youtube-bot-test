@@ -42,7 +42,7 @@ const erc20TransferAbi = [{
         { name: "to", type: "address" },
         { name: "value", type: "uint256" }
     ],
-    outputs: [{ name: "", type: "bool" }]
+    outputs: []
 }];
 const walletLinks = [
     ["MetaMask", "https://metamask.io/download/"],
@@ -123,6 +123,7 @@ const assetProvenanceLabel = (method, t) => {
     if (method?.token?.assetProvenance === "binance-peg") return t("wallet.assetProvenance.binancePeg");
     if (method?.token?.assetProvenance === "bnb-testnet") return t("wallet.assetProvenance.bnbTestnet");
     if (method?.token?.assetProvenance === "circle-native") return t("wallet.assetProvenance.circleNative");
+    if (method?.token?.assetProvenance === "tether-native") return t("wallet.assetProvenance.tetherNative");
     return "";
 };
 const methodLabel = (method) => method ? (method.name || `${method.network} · ${method.token?.symbol || ""}`.trim()) : "-";

@@ -45,6 +45,7 @@
         "unavailableMethod": "Nicht verfügbar",
         "assetProvenance": {
             "circleNative": "Circle-nativ",
+            "tetherNative": "Tether-nativ",
             "binancePeg": "Binance-Peg",
             "bnbTestnet": "BNB-Testnet-Token"
         },

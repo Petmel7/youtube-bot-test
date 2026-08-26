@@ -13,8 +13,11 @@ const { createSolanaPaymentVerifier } = require("../src/services/payments/solana
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const ethereumUsdtAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7";
 const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
+const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
 const bnbTestnetUsdcAddress = "0x64544969ed7ebf5f083679233325356ebe738930";
+const bnbTestnetUsdtAddress = "0x668a9fdc6c6790985ef03ebefeb72d8a0ef652d5";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const senderAddress = "0x2222222222222222222222222222222222222222";
 const otherAddress = "0x3333333333333333333333333333333333333333";
@@ -495,6 +498,181 @@ test("PaymentVerifier rejects invalid BNB testnet USDC smoke transfers", async (
             })
         })
     })).code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
+});
+
+test("PaymentVerifier accepts configured Ethereum mainnet USDT transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "ethereum-mainnet-usdt",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "ethereum-mainnet-usdt",
+                name: "Ethereum · USDT",
+                network: "ethereum-mainnet",
+                chainId: 1,
+                rpcUrl: "https://ethereum.example.invalid/rpc",
+                tokenAddress: ethereumUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 6,
+                assetProvenance: "tether-native"
+            }),
+            chainId: 1,
+            tokenAddress: ethereumUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            expectedTokenAmountBaseUnits: "10000000"
+        }),
+        provider: makeProvider({
+            chainId: 1,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: ethereumUsdtAddress, value: 10000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 1);
+    assert.equal(result.tokenAddress, ethereumUsdtAddress);
+    assert.equal(result.tokenDecimals, 6);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000");
+});
+
+test("PaymentVerifier accepts configured BNB Chain Binance-Peg USDT transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "bnb-mainnet-usdt",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "bnb-mainnet-usdt",
+                name: "BNB Chain · Binance-Peg USDT",
+                network: "bnb-mainnet",
+                chainId: 56,
+                rpcUrl: "https://bsc-dataseed.example.invalid",
+                tokenAddress: bnbUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 18,
+                assetProvenance: "binance-peg"
+            }),
+            chainId: 56,
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            expectedTokenAmountBaseUnits: "10000000000000000000"
+        }),
+        provider: makeProvider({
+            chainId: 56,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: bnbUsdtAddress, value: 10000000000000000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 56);
+    assert.equal(result.tokenAddress, bnbUsdtAddress);
+    assert.equal(result.tokenDecimals, 18);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("PaymentVerifier accepts configured BNB testnet USDT smoke transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "bnb-testnet-usdt",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "bnb-testnet-usdt",
+                name: "BNB Chain testnet · USDT",
+                network: "bnb-testnet",
+                chainId: 97,
+                rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+                tokenAddress: bnbTestnetUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 18,
+                assetProvenance: "bnb-testnet",
+                production: false
+            }),
+            chainId: 97,
+            tokenAddress: bnbTestnetUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            expectedTokenAmountBaseUnits: "10000000000000000000"
+        }),
+        provider: makeProvider({
+            chainId: 97,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: bnbTestnetUsdtAddress, value: 10000000000000000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 97);
+    assert.equal(result.tokenAddress, bnbTestnetUsdtAddress);
+    assert.equal(result.tokenDecimals, 18);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("PaymentVerifier rejects invalid USDT transfers", async () => {
+    const intent = makeIntent({
+        paymentMethodId: "bnb-mainnet-usdt",
+        paymentMethodSnapshot: methodSnapshot({
+            id: "bnb-mainnet-usdt",
+            name: "BNB Chain · Binance-Peg USDT",
+            network: "bnb-mainnet",
+            chainId: 56,
+            rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            assetProvenance: "binance-peg"
+        }),
+        chainId: 56,
+        tokenAddress: bnbUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 18,
+        expectedTokenAmountBaseUnits: "10000000000000000000"
+    });
+
+    assert.equal((await verifyWith({ intent, provider: makeProvider({ chainId: 1 }) })).code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
+    assert.equal((await verifyWith({
+        intent: { ...intent, tokenAddress: bnbUsdcAddress },
+        provider: makeProvider({ chainId: 56 })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 56,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: bnbUsdtAddress,
+                    from: otherAddress,
+                    value: 10000000000000000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_PAYER);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 56,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: bnbUsdtAddress,
+                    to: otherAddress,
+                    value: 10000000000000000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 56,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: bnbUsdtAddress,
+                    value: 9999999999999999999n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.UNDERPAID);
 });
 
 test("PaymentVerifier returns pending when transaction or receipt is missing", async () => {

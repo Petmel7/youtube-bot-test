@@ -22,8 +22,11 @@ const {
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const ethereumUsdtAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7";
 const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
+const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
 const bnbTestnetUsdcAddress = "0x64544969ed7ebf5f083679233325356ebe738930";
+const bnbTestnetUsdtAddress = "0x668a9fdc6c6790985ef03ebefeb72d8a0ef652d5";
 const solanaDevnetUsdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const solanaTreasuryAddress = "9xQeWvG816bUx9EPfDTwBX7VgQZnE8qNvSgtV6fSTH3";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
@@ -364,16 +367,96 @@ test("payment config validation accepts explicit Ethereum and BNB Chain USDC met
             confirmations: 30
         }])
     }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_DECIMALS/);
-    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+});
+
+test("payment config validation accepts explicit Ethereum and BNB Chain USDT methods only from whitelist", () => {
+    const ethereumConfig = validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "ethereum-mainnet-usdt",
+            enabled: true,
+            chainId: 1,
+            rpcUrl: "https://ethereum.example.invalid/rpc",
+            tokenAddress: ethereumUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 30
+        }]),
+        defaultMethodId: "ethereum-mainnet-usdt"
+    });
+    const bnbConfig = validPaymentConfig({
         methodsJson: JSON.stringify([{
             id: "bnb-mainnet-usdt",
             enabled: true,
             chainId: 56,
             rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 30
+        }]),
+        defaultMethodId: "bnb-mainnet-usdt"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(ethereumConfig, { nodeEnv: "production" }));
+    assert.doesNotThrow(() => validatePaymentConfig(bnbConfig, { nodeEnv: "production" }));
+    assert.throws(() => validatePaymentConfig({
+        ...ethereumConfig,
+        methodsJson: JSON.stringify([{
+            id: "ethereum-mainnet-usdt",
+            enabled: true,
+            chainId: 1,
+            rpcUrl: "https://ethereum.example.invalid/rpc",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
             treasuryAddress,
             confirmations: 30
         }])
-    }), { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+    }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig({
+        ...ethereumConfig,
+        methodsJson: JSON.stringify([{
+            id: "ethereum-mainnet-usdt",
+            enabled: true,
+            chainId: 1,
+            rpcUrl: "https://ethereum.example.invalid/rpc",
+            tokenAddress: ethereumUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 30
+        }])
+    }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_DECIMALS/);
+    assert.throws(() => validatePaymentConfig({
+        ...bnbConfig,
+        methodsJson: JSON.stringify([{
+            id: "bnb-mainnet-usdt",
+            enabled: true,
+            chainId: 56,
+            rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: ethereumUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 30
+        }])
+    }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig({
+        ...bnbConfig,
+        methodsJson: JSON.stringify([{
+            id: "bnb-mainnet-usdt",
+            enabled: true,
+            chainId: 56,
+            rpcUrl: "https://bsc-dataseed.example.invalid",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 30
+        }])
+    }, { nodeEnv: "production" }), /PAYMENT_METHOD_TOKEN_DECIMALS/);
 });
 
 test("payment config validation accepts BNB testnet USDC only with explicit non-production opt-in", () => {
@@ -423,6 +506,60 @@ test("payment config validation accepts BNB testnet USDC only with explicit non-
             rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
             tokenAddress: bnbTestnetUsdcAddress,
             tokenSymbol: "USDC",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 12
+        }])
+    }, { nodeEnv: "development" }), /PAYMENT_METHOD_TOKEN_DECIMALS/);
+});
+
+test("payment config validation accepts BNB testnet USDT only with explicit non-production opt-in", () => {
+    const bnbTestnetConfig = validPaymentConfig({
+        allowTestnetPayments: true,
+        methodsJson: JSON.stringify([{
+            id: "bnb-testnet-usdt",
+            enabled: true,
+            chainId: 97,
+            rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+            tokenAddress: bnbTestnetUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 12
+        }]),
+        defaultMethodId: "bnb-testnet-usdt"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "development" }));
+    assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+    assert.throws(() => validatePaymentConfig({
+        ...bnbTestnetConfig,
+        allowTestnetPayments: false
+    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
+    assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig({
+        ...bnbTestnetConfig,
+        methodsJson: JSON.stringify([{
+            id: "bnb-testnet-usdt",
+            enabled: true,
+            chainId: 97,
+            rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+            tokenAddress: bnbUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
+            treasuryAddress,
+            confirmations: 12
+        }])
+    }, { nodeEnv: "development" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig({
+        ...bnbTestnetConfig,
+        methodsJson: JSON.stringify([{
+            id: "bnb-testnet-usdt",
+            enabled: true,
+            chainId: 97,
+            rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+            tokenAddress: bnbTestnetUsdtAddress,
+            tokenSymbol: "USDT",
             tokenDecimals: 6,
             treasuryAddress,
             confirmations: 12
@@ -1033,6 +1170,151 @@ test("payment intent creation freezes BNB testnet USDC smoke method snapshot", a
     assert.equal(result.intent.tokenAddress, bnbTestnetUsdcAddress);
     assert.equal(result.intent.tokenDecimals, 18);
     assert.equal(result.intent.expectedUsdAmountMinor, 1000);
+    assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("payment intent creation freezes Ethereum USDT method snapshot", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({
+            packagesJson: JSON.stringify([
+                { packageId: "ten_dollars", creditAmount: 1500, expectedUsdAmountMinor: 1000 }
+            ]),
+            pricingVersion: "pricing-v1"
+        }),
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "ethereum-mainnet-usdt",
+                enabled: true,
+                chainId: 1,
+                rpcUrl: "https://ethereum.example.invalid/rpc",
+                tokenAddress: ethereumUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 6,
+                treasuryAddress,
+                confirmations: 20
+            }]),
+            defaultMethodId: "ethereum-mainnet-usdt"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    const result = await service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "ten_dollars",
+        paymentMethodId: "ethereum-mainnet-usdt",
+        idempotencyKey: "idem-eth-usdt-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.intent.paymentMethodId, "ethereum-mainnet-usdt");
+    assert.equal(result.intent.paymentMethodSnapshot.assetProvenance, "tether-native");
+    assert.equal(result.intent.chainId, 1);
+    assert.equal(result.intent.tokenAddress, ethereumUsdtAddress);
+    assert.equal(result.intent.tokenSymbol, "USDT");
+    assert.equal(result.intent.tokenDecimals, 6);
+    assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000");
+});
+
+test("payment intent creation freezes BNB Chain USDT method snapshot", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({
+            packagesJson: JSON.stringify([
+                { packageId: "ten_dollars", creditAmount: 1500, expectedUsdAmountMinor: 1000 }
+            ]),
+            pricingVersion: "pricing-v1"
+        }),
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "bnb-mainnet-usdt",
+                enabled: true,
+                chainId: 56,
+                rpcUrl: "https://bsc.example.invalid/rpc",
+                tokenAddress: bnbUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 18,
+                treasuryAddress,
+                confirmations: 20
+            }]),
+            defaultMethodId: "bnb-mainnet-usdt"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    const result = await service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "ten_dollars",
+        paymentMethodId: "bnb-mainnet-usdt",
+        idempotencyKey: "idem-bnb-usdt-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.intent.paymentMethodId, "bnb-mainnet-usdt");
+    assert.equal(result.intent.paymentMethodSnapshot.assetProvenance, "binance-peg");
+    assert.equal(result.intent.chainId, 56);
+    assert.equal(result.intent.tokenAddress, bnbUsdtAddress);
+    assert.equal(result.intent.tokenSymbol, "USDT");
+    assert.equal(result.intent.tokenDecimals, 18);
+    assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("payment intent creation freezes BNB testnet USDT smoke method snapshot", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({
+            packagesJson: JSON.stringify([
+                { packageId: "ten_dollars", creditAmount: 1500, expectedUsdAmountMinor: 1000 }
+            ]),
+            pricingVersion: "pricing-v1"
+        }),
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            allowTestnetPayments: true,
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "bnb-testnet-usdt",
+                enabled: true,
+                chainId: 97,
+                rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+                tokenAddress: bnbTestnetUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 18,
+                treasuryAddress,
+                confirmations: 12
+            }]),
+            defaultMethodId: "bnb-testnet-usdt"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    const result = await service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "ten_dollars",
+        paymentMethodId: "bnb-testnet-usdt",
+        idempotencyKey: "idem-bnb-testnet-usdt-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.intent.paymentMethodId, "bnb-testnet-usdt");
+    assert.equal(result.intent.paymentMethodSnapshot.assetProvenance, "bnb-testnet");
+    assert.equal(result.intent.chainId, 97);
+    assert.equal(result.intent.tokenAddress, bnbTestnetUsdtAddress);
+    assert.equal(result.intent.tokenSymbol, "USDT");
+    assert.equal(result.intent.tokenDecimals, 18);
     assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000000000000000");
 });
 

@@ -45,6 +45,7 @@
         "unavailableMethod": "Недоступно",
         "assetProvenance": {
             "circleNative": "Нативний Circle",
+            "tetherNative": "Нативний Tether",
             "binancePeg": "Binance-Peg",
             "bnbTestnet": "Тестовий токен BNB"
         },

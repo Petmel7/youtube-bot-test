@@ -9,10 +9,13 @@ const SOLANA_MAINNET_NETWORK_ID = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const SOLANA_DEVNET_NETWORK_ID = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 
 const ethereumMainnetUsdcAddress = normalizeEvmAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+const ethereumMainnetUsdtAddress = normalizeEvmAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
 const baseMainnetUsdcAddress = normalizeEvmAddress("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
 const baseSepoliaUsdcAddress = normalizeEvmAddress("0x036CbD53842c5426634e7929541eC2318f3dCF7e");
 const bnbMainnetUsdcAddress = normalizeEvmAddress("0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d");
+const bnbMainnetUsdtAddress = normalizeEvmAddress("0x55d398326f99059ff775485246999027b3197955");
 const bnbTestnetUsdcAddress = normalizeEvmAddress("0x64544969ed7EBf5f083679233325356EbE738930");
+const bnbTestnetUsdtAddress = normalizeEvmAddress("0x668a9fDc6C6790985eF03EbEFeB72D8a0eF652d5");
 const solanaMainnetUsdcMintAddress = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const solanaMainnetUsdtMintAddress = "Es9vMFrzaCERmJfrF4H2FYD4uqwEcj4x2tYfJ9Q3K4x";
 const solanaDevnetUsdcMintAddress = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -27,6 +30,17 @@ const allowedPaymentMethods = Object.freeze({
         tokenSymbol: "USDC",
         tokenDecimals: 6,
         assetProvenance: "circle-native",
+        production: true
+    }),
+    "ethereum-mainnet-usdt": Object.freeze({
+        id: "ethereum-mainnet-usdt",
+        network: "ethereum-mainnet",
+        name: "Ethereum · USDT",
+        chainId: ETHEREUM_MAINNET_CHAIN_ID,
+        tokenAddress: ethereumMainnetUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 6,
+        assetProvenance: "tether-native",
         production: true
     }),
     "base-mainnet-usdc": Object.freeze({
@@ -62,6 +76,17 @@ const allowedPaymentMethods = Object.freeze({
         assetProvenance: "binance-peg",
         production: true
     }),
+    "bnb-mainnet-usdt": Object.freeze({
+        id: "bnb-mainnet-usdt",
+        network: "bnb-mainnet",
+        name: "BNB Chain · Binance-Peg USDT",
+        chainId: BNB_MAINNET_CHAIN_ID,
+        tokenAddress: bnbMainnetUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 18,
+        assetProvenance: "binance-peg",
+        production: true
+    }),
     "bnb-testnet-usdc": Object.freeze({
         id: "bnb-testnet-usdc",
         network: "bnb-testnet",
@@ -69,6 +94,17 @@ const allowedPaymentMethods = Object.freeze({
         chainId: BNB_TESTNET_CHAIN_ID,
         tokenAddress: bnbTestnetUsdcAddress,
         tokenSymbol: "USDC",
+        tokenDecimals: 18,
+        assetProvenance: "bnb-testnet",
+        production: false
+    }),
+    "bnb-testnet-usdt": Object.freeze({
+        id: "bnb-testnet-usdt",
+        network: "bnb-testnet",
+        name: "BNB Chain testnet · USDT",
+        chainId: BNB_TESTNET_CHAIN_ID,
+        tokenAddress: bnbTestnetUsdtAddress,
+        tokenSymbol: "USDT",
         tokenDecimals: 18,
         assetProvenance: "bnb-testnet",
         production: false
@@ -131,10 +167,13 @@ module.exports = {
     SOLANA_MAINNET_NETWORK_ID,
     SOLANA_DEVNET_NETWORK_ID,
     ethereumMainnetUsdcAddress,
+    ethereumMainnetUsdtAddress,
     baseMainnetUsdcAddress,
     baseSepoliaUsdcAddress,
     bnbMainnetUsdcAddress,
+    bnbMainnetUsdtAddress,
     bnbTestnetUsdcAddress,
+    bnbTestnetUsdtAddress,
     solanaMainnetUsdcMintAddress,
     solanaMainnetUsdtMintAddress,
     solanaDevnetUsdcMintAddress,
