@@ -47,7 +47,8 @@
             "circleNative": "Нативний Circle",
             "tetherNative": "Нативний Tether",
             "binancePeg": "Binance-Peg",
-            "bnbTestnet": "Тестовий токен BNB"
+            "bnbTestnet": "Тестовий токен BNB",
+            "ethereumSepoliaSmoke": "Smoke-токен Sepolia"
         },
         "createIntent": "Створити платіж",
         "payWithWallet": "Оплатити гаманцем",

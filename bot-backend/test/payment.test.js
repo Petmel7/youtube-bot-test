@@ -23,6 +23,7 @@ const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const ethereumUsdtAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+const ethereumSepoliaUsdtAddress = "0x7169d38820dfd117c3fa1f22a697dba58d90ba06";
 const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
 const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
 const bnbTestnetUsdcAddress = "0x64544969ed7ebf5f083679233325356ebe738930";
@@ -561,6 +562,60 @@ test("payment config validation accepts BNB testnet USDT only with explicit non-
             tokenAddress: bnbTestnetUsdtAddress,
             tokenSymbol: "USDT",
             tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 12
+        }])
+    }, { nodeEnv: "development" }), /PAYMENT_METHOD_TOKEN_DECIMALS/);
+});
+
+test("payment config validation accepts Ethereum Sepolia USDT smoke only with explicit non-production opt-in", () => {
+    const ethereumSepoliaConfig = validPaymentConfig({
+        allowTestnetPayments: true,
+        methodsJson: JSON.stringify([{
+            id: "ethereum-sepolia-usdt",
+            enabled: true,
+            chainId: 11155111,
+            rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+            tokenAddress: ethereumSepoliaUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 12
+        }]),
+        defaultMethodId: "ethereum-sepolia-usdt"
+    });
+
+    assert.doesNotThrow(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "development" }));
+    assert.throws(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+    assert.throws(() => validatePaymentConfig({
+        ...ethereumSepoliaConfig,
+        allowTestnetPayments: false
+    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
+    assert.throws(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig({
+        ...ethereumSepoliaConfig,
+        methodsJson: JSON.stringify([{
+            id: "ethereum-sepolia-usdt",
+            enabled: true,
+            chainId: 11155111,
+            rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+            tokenAddress: ethereumUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            treasuryAddress,
+            confirmations: 12
+        }])
+    }, { nodeEnv: "development" }), /PAYMENT_METHOD_TOKEN_ADDRESS/);
+    assert.throws(() => validatePaymentConfig({
+        ...ethereumSepoliaConfig,
+        methodsJson: JSON.stringify([{
+            id: "ethereum-sepolia-usdt",
+            enabled: true,
+            chainId: 11155111,
+            rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+            tokenAddress: ethereumSepoliaUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 18,
             treasuryAddress,
             confirmations: 12
         }])
@@ -1316,6 +1371,55 @@ test("payment intent creation freezes BNB testnet USDT smoke method snapshot", a
     assert.equal(result.intent.tokenSymbol, "USDT");
     assert.equal(result.intent.tokenDecimals, 18);
     assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000000000000000");
+});
+
+test("payment intent creation freezes Ethereum Sepolia USDT smoke method snapshot", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({
+            packagesJson: JSON.stringify([
+                { packageId: "ten_dollars", creditAmount: 1500, expectedUsdAmountMinor: 1000 }
+            ]),
+            pricingVersion: "pricing-v1"
+        }),
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            allowTestnetPayments: true,
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "ethereum-sepolia-usdt",
+                enabled: true,
+                chainId: 11155111,
+                rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+                tokenAddress: ethereumSepoliaUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 6,
+                treasuryAddress,
+                confirmations: 12
+            }]),
+            defaultMethodId: "ethereum-sepolia-usdt"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    const result = await service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "ten_dollars",
+        paymentMethodId: "ethereum-sepolia-usdt",
+        idempotencyKey: "idem-ethereum-sepolia-usdt-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.intent.paymentMethodId, "ethereum-sepolia-usdt");
+    assert.equal(result.intent.paymentMethodSnapshot.assetProvenance, "ethereum-sepolia-smoke");
+    assert.equal(result.intent.chainId, 11155111);
+    assert.equal(result.intent.tokenAddress, ethereumSepoliaUsdtAddress);
+    assert.equal(result.intent.tokenSymbol, "USDT");
+    assert.equal(result.intent.tokenDecimals, 6);
+    assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000");
 });
 
 test("PaymentIntent schema has required states, immutability, validation, and indexes", async () => {

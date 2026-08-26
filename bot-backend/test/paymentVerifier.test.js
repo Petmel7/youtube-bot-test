@@ -14,6 +14,7 @@ const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
 const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const ethereumUsdtAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+const ethereumSepoliaUsdtAddress = "0x7169d38820dfd117c3fa1f22a697dba58d90ba06";
 const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
 const bnbUsdtAddress = "0x55d398326f99059ff775485246999027b3197955";
 const bnbTestnetUsdcAddress = "0x64544969ed7ebf5f083679233325356ebe738930";
@@ -534,6 +535,98 @@ test("PaymentVerifier accepts configured Ethereum mainnet USDT transfer", async 
     assert.equal(result.tokenAddress, ethereumUsdtAddress);
     assert.equal(result.tokenDecimals, 6);
     assert.equal(result.verifiedTokenAmountBaseUnits, "10000000");
+});
+
+test("PaymentVerifier accepts configured Ethereum Sepolia USDT smoke transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "ethereum-sepolia-usdt",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "ethereum-sepolia-usdt",
+                name: "Ethereum Sepolia · USDT",
+                network: "ethereum-sepolia",
+                chainId: 11155111,
+                rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+                tokenAddress: ethereumSepoliaUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 6,
+                assetProvenance: "ethereum-sepolia-smoke",
+                production: false
+            }),
+            chainId: 11155111,
+            tokenAddress: ethereumSepoliaUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            expectedTokenAmountBaseUnits: "10000000"
+        }),
+        provider: makeProvider({
+            chainId: 11155111,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: ethereumSepoliaUsdtAddress, value: 10000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 11155111);
+    assert.equal(result.tokenAddress, ethereumSepoliaUsdtAddress);
+    assert.equal(result.tokenDecimals, 6);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000");
+});
+
+test("PaymentVerifier rejects invalid Ethereum Sepolia USDT smoke transfers", async () => {
+    const intent = makeIntent({
+        paymentMethodId: "ethereum-sepolia-usdt",
+        paymentMethodSnapshot: methodSnapshot({
+            id: "ethereum-sepolia-usdt",
+            name: "Ethereum Sepolia · USDT",
+            network: "ethereum-sepolia",
+            chainId: 11155111,
+            rpcUrl: "https://ethereum-sepolia.example.invalid/rpc",
+            tokenAddress: ethereumSepoliaUsdtAddress,
+            tokenSymbol: "USDT",
+            tokenDecimals: 6,
+            assetProvenance: "ethereum-sepolia-smoke",
+            production: false
+        }),
+        chainId: 11155111,
+        tokenAddress: ethereumSepoliaUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 6,
+        expectedTokenAmountBaseUnits: "10000000"
+    });
+
+    assert.equal((await verifyWith({ intent, provider: makeProvider({ chainId: 1 }) })).code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
+    assert.equal((await verifyWith({
+        intent: { ...intent, tokenAddress: ethereumUsdtAddress },
+        provider: makeProvider({ chainId: 11155111 })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 11155111,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: ethereumSepoliaUsdtAddress,
+                    from: otherAddress,
+                    value: 10000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_PAYER);
+    assert.equal((await verifyWith({
+        intent,
+        provider: makeProvider({
+            chainId: 11155111,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({
+                    tokenAddress: ethereumSepoliaUsdtAddress,
+                    to: otherAddress,
+                    value: 10000000n
+                })]
+            })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
 });
 
 test("PaymentVerifier accepts configured BNB Chain Binance-Peg USDT transfer", async () => {

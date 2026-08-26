@@ -47,7 +47,8 @@
             "circleNative": "Circle native",
             "tetherNative": "Tether native",
             "binancePeg": "Binance-Peg",
-            "bnbTestnet": "BNB testnet token"
+            "bnbTestnet": "BNB testnet token",
+            "ethereumSepoliaSmoke": "Sepolia smoke token"
         },
         "createIntent": "Create payment",
         "payWithWallet": "Pay with wallet",

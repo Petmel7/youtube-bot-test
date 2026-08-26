@@ -122,6 +122,7 @@ const createPaymentRequestLink = (intent) => {
 const assetProvenanceLabel = (method, t) => {
     if (method?.token?.assetProvenance === "binance-peg") return t("wallet.assetProvenance.binancePeg");
     if (method?.token?.assetProvenance === "bnb-testnet") return t("wallet.assetProvenance.bnbTestnet");
+    if (method?.token?.assetProvenance === "ethereum-sepolia-smoke") return t("wallet.assetProvenance.ethereumSepoliaSmoke");
     if (method?.token?.assetProvenance === "circle-native") return t("wallet.assetProvenance.circleNative");
     if (method?.token?.assetProvenance === "tether-native") return t("wallet.assetProvenance.tetherNative");
     return "";

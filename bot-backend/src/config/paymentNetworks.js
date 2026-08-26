@@ -1,6 +1,7 @@
 const { normalizeEvmAddress } = require("../utils/evmAddress");
 
 const ETHEREUM_MAINNET_CHAIN_ID = 1;
+const ETHEREUM_SEPOLIA_CHAIN_ID = 11155111;
 const BASE_MAINNET_CHAIN_ID = 8453;
 const BASE_SEPOLIA_CHAIN_ID = 84532;
 const BNB_MAINNET_CHAIN_ID = 56;
@@ -10,6 +11,7 @@ const SOLANA_DEVNET_NETWORK_ID = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 
 const ethereumMainnetUsdcAddress = normalizeEvmAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 const ethereumMainnetUsdtAddress = normalizeEvmAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7");
+const ethereumSepoliaUsdtAddress = normalizeEvmAddress("0x7169d38820dfd117c3fa1f22a697dba58d90ba06");
 const baseMainnetUsdcAddress = normalizeEvmAddress("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
 const baseSepoliaUsdcAddress = normalizeEvmAddress("0x036CbD53842c5426634e7929541eC2318f3dCF7e");
 const bnbMainnetUsdcAddress = normalizeEvmAddress("0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d");
@@ -42,6 +44,17 @@ const allowedPaymentMethods = Object.freeze({
         tokenDecimals: 6,
         assetProvenance: "tether-native",
         production: true
+    }),
+    "ethereum-sepolia-usdt": Object.freeze({
+        id: "ethereum-sepolia-usdt",
+        network: "ethereum-sepolia",
+        name: "Ethereum Sepolia · USDT",
+        chainId: ETHEREUM_SEPOLIA_CHAIN_ID,
+        tokenAddress: ethereumSepoliaUsdtAddress,
+        tokenSymbol: "USDT",
+        tokenDecimals: 6,
+        assetProvenance: "ethereum-sepolia-smoke",
+        production: false
     }),
     "base-mainnet-usdc": Object.freeze({
         id: "base-mainnet-usdc",
@@ -160,6 +173,7 @@ const getAllowedPaymentMethodByLegacyNetwork = (network) => getAllowedPaymentMet
 
 module.exports = {
     ETHEREUM_MAINNET_CHAIN_ID,
+    ETHEREUM_SEPOLIA_CHAIN_ID,
     BASE_MAINNET_CHAIN_ID,
     BASE_SEPOLIA_CHAIN_ID,
     BNB_MAINNET_CHAIN_ID,
@@ -168,6 +182,7 @@ module.exports = {
     SOLANA_DEVNET_NETWORK_ID,
     ethereumMainnetUsdcAddress,
     ethereumMainnetUsdtAddress,
+    ethereumSepoliaUsdtAddress,
     baseMainnetUsdcAddress,
     baseSepoliaUsdcAddress,
     bnbMainnetUsdcAddress,

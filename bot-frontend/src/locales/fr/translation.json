@@ -47,7 +47,8 @@
             "circleNative": "Natif Circle",
             "tetherNative": "Natif Tether",
             "binancePeg": "Binance-Peg",
-            "bnbTestnet": "Token testnet BNB"
+            "bnbTestnet": "Token testnet BNB",
+            "ethereumSepoliaSmoke": "Token smoke Sepolia"
         },
         "createIntent": "Créer un paiement",
         "payWithWallet": "Payer avec le portefeuille",
