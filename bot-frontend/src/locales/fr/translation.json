@@ -181,6 +181,7 @@
             "methods": "Methodes de paiement",
             "recentIntents": "Intentions recentes",
             "recentCredits": "Credits recents",
+            "reconciliation": "Reconciliation",
             "method": "Methode",
             "token": "Token",
             "network": "Reseau",
@@ -206,8 +207,22 @@
             "confirmed": "Confirme",
             "failure": "Echec",
             "balance": "Solde",
+            "reason": "Raison",
+            "review": "Revue",
+            "actions": "Actions",
+            "retryVerify": "Relancer la verification",
+            "markReviewed": "Marquer comme revu",
+            "reviewNote": "Note de revue requise",
+            "confirmReview": "Marquer ce paiement comme revu ? Aucun credit ne sera ajoute.",
+            "allReviewStatuses": "Tous les statuts de revue",
+            "reviewed": "Revu",
+            "underpaymentAcknowledged": "Sous-paiement confirme",
+            "paidUncreditedReviewed": "Paiement non credite revu",
             "errors": {
-                "load": "Impossible de charger les donnees admin des paiements."
+                "load": "Impossible de charger les donnees admin des paiements.",
+                "retry": "Impossible de relancer la verification du paiement.",
+                "review": "Impossible de marquer le paiement comme revu.",
+                "noteRequired": "Une note de revue est requise."
             }
         }
     },

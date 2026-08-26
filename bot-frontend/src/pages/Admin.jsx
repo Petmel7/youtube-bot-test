@@ -4,7 +4,10 @@ import { fetchUsers } from "../services/userService";
 import {
     fetchAdminPaymentIntents,
     fetchAdminPaymentLedger,
-    fetchAdminPaymentMethods
+    fetchAdminPaymentMethods,
+    fetchAdminPaymentReconciliation,
+    retryAdminPaymentVerification,
+    reviewAdminPaymentIntent
 } from "../services/adminPaymentService";
 import styles from "../styles/admin.module.css";
 
@@ -40,17 +43,21 @@ const Admin = () => {
     const [methods, setMethods] = useState([]);
     const [intents, setIntents] = useState([]);
     const [ledger, setLedger] = useState([]);
+    const [reconciliation, setReconciliation] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState(null);
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState("");
     const [methodFilter, setMethodFilter] = useState("");
+    const [reviewStatusFilter, setReviewStatusFilter] = useState("");
+    const [reviewNotes, setReviewNotes] = useState({});
 
     const loadAdminData = useCallback(async () => {
         setLoading(true);
         setError(null);
 
         try {
-            const [usersData, methodsData, intentsData, ledgerData] = await Promise.all([
+            const [usersData, methodsData, intentsData, ledgerData, reconciliationData] = await Promise.all([
                 fetchUsers(),
                 fetchAdminPaymentMethods(),
                 fetchAdminPaymentIntents({
@@ -58,20 +65,27 @@ const Admin = () => {
                     methodId: methodFilter,
                     limit: 25
                 }),
-                fetchAdminPaymentLedger({ type: "CREDIT", limit: 25 })
+                fetchAdminPaymentLedger({ type: "CREDIT", limit: 25 }),
+                fetchAdminPaymentReconciliation({
+                    status: statusFilter,
+                    methodId: methodFilter,
+                    reviewStatus: reviewStatusFilter,
+                    limit: 25
+                })
             ]);
 
             setUsers(usersData || []);
             setMethods(methodsData.paymentMethods || []);
             setIntents(intentsData.intents || []);
             setLedger(ledgerData.ledger || []);
+            setReconciliation(reconciliationData.candidates || []);
         } catch (err) {
             console.error("Error fetching admin payment data:", err);
             setError(t("admin.payments.errors.load"));
         } finally {
             setLoading(false);
         }
-    }, [methodFilter, statusFilter, t]);
+    }, [methodFilter, reviewStatusFilter, statusFilter, t]);
 
     useEffect(() => {
         loadAdminData();
@@ -84,6 +98,53 @@ const Admin = () => {
     const copyValue = async (value) => {
         if (!navigator.clipboard || !value) return;
         await navigator.clipboard.writeText(value);
+    };
+
+    const retryVerify = async (candidate) => {
+        const intentId = candidate.intent?.id;
+        if (!intentId) return;
+
+        setActionLoading(`retry:${intentId}`);
+        setError(null);
+        try {
+            await retryAdminPaymentVerification(intentId);
+            await loadAdminData();
+        } catch (err) {
+            console.error("Error retrying payment verification:", err);
+            setError(t("admin.payments.errors.retry"));
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const markReviewed = async (candidate) => {
+        const intentId = candidate.intent?.id;
+        const note = (reviewNotes[intentId] || "").trim();
+        if (!intentId || !note) {
+            setError(t("admin.payments.errors.noteRequired"));
+            return;
+        }
+
+        if (!window.confirm(t("admin.payments.confirmReview"))) {
+            return;
+        }
+
+        const action = candidate.reason === "MANUAL_REVIEW"
+            ? "MARK_UNDERPAYMENT_ACKNOWLEDGED"
+            : "MARK_REVIEWED";
+
+        setActionLoading(`review:${intentId}`);
+        setError(null);
+        try {
+            await reviewAdminPaymentIntent(intentId, { action, note });
+            setReviewNotes(current => ({ ...current, [intentId]: "" }));
+            await loadAdminData();
+        } catch (err) {
+            console.error("Error marking payment reviewed:", err);
+            setError(t("admin.payments.errors.review"));
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     return (
@@ -116,6 +177,100 @@ const Admin = () => {
                 <div className={styles.metric}>
                     <span>{t("admin.payments.recentCredits")}</span>
                     <strong>{ledger.length}</strong>
+                </div>
+                <div className={styles.metric}>
+                    <span>{t("admin.payments.reconciliation")}</span>
+                    <strong>{reconciliation.length}</strong>
+                </div>
+            </section>
+
+            <section className={styles.section}>
+                <div className={styles.sectionHeader}>
+                    <h2>{t("admin.payments.reconciliation")}</h2>
+                    <div className={styles.filters}>
+                        <select value={reviewStatusFilter} onChange={(event) => setReviewStatusFilter(event.target.value)}>
+                            <option value="">{t("admin.payments.allReviewStatuses")}</option>
+                            <option value="REVIEWED">{t("admin.payments.reviewed")}</option>
+                            <option value="UNDERPAYMENT_ACKNOWLEDGED">{t("admin.payments.underpaymentAcknowledged")}</option>
+                            <option value="PAID_UNCREDITED_REVIEWED">{t("admin.payments.paidUncreditedReviewed")}</option>
+                        </select>
+                    </div>
+                </div>
+                <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th>{t("admin.payments.reason")}</th>
+                                <th>{t("admin.payments.status")}</th>
+                                <th>{t("admin.payments.method")}</th>
+                                <th>{t("admin.payments.amount")}</th>
+                                <th>{t("admin.payments.user")}</th>
+                                <th>{t("admin.payments.transaction")}</th>
+                                <th>{t("admin.payments.review")}</th>
+                                <th>{t("admin.payments.actions")}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reconciliation.map(candidate => {
+                                const intent = candidate.intent || {};
+                                const intentId = intent.id;
+                                return (
+                                    <tr key={intentId}>
+                                        <td><Badge tone="warning">{candidate.reason || t("admin.payments.review")}</Badge></td>
+                                        <td>
+                                            <Badge tone={intent.credited ? "success" : "neutral"}>{intent.status}</Badge>
+                                            <span>{intent.failureCode || intent.failureReason || "-"}</span>
+                                        </td>
+                                        <td>
+                                            <strong>{intent.paymentMethodId}</strong>
+                                            <span>{intent.caipNetworkId}</span>
+                                        </td>
+                                        <td>
+                                            <strong>{formatUsdMinor(intent.expectedUsdAmountMinor)}</strong>
+                                            <span>{intent.verifiedTokenAmountBaseUnits || "-"} / {intent.expectedTokenAmountBaseUnits} {intent.tokenSymbol}</span>
+                                            <span>{intent.creditAmount} {t("admin.payments.credits")}</span>
+                                        </td>
+                                        <td>{shortText(intent.userId)}</td>
+                                        <td>
+                                            <span>{shortText(intent.payerAddress)}</span>
+                                            <span>{shortText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}</span>
+                                        </td>
+                                        <td>
+                                            <span>{candidate.reviewStatus || "-"}</span>
+                                            <span>{candidate.latestAudit?.action || "-"}</span>
+                                            <span>{candidate.latestAudit?.note || candidate.reviewNote || "-"}</span>
+                                        </td>
+                                        <td>
+                                            <div className={styles.actions}>
+                                                <button
+                                                    className={styles.actionButton}
+                                                    type="button"
+                                                    onClick={() => retryVerify(candidate)}
+                                                    disabled={Boolean(actionLoading)}
+                                                >
+                                                    {actionLoading === `retry:${intentId}` ? t("loading") : t("admin.payments.retryVerify")}
+                                                </button>
+                                                <textarea
+                                                    value={reviewNotes[intentId] || ""}
+                                                    onChange={(event) => setReviewNotes(current => ({ ...current, [intentId]: event.target.value }))}
+                                                    placeholder={t("admin.payments.reviewNote")}
+                                                    maxLength={1000}
+                                                />
+                                                <button
+                                                    className={styles.actionButton}
+                                                    type="button"
+                                                    onClick={() => markReviewed(candidate)}
+                                                    disabled={Boolean(actionLoading)}
+                                                >
+                                                    {actionLoading === `review:${intentId}` ? t("loading") : t("admin.payments.markReviewed")}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             </section>
 

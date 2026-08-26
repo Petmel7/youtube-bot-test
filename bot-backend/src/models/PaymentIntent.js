@@ -28,6 +28,7 @@ const solanaAddressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const solanaSignaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/;
 const txIdentifierPattern = /^(0x[a-f0-9]{64}|[1-9A-HJ-NP-Za-km-z]{64,128})$/;
 const paymentMethodIdPattern = /^[A-Za-z0-9_-]{1,80}$/;
+const reviewStatusPattern = /^[A-Z_]{1,64}$/;
 const positiveInteger = {
     validator: (value) => Number.isInteger(value) && value > 0,
     message: "{PATH} must be a positive integer"
@@ -171,7 +172,11 @@ const paymentIntentSchema = new mongoose.Schema({
     creditedTransactionId: { ...nullableObjectId, ref: "WalletTransaction" },
     overpaidAmountBaseUnits: { ...nullableString, validate: nullableCanonicalDecimalString },
     failureCode: nullableString,
-    failureReason: nullableString
+    failureReason: nullableString,
+    reviewStatus: { type: String, default: null, match: reviewStatusPattern },
+    reviewedAt: { type: Date, default: null },
+    reviewedBy: { ...nullableObjectId, ref: "User" },
+    reviewNote: { type: String, default: null, maxlength: 280 }
 }, {
     strict: true,
     timestamps: true
@@ -188,6 +193,7 @@ paymentIntentSchema.index({ userId: 1, createdAt: -1 });
 paymentIntentSchema.index({ creditedTransactionId: 1 });
 paymentIntentSchema.index({ status: 1, updatedAt: 1 });
 paymentIntentSchema.index({ status: 1, expiresAt: 1 });
+paymentIntentSchema.index({ reviewStatus: 1, updatedAt: -1 });
 
 paymentIntentSchema.pre("findOneAndUpdate", guardCreditedTransactionIdUpdate);
 paymentIntentSchema.pre("updateOne", guardCreditedTransactionIdUpdate);

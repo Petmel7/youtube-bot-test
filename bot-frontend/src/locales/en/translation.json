@@ -181,6 +181,7 @@
             "methods": "Payment methods",
             "recentIntents": "Recent intents",
             "recentCredits": "Recent credits",
+            "reconciliation": "Reconciliation",
             "method": "Method",
             "token": "Token",
             "network": "Network",
@@ -206,8 +207,22 @@
             "confirmed": "Confirmed",
             "failure": "Failure",
             "balance": "Balance",
+            "reason": "Reason",
+            "review": "Review",
+            "actions": "Actions",
+            "retryVerify": "Retry verify",
+            "markReviewed": "Mark reviewed",
+            "reviewNote": "Required review note",
+            "confirmReview": "Mark this payment as reviewed? No credits will be added.",
+            "allReviewStatuses": "All review statuses",
+            "reviewed": "Reviewed",
+            "underpaymentAcknowledged": "Underpayment acknowledged",
+            "paidUncreditedReviewed": "Paid uncredited reviewed",
             "errors": {
-                "load": "Could not load admin payment data."
+                "load": "Could not load admin payment data.",
+                "retry": "Could not retry payment verification.",
+                "review": "Could not mark payment reviewed.",
+                "noteRequired": "A review note is required."
             }
         }
     },

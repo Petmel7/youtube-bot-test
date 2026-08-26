@@ -181,6 +181,7 @@
             "methods": "Zahlungsmethoden",
             "recentIntents": "Neueste Intents",
             "recentCredits": "Neueste Gutschriften",
+            "reconciliation": "Abgleich",
             "method": "Methode",
             "token": "Token",
             "network": "Netzwerk",
@@ -206,8 +207,22 @@
             "confirmed": "Bestaetigt",
             "failure": "Fehler",
             "balance": "Saldo",
+            "reason": "Grund",
+            "review": "Pruefung",
+            "actions": "Aktionen",
+            "retryVerify": "Verifizierung wiederholen",
+            "markReviewed": "Als geprueft markieren",
+            "reviewNote": "Pflichtnotiz zur Pruefung",
+            "confirmReview": "Diesen Zahlungsvorgang als geprueft markieren? Es werden keine Credits hinzugefuegt.",
+            "allReviewStatuses": "Alle Pruefstatus",
+            "reviewed": "Geprueft",
+            "underpaymentAcknowledged": "Unterzahlung bestaetigt",
+            "paidUncreditedReviewed": "Bezahlt ohne Gutschrift geprueft",
             "errors": {
-                "load": "Admin-Zahlungsdaten konnten nicht geladen werden."
+                "load": "Admin-Zahlungsdaten konnten nicht geladen werden.",
+                "retry": "Zahlungsverifizierung konnte nicht wiederholt werden.",
+                "review": "Zahlung konnte nicht als geprueft markiert werden.",
+                "noteRequired": "Eine Pruefnotiz ist erforderlich."
             }
         }
     },

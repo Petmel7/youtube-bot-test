@@ -294,6 +294,37 @@ const toAdminPaymentLedgerDto = (transaction) => {
     };
 };
 
+const toPaymentAuditLogDto = (audit) => {
+    if (!audit) return null;
+
+    return {
+        id: String(audit._id || audit.id),
+        paymentIntentId: audit.paymentIntentId ? String(audit.paymentIntentId) : null,
+        actorUserId: audit.actorUserId ? String(audit.actorUserId) : null,
+        action: audit.action,
+        statusBefore: audit.statusBefore || null,
+        statusAfter: audit.statusAfter || null,
+        note: audit.note || null,
+        metadata: audit.metadata || null,
+        createdAt: audit.createdAt
+    };
+};
+
+const toAdminPaymentReconciliationCandidateDto = (candidate) => {
+    if (!candidate) return null;
+
+    const intent = candidate.intent || candidate;
+    return {
+        reason: candidate.reason || null,
+        intent: toAdminPaymentIntentDto(intent),
+        reviewStatus: intent.reviewStatus || null,
+        reviewedAt: intent.reviewedAt || null,
+        reviewedBy: intent.reviewedBy ? String(intent.reviewedBy) : null,
+        reviewNote: intent.reviewNote || null,
+        latestAudit: toPaymentAuditLogDto(candidate.latestAudit)
+    };
+};
+
 module.exports = {
     toSafeUser,
     toPromptDto,
@@ -306,5 +337,7 @@ module.exports = {
     toPaymentMethodDto,
     toAdminPaymentMethodDto,
     toAdminPaymentIntentDto,
-    toAdminPaymentLedgerDto
+    toAdminPaymentLedgerDto,
+    toPaymentAuditLogDto,
+    toAdminPaymentReconciliationCandidateDto
 };
