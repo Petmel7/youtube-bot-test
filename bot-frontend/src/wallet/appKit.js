@@ -3,12 +3,13 @@ import { createAppKit } from "@reown/appkit/react";
 import { solana, solanaDevnet } from "@reown/appkit/networks";
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { base, baseSepolia, bsc } from "viem/chains";
+import { mainnet, base, baseSepolia, bsc } from "viem/chains";
 import { WagmiProvider } from "wagmi";
 import config from "../config/config";
 
-const networks = [base, baseSepolia, bsc, solana, solanaDevnet];
+const networks = [mainnet, base, baseSepolia, bsc, solana, solanaDevnet];
 const networkByName = {
+    "ethereum-mainnet": mainnet,
     "base-mainnet": base,
     "base-sepolia": baseSepolia,
     "bnb-mainnet": bsc,

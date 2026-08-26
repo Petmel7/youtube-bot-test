@@ -43,6 +43,10 @@
         "availablePaymentMethod": "Available payment method",
         "testnet": "Testnet",
         "unavailableMethod": "Unavailable",
+        "assetProvenance": {
+            "circleNative": "Circle native",
+            "binancePeg": "Binance-Peg"
+        },
         "createIntent": "Create payment",
         "payWithWallet": "Pay with wallet",
         "payWithSolanaWallet": "Pay with Solana wallet",

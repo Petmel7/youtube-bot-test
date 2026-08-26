@@ -13,7 +13,7 @@ const {
 } = require("./config");
 const { isValidEvmAddress, normalizeEvmAddress } = require("../utils/evmAddress");
 const { isValidSolanaPublicKey } = require("../utils/solana");
-const { BASE_MAINNET_CHAIN_ID, getAllowedPaymentMethod, getAllowedPaymentMethodByLegacyNetwork } = require("./paymentNetworks");
+const { getAllowedPaymentMethod, getAllowedPaymentMethodByLegacyNetwork } = require("./paymentNetworks");
 const { buildPaymentMethods } = require("./paymentMethods");
 const { parsePaymentPackages } = require("../services/billing/paymentPricingService");
 
@@ -205,10 +205,6 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
                 throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
             }
 
-            if (nodeEnv === "production" && method.chainId !== BASE_MAINNET_CHAIN_ID && method.network !== "bnb-mainnet") {
-                throw new Error("Invalid PAYMENT_METHOD_CHAIN_ID configuration");
-            }
-
             const configuredTokenAddress = normalizeEvmAddress(method.tokenAddress);
             if (!isValidEvmAddress(method.tokenAddress) || configuredTokenAddress !== allowed.tokenAddress) {
                 throw new Error("Invalid PAYMENT_METHOD_TOKEN_ADDRESS configuration");
@@ -225,6 +221,10 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
 
         if (!Number.isInteger(method.tokenDecimals) || method.tokenDecimals !== allowed.tokenDecimals) {
             throw new Error("Invalid PAYMENT_METHOD_TOKEN_DECIMALS configuration");
+        }
+
+        if ((method.assetProvenance || null) !== (allowed.assetProvenance || null)) {
+            throw new Error("Invalid PAYMENT_METHOD_ASSET_PROVENANCE configuration");
         }
 
     });

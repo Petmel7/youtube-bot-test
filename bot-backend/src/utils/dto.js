@@ -69,7 +69,8 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
                 mintAddress: intent.paymentMethodSnapshot.mintAddress || null,
                 symbol: intent.paymentMethodSnapshot.tokenSymbol,
                 decimals: intent.paymentMethodSnapshot.tokenDecimals,
-                assetType: intent.paymentMethodSnapshot.assetType || "erc20"
+                assetType: intent.paymentMethodSnapshot.assetType || "erc20",
+                assetProvenance: intent.paymentMethodSnapshot.assetProvenance || null
             },
             recipientAddress: intent.paymentMethodSnapshot.treasuryAddress,
             confirmations: intent.paymentMethodSnapshot.confirmations
@@ -81,7 +82,8 @@ const toPaymentIntentDto = (intent, { requiredConfirmations } = {}) => {
             mintAddress: intent.mintAddress || null,
             symbol: intent.tokenSymbol,
             decimals: intent.tokenDecimals,
-            assetType: intent.paymentMethodSnapshot?.assetType || "erc20"
+            assetType: intent.paymentMethodSnapshot?.assetType || "erc20",
+            assetProvenance: intent.paymentMethodSnapshot?.assetProvenance || null
         },
         recipientAddress: intent.recipientAddress,
         expectedTokenAmountBaseUnits: intent.expectedTokenAmountBaseUnits,
@@ -194,7 +196,8 @@ const toPaymentMethodDto = (paymentMethod) => {
             mintAddress: paymentMethod.mintAddress || null,
             symbol: paymentMethod.tokenSymbol,
             decimals: paymentMethod.tokenDecimals,
-            assetType: paymentMethod.assetType || "erc20"
+            assetType: paymentMethod.assetType || "erc20",
+            assetProvenance: paymentMethod.assetProvenance || null
         }
     };
 };

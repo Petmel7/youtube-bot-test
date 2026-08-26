@@ -47,6 +47,7 @@ const makeIntent = (overrides = {}) => ({
         tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
         tokenSymbol: "USDC",
         tokenDecimals: 6,
+        assetProvenance: "circle-native",
         treasuryAddress: "0x1111111111111111111111111111111111111111",
         confirmations: 12
     },
@@ -190,7 +191,8 @@ const createFakePaymentDependencies = () => ({
         chainId: 8453,
         tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
         tokenSymbol: "USDC",
-        tokenDecimals: 6
+        tokenDecimals: 6,
+        assetProvenance: "circle-native"
     }],
     payerChallengeService: {
         async createChallenge(args) {
@@ -336,7 +338,8 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
             mintAddress: null,
             symbol: "USDC",
             decimals: 6,
-            assetType: "erc20"
+            assetType: "erc20",
+            assetProvenance: "circle-native"
         }
     }]);
     assert.equal(packages.body.defaultPaymentMethodId, "base-mainnet-usdc");

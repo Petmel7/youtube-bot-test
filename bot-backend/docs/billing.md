@@ -58,6 +58,8 @@ Payment intent creation is idempotent by authenticated `userId + idempotencyKey`
 
 Phase 3I moves payment package configuration to business pricing only. `PAYMENT_PACKAGES_JSON` entries contain `packageId`, `creditAmount`, and `expectedUsdAmountMinor`; they must not contain `expectedTokenAmountBaseUnits`. At intent creation time, the backend calculates and freezes the token amount from the selected payment method's token decimals, assuming supported stablecoins price at `1 USD = 1 token`. For example, `expectedUsdAmountMinor: 1000` becomes `10000000` base units for a 6-decimal stablecoin and `10000000000000000000` base units for an 18-decimal stablecoin.
 
+Phase 3J adds production EVM USDC payment methods through `PAYMENT_METHODS_JSON`: `ethereum-mainnet-usdc` for Circle native USDC on Ethereum mainnet and `bnb-mainnet-usdc` for Binance-Peg USDC on BNB Chain. Do not label the BNB Chain token as native Circle USDC. A production dotenv value may enable both methods as a single-line JSON array such as `[{"id":"ethereum-mainnet-usdc","enabled":true,"rpcUrl":"https://YOUR_ETHEREUM_RPC","treasuryAddress":"0xYOUR_TREASURY"},{"id":"bnb-mainnet-usdc","enabled":true,"rpcUrl":"https://bsc-dataseed.bnbchain.org","treasuryAddress":"0xYOUR_TREASURY"}]`.
+
 ## Phase 3B Payment Verification
 
 Phase 3B adds backend-only Base Mainnet USDC verification. Blockchain access is isolated behind `src/services/payments/evmProvider.js`, and payment verification lives in `src/services/payments/paymentVerifier.js`.

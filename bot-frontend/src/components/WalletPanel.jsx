@@ -119,12 +119,17 @@ const createPaymentRequestLink = (intent) => {
     return `ethereum:${intent.token.address}@${intent.chainId}/transfer?address=${intent.recipientAddress}&uint256=${intent.expectedTokenAmountBaseUnits}`;
 };
 
-const methodLabel = (method) => method ? `${method.name || method.network} · ${method.token?.symbol || ""}`.trim() : "-";
+const assetProvenanceLabel = (method, t) => {
+    if (method?.token?.assetProvenance === "binance-peg") return t("wallet.assetProvenance.binancePeg");
+    if (method?.token?.assetProvenance === "circle-native") return t("wallet.assetProvenance.circleNative");
+    return "";
+};
+const methodLabel = (method) => method ? (method.name || `${method.network} · ${method.token?.symbol || ""}`.trim()) : "-";
 const methodNetworkLabel = (method) => method?.name || method?.network || method?.caipNetworkId || "-";
 const methodSecondaryLabel = (method, t) => {
     if (!method) return "";
     const parts = [
-        method.token?.symbol,
+        assetProvenanceLabel(method, t) || method.token?.symbol,
         method.caipNetworkId || (method.chainId ? `eip155:${method.chainId}` : method.networkId ? `solana:${method.networkId}` : ""),
         method.testnet ? t("wallet.testnet") : "",
         method.enabled === false ? t("wallet.unavailableMethod") : ""

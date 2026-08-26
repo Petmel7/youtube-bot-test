@@ -17,6 +17,7 @@ const freezeMethodSnapshot = (method) => Object.freeze({
     chainId: method.chainId,
     rpcUrl: method.rpcUrl,
     assetType: method.assetType || "erc20",
+    assetProvenance: method.assetProvenance,
     tokenAddress: method.tokenAddress ? normalizeEvmAddress(method.tokenAddress) : undefined,
     mintAddress: method.mintAddress,
     tokenSymbol: method.tokenSymbol,

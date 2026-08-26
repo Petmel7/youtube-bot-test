@@ -43,6 +43,10 @@
         "availablePaymentMethod": "Доступний спосіб оплати",
         "testnet": "Тестова мережа",
         "unavailableMethod": "Недоступно",
+        "assetProvenance": {
+            "circleNative": "Нативний Circle",
+            "binancePeg": "Binance-Peg"
+        },
         "createIntent": "Створити платіж",
         "payWithWallet": "Оплатити гаманцем",
         "payWithSolanaWallet": "Оплатити Solana-гаманцем",

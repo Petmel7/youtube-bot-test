@@ -111,7 +111,7 @@ const createPaymentVerifier = ({
             const method = paymentIntent.paymentMethodSnapshot || null;
             const allowedMethod = method?.id ? getAllowedPaymentMethod(method.id) : null;
 
-            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id || (method.namespace || "eip155") !== "eip155") {
+            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id || (method.namespace || "eip155") !== "eip155" || method.enabled !== true) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_METHOD, context);
             }
 
@@ -143,7 +143,8 @@ const createPaymentVerifier = ({
                 paymentIntent.tokenSymbol !== method.tokenSymbol ||
                 paymentIntent.tokenDecimals !== method.tokenDecimals ||
                 method.tokenSymbol !== allowedMethod.tokenSymbol ||
-                method.tokenDecimals !== allowedMethod.tokenDecimals
+                method.tokenDecimals !== allowedMethod.tokenDecimals ||
+                (method.assetProvenance || null) !== (allowedMethod.assetProvenance || null)
             ) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_TOKEN, context);
             }

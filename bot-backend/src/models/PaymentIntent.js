@@ -123,6 +123,7 @@ const paymentIntentSchema = new mongoose.Schema({
         chainId: { type: Number, default: null, immutable: true },
         rpcUrl: immutableString,
         assetType: { type: String, default: "erc20", immutable: true },
+        assetProvenance: nullableString,
         tokenAddress: { type: String, default: null, immutable: true },
         mintAddress: { type: String, default: null, immutable: true },
         tokenSymbol: immutableString,

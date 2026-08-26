@@ -12,6 +12,8 @@ const { createSolanaPaymentVerifier } = require("../src/services/payments/solana
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
+const ethereumUsdcAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const bnbUsdcAddress = "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d";
 const treasuryAddress = "0x1111111111111111111111111111111111111111";
 const senderAddress = "0x2222222222222222222222222222222222222222";
 const otherAddress = "0x3333333333333333333333333333333333333333";
@@ -48,6 +50,7 @@ const config = {
     tokenAddress: baseUsdcAddress,
     tokenSymbol: "USDC",
     tokenDecimals: 6,
+    assetProvenance: "circle-native",
     treasuryAddress,
     confirmations: 60
 };
@@ -68,6 +71,7 @@ const methodSnapshot = (overrides = {}) => ({
     tokenAddress: baseUsdcAddress,
     tokenSymbol: "USDC",
     tokenDecimals: 6,
+    assetProvenance: "circle-native",
     treasuryAddress,
     confirmations: 60,
     enabled: true,
@@ -296,6 +300,18 @@ test("PaymentVerifier rejects missing or tampered payment method snapshot", asyn
             paymentMethodSnapshot: methodSnapshot({ chainId: 84532 })
         })
     })).code, PAYMENT_VERIFICATION_CODES.WRONG_NETWORK);
+
+    assert.equal((await verifyWith({
+        intent: makeIntent({
+            paymentMethodSnapshot: methodSnapshot({ assetProvenance: "binance-peg" })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_TOKEN);
+
+    assert.equal((await verifyWith({
+        intent: makeIntent({
+            paymentMethodSnapshot: methodSnapshot({ enabled: false })
+        })
+    })).code, PAYMENT_VERIFICATION_CODES.WRONG_METHOD);
 });
 
 test("PaymentVerifier accepts configured Base Sepolia chain and token", async () => {
@@ -325,6 +341,71 @@ test("PaymentVerifier accepts configured Base Sepolia chain and token", async ()
     assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
     assert.equal(result.chainId, 84532);
     assert.equal(result.tokenAddress, baseSepoliaUsdcAddress);
+});
+
+test("PaymentVerifier accepts configured Ethereum mainnet USDC transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "ethereum-mainnet-usdc",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "ethereum-mainnet-usdc",
+                name: "Ethereum · USDC",
+                network: "ethereum-mainnet",
+                chainId: 1,
+                rpcUrl: "https://ethereum.example.invalid/rpc",
+                tokenAddress: ethereumUsdcAddress,
+                assetProvenance: "circle-native"
+            }),
+            chainId: 1,
+            tokenAddress: ethereumUsdcAddress,
+            expectedTokenAmountBaseUnits: "10000000"
+        }),
+        provider: makeProvider({
+            chainId: 1,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: ethereumUsdcAddress, value: 10000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 1);
+    assert.equal(result.tokenAddress, ethereumUsdcAddress);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000");
+});
+
+test("PaymentVerifier accepts configured BNB Chain Binance-Peg USDC transfer", async () => {
+    const result = await verifyWith({
+        intent: makeIntent({
+            paymentMethodId: "bnb-mainnet-usdc",
+            paymentMethodSnapshot: methodSnapshot({
+                id: "bnb-mainnet-usdc",
+                name: "BNB Chain · Binance-Peg USDC",
+                network: "bnb-mainnet",
+                chainId: 56,
+                rpcUrl: "https://bsc-dataseed.example.invalid",
+                tokenAddress: bnbUsdcAddress,
+                tokenDecimals: 18,
+                assetProvenance: "binance-peg"
+            }),
+            chainId: 56,
+            tokenAddress: bnbUsdcAddress,
+            tokenDecimals: 18,
+            expectedTokenAmountBaseUnits: "10000000000000000000"
+        }),
+        provider: makeProvider({
+            chainId: 56,
+            receipt: makeReceipt({
+                logs: [makeTransferLog({ tokenAddress: bnbUsdcAddress, value: 10000000000000000000n })]
+            })
+        })
+    });
+
+    assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(result.chainId, 56);
+    assert.equal(result.tokenAddress, bnbUsdcAddress);
+    assert.equal(result.tokenDecimals, 18);
+    assert.equal(result.verifiedTokenAmountBaseUnits, "10000000000000000000");
 });
 
 test("PaymentVerifier returns pending when transaction or receipt is missing", async () => {
