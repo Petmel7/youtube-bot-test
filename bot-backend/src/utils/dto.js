@@ -169,7 +169,6 @@ const toPaymentPackageDto = (paymentPackage) => {
         packageId: paymentPackage.packageId,
         creditAmount: paymentPackage.creditAmount,
         expectedUsdAmountMinor: paymentPackage.expectedUsdAmountMinor,
-        expectedTokenAmountBaseUnits: paymentPackage.expectedTokenAmountBaseUnits,
         pricingVersion: paymentPackage.pricingVersion
     };
 };

@@ -2,7 +2,7 @@ const PaymentIntent = require("../../models/PaymentIntent");
 const { paymentConfig } = require("../../config/config");
 const { getPaymentMethodById } = require("../../config/paymentMethods");
 const { conflict, unprocessable } = require("../../utils/errors");
-const { createPaymentPricingService } = require("./paymentPricingService");
+const { calculateStablecoinBaseUnits, createPaymentPricingService } = require("./paymentPricingService");
 const paymentPayerChallengeService = require("../payments/paymentPayerChallengeService");
 
 const addSession = (query, session) => session ? query.session(session) : query;
@@ -38,6 +38,10 @@ const createPaymentIntentService = ({
 
         const createdAt = now();
         const expiresAt = new Date(createdAt.getTime() + (config.intentTtlMinutes * 60 * 1000));
+        const expectedTokenAmountBaseUnits = calculateStablecoinBaseUnits(
+            packageSnapshot.expectedUsdAmountMinor,
+            paymentMethod.tokenDecimals
+        );
         const doc = {
             userId,
             idempotencyKey,
@@ -52,7 +56,7 @@ const createPaymentIntentService = ({
             tokenSymbol: paymentMethod.tokenSymbol,
             tokenDecimals: paymentMethod.tokenDecimals,
             recipientAddress: paymentMethod.treasuryAddress,
-            expectedTokenAmountBaseUnits: packageSnapshot.expectedTokenAmountBaseUnits,
+            expectedTokenAmountBaseUnits,
             expectedUsdAmountMinor: packageSnapshot.expectedUsdAmountMinor,
             creditAmount: packageSnapshot.creditAmount,
             pricingVersion: packageSnapshot.pricingVersion,

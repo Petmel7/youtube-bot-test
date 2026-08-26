@@ -1,25 +1,34 @@
 const { badRequest } = require("../../utils/errors");
 const { paymentConfig } = require("../../config/config");
 
-const canonicalDecimalStringPattern = /^(0|[1-9][0-9]*)$/;
-
 const assertPositiveInteger = (value, field) => {
     if (!Number.isSafeInteger(value) || value <= 0) {
         throw new Error(`Invalid ${field}`);
     }
 };
 
-const assertPositiveDecimalString = (value, field) => {
-    if (typeof value !== "string" || !canonicalDecimalStringPattern.test(value) || BigInt(value) <= 0n) {
-        throw new Error(`Invalid ${field}`);
+const assertTokenDecimals = (value) => {
+    if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error("Invalid payment method tokenDecimals");
     }
+};
+
+const calculateStablecoinBaseUnits = (expectedUsdAmountMinor, tokenDecimals) => {
+    assertPositiveInteger(expectedUsdAmountMinor, "payment package expectedUsdAmountMinor");
+    assertTokenDecimals(tokenDecimals);
+
+    const numerator = BigInt(expectedUsdAmountMinor) * (10n ** BigInt(tokenDecimals));
+    if (numerator % 100n !== 0n) {
+        throw new Error("Invalid stablecoin amount precision");
+    }
+
+    return (numerator / 100n).toString();
 };
 
 const clonePackage = (pkg, pricingVersion) => Object.freeze({
     packageId: pkg.packageId,
     creditAmount: pkg.creditAmount,
     expectedUsdAmountMinor: pkg.expectedUsdAmountMinor,
-    expectedTokenAmountBaseUnits: pkg.expectedTokenAmountBaseUnits,
     pricingVersion
 });
 
@@ -56,13 +65,14 @@ const parsePaymentPackages = (packagesJson, { pricingVersion = paymentConfig.pri
 
         assertPositiveInteger(pkg.creditAmount, "payment package creditAmount");
         assertPositiveInteger(pkg.expectedUsdAmountMinor, "payment package expectedUsdAmountMinor");
-        assertPositiveDecimalString(pkg.expectedTokenAmountBaseUnits, "payment package expectedTokenAmountBaseUnits");
+        if (Object.prototype.hasOwnProperty.call(pkg, "expectedTokenAmountBaseUnits")) {
+            throw new Error("Deprecated payment package expectedTokenAmountBaseUnits configuration");
+        }
 
         return Object.freeze({
             packageId: pkg.packageId,
             creditAmount: pkg.creditAmount,
-            expectedUsdAmountMinor: pkg.expectedUsdAmountMinor,
-            expectedTokenAmountBaseUnits: pkg.expectedTokenAmountBaseUnits
+            expectedUsdAmountMinor: pkg.expectedUsdAmountMinor
         });
     });
 };
@@ -89,6 +99,7 @@ const createPaymentPricingService = ({
 };
 
 module.exports = {
+    calculateStablecoinBaseUnits,
     createPaymentPricingService,
     parsePaymentPackages
 };

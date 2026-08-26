@@ -318,7 +318,6 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
         packageId: "starter_credits",
         creditAmount: 750,
         expectedUsdAmountMinor: 500,
-        expectedTokenAmountBaseUnits: "5000000",
         pricingVersion: "pricing-v1"
     }]);
     assert.deepEqual(packages.body.paymentMethods, [{
@@ -372,6 +371,7 @@ test("payment API create validates input and sends only backend-safe arguments t
             payerChallengeId,
             signature,
             creditAmount: 999999,
+            expectedTokenAmountBaseUnits: "1",
             chainId: 1,
             tokenAddress: "0x0000000000000000000000000000000000000000",
             recipientAddress: "0x0000000000000000000000000000000000000000"

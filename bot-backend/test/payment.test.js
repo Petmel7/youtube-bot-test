@@ -9,6 +9,7 @@ const PaymentPayerChallenge = require("../src/models/PaymentPayerChallenge");
 const { normalizeEvmAddress } = require("../src/utils/evmAddress");
 const { validatePaymentConfig } = require("../src/config/validateEnv");
 const {
+    calculateStablecoinBaseUnits,
     createPaymentPricingService,
     parsePaymentPackages
 } = require("../src/services/billing/paymentPricingService");
@@ -31,14 +32,12 @@ const validPackagesJson = JSON.stringify([
     {
         packageId: "starter_credits",
         creditAmount: 750,
-        expectedUsdAmountMinor: 500,
-        expectedTokenAmountBaseUnits: "5000000"
+        expectedUsdAmountMinor: 500
     },
     {
         packageId: "growth_credits",
         creditAmount: 1800,
-        expectedUsdAmountMinor: 1200,
-        expectedTokenAmountBaseUnits: "12000000"
+        expectedUsdAmountMinor: 1200
     }
 ]);
 
@@ -415,24 +414,24 @@ test("payment config validation rejects malformed package JSON and invalid packa
     assert.throws(() => validatePaymentConfig(validPaymentConfig({ packagesJson: "{" }), baseUsdcAddress), /PAYMENT_PACKAGES_JSON/);
     assert.throws(() => validatePaymentConfig(validPaymentConfig({
         packagesJson: JSON.stringify([
-            { packageId: "dup", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "1" },
-            { packageId: "dup", creditAmount: 2, expectedUsdAmountMinor: 2, expectedTokenAmountBaseUnits: "2" }
+            { packageId: "dup", creditAmount: 1, expectedUsdAmountMinor: 1 },
+            { packageId: "dup", creditAmount: 2, expectedUsdAmountMinor: 2 }
         ])
     }), baseUsdcAddress), /Duplicate payment packageId/);
     assert.throws(() => parsePaymentPackages(JSON.stringify([
-        { packageId: "bad-credit", creditAmount: 0, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "1" }
+        { packageId: "bad-credit", creditAmount: 0, expectedUsdAmountMinor: 1 }
     ]), { pricingVersion: "v1" }), /creditAmount/);
     assert.throws(() => parsePaymentPackages(JSON.stringify([
-        { packageId: "bad-usd", creditAmount: 1, expectedUsdAmountMinor: 0, expectedTokenAmountBaseUnits: "1" }
+        { packageId: "bad-usd", creditAmount: 1, expectedUsdAmountMinor: 0 }
     ]), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
     assert.throws(() => parsePaymentPackages(JSON.stringify([
-        { packageId: "bad-token", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "01" }
-    ]), { pricingVersion: "v1" }), /expectedTokenAmountBaseUnits/);
+        { packageId: "deprecated-token", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "1" }
+    ]), { pricingVersion: "v1" }), /Deprecated payment package expectedTokenAmountBaseUnits/);
 });
 
 test("payment pricing rejects unsafe and invalid financial integers", () => {
     const packageWith = (overrides) => JSON.stringify([
-        { packageId: "bad-financial-integer", creditAmount: 1, expectedUsdAmountMinor: 1, expectedTokenAmountBaseUnits: "1", ...overrides }
+        { packageId: "bad-financial-integer", creditAmount: 1, expectedUsdAmountMinor: 1, ...overrides }
     ]);
 
     assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: Number.MAX_SAFE_INTEGER + 1 }), { pricingVersion: "v1" }), /creditAmount/);
@@ -443,6 +442,17 @@ test("payment pricing rejects unsafe and invalid financial integers", () => {
     assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: -1 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
     assert.throws(() => parsePaymentPackages(packageWith({ creditAmount: 1.5 }), { pricingVersion: "v1" }), /creditAmount/);
     assert.throws(() => parsePaymentPackages(packageWith({ expectedUsdAmountMinor: 1.5 }), { pricingVersion: "v1" }), /expectedUsdAmountMinor/);
+});
+
+test("payment pricing calculates stablecoin base units from USD cents and token decimals", () => {
+    assert.equal(calculateStablecoinBaseUnits(1000, 6), "10000000");
+    assert.equal(calculateStablecoinBaseUnits(4500, 6), "45000000");
+    assert.equal(calculateStablecoinBaseUnits(1000, 18), "10000000000000000000");
+    assert.equal(calculateStablecoinBaseUnits(1, 6), "10000");
+    assert.equal(calculateStablecoinBaseUnits(1, 18), "10000000000000000");
+    assert.throws(() => calculateStablecoinBaseUnits(1, 1), /precision/);
+    assert.throws(() => calculateStablecoinBaseUnits(0, 6), /expectedUsdAmountMinor/);
+    assert.throws(() => calculateStablecoinBaseUnits(1, -1), /tokenDecimals/);
 });
 
 test("payment pricing service returns immutable package snapshots", () => {
@@ -456,24 +466,21 @@ test("payment pricing service returns immutable package snapshots", () => {
         packageId: "starter_credits",
         creditAmount: 750,
         expectedUsdAmountMinor: 500,
-        expectedTokenAmountBaseUnits: "5000000",
         pricingVersion: "pricing-v1"
     });
     assert.equal(Object.isFrozen(snapshot), true);
     assert.throws(() => service.getPackageSnapshot("missing"), { code: "INVALID_PAYMENT_PACKAGE" });
 });
 
-test("payment pricing preserves canonical token amount strings without floating-point conversion", () => {
-    const packages = parsePaymentPackages(JSON.stringify([
+test("payment pricing rejects deprecated package token amount strings", () => {
+    assert.throws(() => parsePaymentPackages(JSON.stringify([
         {
-            packageId: "precise",
+            packageId: "deprecated",
             creditAmount: 1,
             expectedUsdAmountMinor: 1,
             expectedTokenAmountBaseUnits: "123456789012345678901234567890"
         }
-    ]), { pricingVersion: "pricing-v1" });
-
-    assert.equal(packages[0].expectedTokenAmountBaseUnits, "123456789012345678901234567890");
+    ]), { pricingVersion: "pricing-v1" }), /Deprecated payment package expectedTokenAmountBaseUnits/);
 });
 
 test("payment payer challenge verifies signature, expiry, and one-time use", async () => {
@@ -756,7 +763,7 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
         PaymentIntentModel,
         pricingService: createPaymentPricingService({
             packagesJson: JSON.stringify([
-                { packageId: "starter_credits", creditAmount: 9999, expectedUsdAmountMinor: 9999, expectedTokenAmountBaseUnits: "99990000" }
+                { packageId: "starter_credits", creditAmount: 9999, expectedUsdAmountMinor: 9999 }
             ]),
             pricingVersion: "pricing-v2"
         }),
@@ -770,7 +777,53 @@ test("payment intent snapshot is not mutated by later pricing service changes", 
     assert.equal(first.intent.expectedTokenAmountBaseUnits, "5000000");
     assert.equal(first.intent.pricingVersion, "pricing-v1");
     assert.equal(second.intent.creditAmount, 9999);
+    assert.equal(second.intent.expectedTokenAmountBaseUnits, "99990000");
     assert.equal(second.intent.pricingVersion, "pricing-v2");
+});
+
+test("payment intent creation freezes method-specific stablecoin amount for 18-decimal methods", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({
+            packagesJson: JSON.stringify([
+                { packageId: "ten_dollars", creditAmount: 1500, expectedUsdAmountMinor: 1000 }
+            ]),
+            pricingVersion: "pricing-v1"
+        }),
+        payerChallengeService: createFakePayerChallengeService(),
+        config: validPaymentConfig({
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "bnb-mainnet-usdt",
+                enabled: true,
+                chainId: 56,
+                rpcUrl: "https://bsc.example.invalid/rpc",
+                tokenAddress: bnbUsdtAddress,
+                tokenSymbol: "USDT",
+                tokenDecimals: 18,
+                treasuryAddress,
+                confirmations: 20
+            }]),
+            defaultMethodId: "bnb-mainnet-usdt"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    const result = await service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "ten_dollars",
+        paymentMethodId: "bnb-mainnet-usdt",
+        idempotencyKey: "idem-bnb-1",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.intent.paymentMethodId, "bnb-mainnet-usdt");
+    assert.equal(result.intent.tokenDecimals, 18);
+    assert.equal(result.intent.expectedUsdAmountMinor, 1000);
+    assert.equal(result.intent.expectedTokenAmountBaseUnits, "10000000000000000000");
 });
 
 test("PaymentIntent schema has required states, immutability, validation, and indexes", async () => {

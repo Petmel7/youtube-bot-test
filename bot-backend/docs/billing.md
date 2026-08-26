@@ -56,6 +56,8 @@ Each `PaymentIntent` stores an immutable snapshot of the selected package and pa
 
 Payment intent creation is idempotent by authenticated `userId + idempotencyKey`. Token base-unit amounts are stored as decimal strings and must not be calculated with JavaScript floating-point arithmetic.
 
+Phase 3I moves payment package configuration to business pricing only. `PAYMENT_PACKAGES_JSON` entries contain `packageId`, `creditAmount`, and `expectedUsdAmountMinor`; they must not contain `expectedTokenAmountBaseUnits`. At intent creation time, the backend calculates and freezes the token amount from the selected payment method's token decimals, assuming supported stablecoins price at `1 USD = 1 token`. For example, `expectedUsdAmountMinor: 1000` becomes `10000000` base units for a 6-decimal stablecoin and `10000000000000000000` base units for an 18-decimal stablecoin.
+
 ## Phase 3B Payment Verification
 
 Phase 3B adds backend-only Base Mainnet USDC verification. Blockchain access is isolated behind `src/services/payments/evmProvider.js`, and payment verification lives in `src/services/payments/paymentVerifier.js`.
