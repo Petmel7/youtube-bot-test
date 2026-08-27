@@ -47,6 +47,7 @@ test("getChannelVideos fetches one page and returns pagination metadata", async 
             assert.equal(parsed.searchParams.get("part"), "snippet");
             assert.equal(parsed.searchParams.get("channelId"), "channel-1");
             assert.equal(parsed.searchParams.get("type"), "video");
+            assert.equal(parsed.searchParams.get("order"), "date");
             assert.equal(parsed.searchParams.get("maxResults"), "2");
             assert.equal(parsed.searchParams.get("pageToken"), "CAUQAA");
             assert.equal(options.headers.Authorization, "Bearer access-token");
@@ -73,17 +74,6 @@ test("getChannelVideos fetches one page and returns pagination metadata", async 
             return jsonResponse({
                 items: [
                     {
-                        id: "video-1",
-                        snippet: {
-                            title: "First",
-                            description: "One",
-                            publishedAt: "2026-08-01T00:00:00Z",
-                            thumbnails: { medium: { url: "https://img.test/1.jpg" } }
-                        },
-                        contentDetails: { duration: "PT1M" },
-                        statistics: { viewCount: "10", likeCount: "2", commentCount: "1" }
-                    },
-                    {
                         id: "video-2",
                         snippet: {
                             title: "Second",
@@ -93,6 +83,17 @@ test("getChannelVideos fetches one page and returns pagination metadata", async 
                         },
                         contentDetails: { duration: "PT2M" },
                         statistics: { viewCount: "20", likeCount: "3", commentCount: "4" }
+                    },
+                    {
+                        id: "video-1",
+                        snippet: {
+                            title: "First",
+                            description: "One",
+                            publishedAt: "2026-08-01T00:00:00Z",
+                            thumbnails: { medium: { url: "https://img.test/1.jpg" } }
+                        },
+                        contentDetails: { duration: "PT1M" },
+                        statistics: { viewCount: "10", likeCount: "2", commentCount: "1" }
                     }
                 ]
             });

@@ -209,6 +209,7 @@ const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } 
         part: "snippet",
         channelId,
         type: "video",
+        order: "date",
         maxResults: String(maxResults)
     });
 
@@ -229,14 +230,15 @@ const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } 
         pageInfo: searchData.pageInfo || {}
     };
 
-    const videoIds = (searchData.items || []).map(item => item.id?.videoId).filter(Boolean).join(",");
-    if (!videoIds) {
+    const orderedVideoIds = (searchData.items || []).map(item => item.id?.videoId).filter(Boolean);
+    if (orderedVideoIds.length === 0) {
         return {
             videos: [],
             ...pagination
         };
     }
 
+    const videoIds = orderedVideoIds.join(",");
     const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -244,8 +246,7 @@ const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } 
     if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
     const detailsData = await detailsRes.json();
 
-    return {
-        videos: (detailsData.items || []).map(video => ({
+    const videosById = new Map((detailsData.items || []).map(video => [video.id, {
             videoId: video.id,
             title: video.snippet?.title || "",
             description: video.snippet?.description || "",
@@ -255,7 +256,10 @@ const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } 
             views: video.statistics?.viewCount || null,
             likes: video.statistics?.likeCount || null,
             comments: video.statistics?.commentCount || null
-        })),
+        }]));
+
+    return {
+        videos: orderedVideoIds.map(videoId => videosById.get(videoId)).filter(Boolean),
         ...pagination
     };
 };
