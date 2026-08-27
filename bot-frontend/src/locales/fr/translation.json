@@ -36,7 +36,12 @@
         "views": "Vues",
         "likes": "J'aime",
         "comments": "Commentaires",
-        "loadedCount": "{{loaded}} sur {{total}} chargées"
+        "loadedCount": "{{loaded}} sur {{total}} chargées",
+        "search": "Rechercher des vidéos",
+        "clearSearch": "Effacer la recherche",
+        "searching": "Recherche des vidéos...",
+        "noSearchResults": "Aucune vidéo correspondante trouvée",
+        "minSearchLength": "Saisissez au moins 2 caractères pour rechercher"
     },
     "wallet": {
         "title": "Portefeuille",

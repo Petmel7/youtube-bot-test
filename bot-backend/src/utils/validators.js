@@ -14,6 +14,7 @@ const SOLANA_SIGNATURE_RE = /^[A-Za-z0-9+/]{80,100}={0,2}$/;
 const YOUTUBE_PAGE_TOKEN_RE = /^[A-Za-z0-9._~-]{1,256}$/;
 const YOUTUBE_DEFAULT_PAGE_SIZE = 12;
 const YOUTUBE_MAX_PAGE_SIZE = 25;
+const YOUTUBE_MAX_SEARCH_QUERY_LENGTH = 100;
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -151,7 +152,8 @@ const validatePaymentSignature = (signature) => {
 const validateYoutubeVideosQuery = (query = {}) => {
     const result = {
         maxResults: YOUTUBE_DEFAULT_PAGE_SIZE,
-        pageToken: undefined
+        pageToken: undefined,
+        searchQuery: undefined
     };
 
     if (query.maxResults !== undefined && query.maxResults !== null && query.maxResults !== "") {
@@ -168,6 +170,12 @@ const validateYoutubeVideosQuery = (query = {}) => {
             throw unprocessable("INVALID_PAGE_TOKEN", "Invalid page token");
         }
         result.pageToken = pageToken;
+    }
+
+    const rawSearchQuery = query.query ?? query.q;
+    if (rawSearchQuery !== undefined && rawSearchQuery !== null && rawSearchQuery !== "") {
+        const searchQuery = normalizeString(rawSearchQuery, "query", YOUTUBE_MAX_SEARCH_QUERY_LENGTH);
+        result.searchQuery = searchQuery;
     }
 
     return result;

@@ -222,6 +222,34 @@ const getUserChannelId = async (user) => {
     return channelId;
 };
 
+const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
+    if (orderedVideoIds.length === 0) {
+        return [];
+    }
+
+    const videoIds = orderedVideoIds.join(",");
+    const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
+    const detailsData = await detailsRes.json();
+
+    const videosById = new Map((detailsData.items || []).map(video => [video.id, {
+            videoId: video.id,
+            title: video.snippet?.title || "",
+            description: video.snippet?.description || "",
+            publishedAt: video.snippet?.publishedAt || null,
+            thumbnail: video.snippet?.thumbnails?.medium?.url || null,
+            duration: video.contentDetails?.duration || null,
+            views: video.statistics?.viewCount || null,
+            likes: video.statistics?.likeCount || null,
+            comments: video.statistics?.commentCount || null
+        }]));
+
+    return orderedVideoIds.map(videoId => videosById.get(videoId)).filter(Boolean);
+};
+
 const getChannelVideos = async (user, uploadsPlaylistId, { maxResults = 12, pageToken } = {}) => {
     const accessToken = await getValidAccessToken(user);
     const playlistParams = new URLSearchParams({
@@ -267,28 +295,62 @@ const getChannelVideos = async (user, uploadsPlaylistId, { maxResults = 12, page
         };
     }
 
-    const videoIds = orderedVideoIds.join(",");
-    const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
+    return {
+        videos: await fetchVideoDetails(accessToken, orderedVideoIds),
+        ...pagination
+    };
+};
+
+const searchChannelVideos = async (user, channelId, searchQuery, { maxResults = 12, pageToken } = {}) => {
+    const accessToken = await getValidAccessToken(user);
+    const searchParams = new URLSearchParams({
+        part: "snippet",
+        channelId,
+        type: "video",
+        q: searchQuery,
+        order: "relevance",
+        maxResults: String(maxResults)
+    });
+
+    if (pageToken) {
+        searchParams.set("pageToken", pageToken);
+    }
+
+    const searchRes = await fetch(`${youtubeApiBase}/search?${searchParams.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
-    const detailsData = await detailsRes.json();
+    if (!searchRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
+    const searchData = await searchRes.json();
 
-    const videosById = new Map((detailsData.items || []).map(video => [video.id, {
-            videoId: video.id,
-            title: video.snippet?.title || "",
-            description: video.snippet?.description || "",
-            publishedAt: video.snippet?.publishedAt || null,
-            thumbnail: video.snippet?.thumbnails?.medium?.url || null,
-            duration: video.contentDetails?.duration || null,
-            views: video.statistics?.viewCount || null,
-            likes: video.statistics?.likeCount || null,
-            comments: video.statistics?.commentCount || null
-        }]));
+    const pagination = {
+        nextPageToken: searchData.nextPageToken || null,
+        prevPageToken: searchData.prevPageToken || null,
+        pageInfo: searchData.pageInfo || {}
+    };
+
+    const seenVideoIds = new Set();
+    const orderedVideoIds = [];
+
+    for (const item of searchData.items || []) {
+        const videoId = item.id?.videoId;
+        if (!videoId || seenVideoIds.has(videoId)) {
+            continue;
+        }
+
+        seenVideoIds.add(videoId);
+        orderedVideoIds.push(videoId);
+    }
+
+    if (orderedVideoIds.length === 0) {
+        return {
+            videos: [],
+            ...pagination
+        };
+    }
 
     return {
-        videos: orderedVideoIds.map(videoId => videosById.get(videoId)).filter(Boolean),
+        videos: await fetchVideoDetails(accessToken, orderedVideoIds),
         ...pagination
     };
 };
@@ -299,5 +361,6 @@ module.exports = {
     getUserChannelInfo,
     getUserChannelId,
     getChannelVideos,
+    searchChannelVideos,
     verifyVideoOwnership
 };

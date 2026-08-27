@@ -29,6 +29,66 @@
     font-size: 22px;
 }
 
+.searchBar {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.searchLabel {
+    font-size: 13px;
+    font-weight: 700;
+    color: #344054;
+}
+
+.searchControl {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+
+.searchInput {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 9px 11px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    font: inherit;
+}
+
+.searchInput:focus {
+    border-color: #1e90ff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.16);
+}
+
+.clearSearchButton {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.clearSearchButton:hover {
+    border-color: #1e90ff;
+    color: #1e90ff;
+}
+
+.searchHint {
+    margin: 0;
+    color: #666;
+    font-size: 13px;
+}
+
 .videoList {
     display: grid;
     grid-template-columns: 1fr;
@@ -138,7 +198,9 @@
 }
 
 :global(body.dark-mode) .videoItem,
-:global(body.dark-mode) .loadMoreButton {
+:global(body.dark-mode) .loadMoreButton,
+:global(body.dark-mode) .searchInput,
+:global(body.dark-mode) .clearSearchButton {
     border-color: #3d3d3d;
     background: #272727;
     color: #fff;
@@ -150,11 +212,17 @@
 }
 
 :global(body.dark-mode) .videoInfo span,
-:global(body.dark-mode) .stateText {
+:global(body.dark-mode) .stateText,
+:global(body.dark-mode) .searchLabel,
+:global(body.dark-mode) .searchHint {
     color: #c8c8c8;
 }
 
 @media (max-width: 520px) {
+    .searchControl {
+        flex-direction: column;
+    }
+
     .videoItem {
         grid-template-columns: 96px minmax(0, 1fr);
         align-items: flex-start;

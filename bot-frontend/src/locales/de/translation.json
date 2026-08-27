@@ -36,7 +36,12 @@
         "views": "Aufrufe",
         "likes": "Likes",
         "comments": "Kommentare",
-        "loadedCount": "{{loaded}} von {{total}} geladen"
+        "loadedCount": "{{loaded}} von {{total}} geladen",
+        "search": "Videos suchen",
+        "clearSearch": "Suche löschen",
+        "searching": "Videos werden gesucht...",
+        "noSearchResults": "Keine passenden Videos gefunden",
+        "minSearchLength": "Gib mindestens 2 Zeichen zum Suchen ein"
     },
     "wallet": {
         "title": "Wallet",

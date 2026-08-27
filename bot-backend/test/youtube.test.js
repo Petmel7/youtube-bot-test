@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 process.env.YOUTUBE_API_BASE = process.env.YOUTUBE_API_BASE || "https://youtube.test/v3";
 
 const { validateYoutubeVideosQuery } = require("../src/utils/validators");
-const { getUserChannelInfo, getChannelVideos } = require("../src/services/youtubeService");
+const { getUserChannelInfo, getChannelVideos, searchChannelVideos } = require("../src/services/youtubeService");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -23,11 +23,13 @@ const jsonResponse = (body, ok = true) => ({
 test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
     assert.deepEqual(validateYoutubeVideosQuery({}), {
         maxResults: 12,
-        pageToken: undefined
+        pageToken: undefined,
+        searchQuery: undefined
     });
-    assert.deepEqual(validateYoutubeVideosQuery({ maxResults: "25", pageToken: "CAUQAA" }), {
+    assert.deepEqual(validateYoutubeVideosQuery({ maxResults: "25", pageToken: "CAUQAA", query: "  launch vlog  " }), {
         maxResults: 25,
-        pageToken: "CAUQAA"
+        pageToken: "CAUQAA",
+        searchQuery: "launch vlog"
     });
 
     assert.throws(() => validateYoutubeVideosQuery({ maxResults: "0" }), { code: "INVALID_MAX_RESULTS" });
@@ -35,6 +37,7 @@ test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
     assert.throws(() => validateYoutubeVideosQuery({ maxResults: "ten" }), { code: "INVALID_MAX_RESULTS" });
     assert.throws(() => validateYoutubeVideosQuery({ pageToken: "x".repeat(257) }), { code: "FIELD_TOO_LONG" });
     assert.throws(() => validateYoutubeVideosQuery({ pageToken: "bad token" }), { code: "INVALID_PAGE_TOKEN" });
+    assert.throws(() => validateYoutubeVideosQuery({ query: "x".repeat(101) }), { code: "FIELD_TOO_LONG" });
 });
 
 test("getUserChannelInfo fetches uploads playlist details", async (t) => {
@@ -183,4 +186,85 @@ test("getChannelVideos returns empty page without fetching video details", async
             resultsPerPage: 12
         }
     });
+});
+
+test("searchChannelVideos searches within channel and preserves search order", async (t) => {
+    const calls = [];
+    t.mock.method(global, "fetch", async (url, options) => {
+        calls.push({ url: String(url), options });
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/search")) {
+            assert.equal(parsed.searchParams.get("part"), "snippet");
+            assert.equal(parsed.searchParams.get("channelId"), "channel-1");
+            assert.equal(parsed.searchParams.get("type"), "video");
+            assert.equal(parsed.searchParams.get("q"), "launch vlog");
+            assert.equal(parsed.searchParams.get("order"), "relevance");
+            assert.equal(parsed.searchParams.get("maxResults"), "2");
+            assert.equal(parsed.searchParams.get("pageToken"), "SEARCH_PAGE");
+            assert.equal(options.headers.Authorization, "Bearer access-token");
+
+            return jsonResponse({
+                items: [
+                    { id: { videoId: "search-1" } },
+                    { id: { videoId: "search-2" } },
+                    { id: { videoId: "search-1" } }
+                ],
+                nextPageToken: "SEARCH_NEXT",
+                prevPageToken: "SEARCH_PREV",
+                pageInfo: {
+                    totalResults: 6,
+                    resultsPerPage: 2
+                }
+            });
+        }
+
+        if (parsed.pathname.endsWith("/videos")) {
+            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics");
+            assert.equal(parsed.searchParams.get("id"), "search-1,search-2");
+            assert.equal(options.headers.Authorization, "Bearer access-token");
+
+            return jsonResponse({
+                items: [
+                    {
+                        id: "search-2",
+                        snippet: {
+                            title: "Second search result",
+                            description: "Two",
+                            publishedAt: "2026-08-12T00:00:00Z",
+                            thumbnails: { medium: { url: "https://img.test/search-2.jpg" } }
+                        },
+                        contentDetails: { duration: "PT2M" },
+                        statistics: { viewCount: "20", likeCount: "3", commentCount: "4" }
+                    },
+                    {
+                        id: "search-1",
+                        snippet: {
+                            title: "First search result",
+                            description: "One",
+                            publishedAt: "2026-08-11T00:00:00Z",
+                            thumbnails: { medium: { url: "https://img.test/search-1.jpg" } }
+                        },
+                        contentDetails: { duration: "PT1M" },
+                        statistics: { viewCount: "10", likeCount: "2", commentCount: "1" }
+                    }
+                ]
+            });
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const result = await searchChannelVideos(user, "channel-1", "launch vlog", {
+        maxResults: 2,
+        pageToken: "SEARCH_PAGE"
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls.some(call => new URL(call.url).pathname.endsWith("/playlistItems")), false);
+    assert.equal(result.nextPageToken, "SEARCH_NEXT");
+    assert.equal(result.prevPageToken, "SEARCH_PREV");
+    assert.deepEqual(result.pageInfo, { totalResults: 6, resultsPerPage: 2 });
+    assert.deepEqual(result.videos.map(video => video.videoId), ["search-1", "search-2"]);
+    assert.equal(result.videos[0].title, "First search result");
 });

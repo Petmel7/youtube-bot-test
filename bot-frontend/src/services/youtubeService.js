@@ -1,13 +1,14 @@
 import { apiRequest } from "./api";
 
-export const fetchMyVideos = async ({ pageToken, maxResults } = {}) => {
+export const fetchMyVideos = async ({ pageToken, maxResults, query } = {}) => {
     try {
         const params = new URLSearchParams();
         if (pageToken) params.set("pageToken", pageToken);
         if (maxResults) params.set("maxResults", String(maxResults));
+        if (query) params.set("query", query);
 
-        const query = params.toString();
-        const data = await apiRequest(`/youtube/my-videos${query ? `?${query}` : ""}`);
+        const queryString = params.toString();
+        const data = await apiRequest(`/youtube/my-videos${queryString ? `?${queryString}` : ""}`);
         if (data.success) {
             return {
                 success: true,

@@ -36,7 +36,12 @@
         "views": "Перегляди",
         "likes": "Вподобання",
         "comments": "Коментарі",
-        "loadedCount": "Завантажено {{loaded}} з {{total}}"
+        "loadedCount": "Завантажено {{loaded}} з {{total}}",
+        "search": "Пошук відео",
+        "clearSearch": "Очистити пошук",
+        "searching": "Пошук відео...",
+        "noSearchResults": "Відео за запитом не знайдено",
+        "minSearchLength": "Введіть щонайменше 2 символи для пошуку"
     },
     "wallet": {
         "title": "Гаманець",

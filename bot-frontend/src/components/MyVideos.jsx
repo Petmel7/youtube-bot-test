@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MdLiveTv } from "react-icons/md";
 import { useTranslation } from "react-i18next";
 import { fetchMyVideos } from "../services/youtubeService";
 import styles from "../styles/myVideos.module.css";
 
 const maxResults = 12;
+const minSearchLength = 2;
+const searchDebounceMs = 400;
 
 const dedupeVideos = (items = []) => {
     const seen = new Set();
@@ -40,6 +42,8 @@ const appendUniqueVideos = (currentVideos, nextVideos) => {
 
 const MyVideos = ({ selectedVideo, onSelectVideo }) => {
     const { t } = useTranslation();
+    const [searchInput, setSearchInput] = useState("");
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
     const [videos, setVideos] = useState([]);
     const [nextPageToken, setNextPageToken] = useState(null);
     const [pageInfo, setPageInfo] = useState({});
@@ -47,14 +51,20 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const pendingPageTokenRef = useRef(null);
+    const requestIdRef = useRef(0);
 
-    const loadVideos = async ({ pageToken, append = false } = {}) => {
-        const requestToken = pageToken || "";
-        if (append && pendingPageTokenRef.current === requestToken) {
+    const trimmedSearchInput = searchInput.trim();
+    const isSearching = debouncedSearchQuery.length >= minSearchLength;
+    const showSearchHint = trimmedSearchInput.length > 0 && trimmedSearchInput.length < minSearchLength;
+
+    const loadVideos = useCallback(async ({ pageToken, append = false, searchQuery = debouncedSearchQuery } = {}) => {
+        const requestKey = `${searchQuery || ""}:${pageToken || ""}`;
+        if (append && pendingPageTokenRef.current === requestKey) {
             return;
         }
 
-        pendingPageTokenRef.current = requestToken;
+        pendingPageTokenRef.current = requestKey;
+        const requestId = ++requestIdRef.current;
 
         if (append) {
             setLoadingMore(true);
@@ -64,7 +74,15 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
         setErrorMessage("");
 
         try {
-            const res = await fetchMyVideos({ pageToken, maxResults });
+            const res = await fetchMyVideos({
+                pageToken,
+                maxResults,
+                query: searchQuery || undefined
+            });
+
+            if (requestId !== requestIdRef.current) {
+                return;
+            }
 
             if (res.success) {
                 const nextVideos = dedupeVideos(res.videos);
@@ -80,42 +98,39 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                 setErrorMessage(res.error?.message || t("videos.error"));
             }
         } finally {
-            if (pendingPageTokenRef.current === requestToken) {
+            if (pendingPageTokenRef.current === requestKey) {
                 pendingPageTokenRef.current = null;
             }
-            setLoading(false);
-            setLoadingMore(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+                setLoadingMore(false);
+            }
         }
-    };
+    }, [debouncedSearchQuery, t]);
 
     useEffect(() => {
-        let ignore = false;
-
-        const loadInitialVideos = async () => {
-            setLoading(true);
-            setErrorMessage("");
-            const res = await fetchMyVideos({ maxResults });
-            if (ignore) return;
-
-            if (res.success) {
-                setVideos(dedupeVideos(res.videos));
-                setNextPageToken(res.nextPageToken);
-                setPageInfo(res.pageInfo || {});
-            } else {
-                setVideos([]);
-                setNextPageToken(null);
-                setPageInfo({});
-                setErrorMessage(res.error?.message || t("videos.error"));
-            }
-            setLoading(false);
-        };
-
-        loadInitialVideos();
+        const timeoutId = setTimeout(() => {
+            const nextSearchQuery = trimmedSearchInput.length >= minSearchLength ? trimmedSearchInput : "";
+            setDebouncedSearchQuery(nextSearchQuery);
+        }, searchDebounceMs);
 
         return () => {
-            ignore = true;
+            clearTimeout(timeoutId);
         };
-    }, [t]);
+    }, [trimmedSearchInput]);
+
+    useEffect(() => {
+        pendingPageTokenRef.current = null;
+        setVideos([]);
+        setNextPageToken(null);
+        setPageInfo({});
+        setLoadingMore(false);
+        loadVideos({ searchQuery: debouncedSearchQuery });
+    }, [debouncedSearchQuery, loadVideos]);
+
+    const handleClearSearch = () => {
+        setSearchInput("");
+    };
 
     return (
         <section className={styles.myVideos}>
@@ -126,10 +141,38 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                 </div>
             </div>
 
-            {loading && <p className={styles.stateText}>{t("loading")}</p>}
+            <div className={styles.searchBar}>
+                <label className={styles.searchLabel} htmlFor="my-videos-search">
+                    {t("videos.search")}
+                </label>
+                <div className={styles.searchControl}>
+                    <input
+                        id="my-videos-search"
+                        className={styles.searchInput}
+                        type="search"
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                        placeholder={t("videos.search")}
+                    />
+                    {searchInput && (
+                        <button
+                            type="button"
+                            className={styles.clearSearchButton}
+                            onClick={handleClearSearch}
+                        >
+                            {t("videos.clearSearch")}
+                        </button>
+                    )}
+                </div>
+                {showSearchHint && (
+                    <p className={styles.searchHint}>{t("videos.minSearchLength")}</p>
+                )}
+            </div>
+
+            {loading && <p className={styles.stateText}>{isSearching ? t("videos.searching") : t("loading")}</p>}
             {!loading && errorMessage && <p className={styles.error}>{errorMessage}</p>}
             {!loading && !errorMessage && videos.length === 0 && (
-                <p className={styles.stateText}>{t("no.videos")}</p>
+                <p className={styles.stateText}>{isSearching ? t("videos.noSearchResults") : t("no.videos")}</p>
             )}
             {!loading && !errorMessage && pageInfo.totalResults != null && Number.isFinite(Number(pageInfo.totalResults)) && videos.length > 0 && (
                 <p className={styles.stateText}>{t("videos.loadedCount", { loaded: videos.length, total: pageInfo.totalResults })}</p>
@@ -168,7 +211,7 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                 <button
                     type="button"
                     className={styles.loadMoreButton}
-                    onClick={() => loadVideos({ pageToken: nextPageToken, append: true })}
+                    onClick={() => loadVideos({ pageToken: nextPageToken, append: true, searchQuery: debouncedSearchQuery })}
                     disabled={loadingMore}
                 >
                     {loadingMore ? t("loading") : t("load.more")}
