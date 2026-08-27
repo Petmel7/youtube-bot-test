@@ -11,7 +11,7 @@ import BotStarter from "../components/BotStarter";
 import Header from "../components/Header";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import Loading from "../components/Loading";
-import VideoListButton from "../components/VideoListButton";
+import MyVideos from "../components/MyVideos";
 import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
 
@@ -124,7 +124,7 @@ const Dashboard = () => {
                             }} />
                         </div>
 
-                        <VideoListButton />
+                        <MyVideos />
 
                         <BotStarter {...{
                             error,

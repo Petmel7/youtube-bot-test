@@ -25,11 +25,13 @@
     "avatar.alt": "Benutzerbild",
     "select.identity": "Bot-Identität wählen",
     "theme.input.placeholder": "Neues Kanalthema eingeben",
-    "show.videos": "Meine Videos anzeigen",
-    "hide.videos": "Videos verbergen",
+    "my.videos": "Meine Videos",
     "no.videos": "Keine Videos gefunden",
-    "previous": "Zurück",
-    "next": "Weiter",
+    "load.more": "Mehr laden",
+    "videos": {
+        "error": "Videos konnten nicht geladen werden",
+        "noDate": "Kein Veröffentlichungsdatum"
+    },
     "wallet": {
         "title": "Wallet",
         "subtitle": "Credits für Bot-Läufe.",

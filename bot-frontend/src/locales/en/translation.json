@@ -25,11 +25,13 @@
     "avatar.alt": "User Avatar",
     "select.identity": "Select bot identity",
     "theme.input.placeholder": "Enter new channel theme",
-    "show.videos": "Show My Videos",
-    "hide.videos": "Hide Videos",
+    "my.videos": "My Videos",
     "no.videos": "No videos found",
-    "previous": "Previous",
-    "next": "Next",
+    "load.more": "Load more",
+    "videos": {
+        "error": "Failed to fetch videos",
+        "noDate": "No publish date"
+    },
     "wallet": {
         "title": "Wallet",
         "subtitle": "Credits available for bot runs.",

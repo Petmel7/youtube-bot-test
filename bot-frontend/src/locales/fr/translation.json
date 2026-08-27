@@ -25,11 +25,13 @@
     "avatar.alt": "Avatar de l'utilisateur",
     "select.identity": "Sélectionnez l'identité du bot",
     "theme.input.placeholder": "Entrez un nouveau thème de chaîne",
-    "show.videos": "Afficher mes vidéos",
-    "hide.videos": "Masquer les vidéos",
+    "my.videos": "Mes vidéos",
     "no.videos": "Aucune vidéo trouvée",
-    "previous": "Précédent",
-    "next": "Suivant",
+    "load.more": "Charger plus",
+    "videos": {
+        "error": "Impossible de charger les vidéos",
+        "noDate": "Aucune date de publication"
+    },
     "wallet": {
         "title": "Portefeuille",
         "subtitle": "Crédits disponibles pour les lancements du bot.",
