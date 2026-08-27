@@ -9,11 +9,25 @@ const formatCount = (value) => {
     return Number.isFinite(number) ? number.toLocaleString() : value;
 };
 
-const BotStarter = ({ error, selectedVideo, startBot, isBotRunning, notice, canStartBot, walletAvailable }) => {
+const BotStarter = ({
+    error,
+    selectedVideo,
+    startBot,
+    isBotRunning,
+    notice,
+    canStartBot,
+    walletAvailable,
+    botCostEstimate,
+    estimateLoading
+}) => {
 
     const { t } = useTranslation();
     const description = selectedVideo?.description || "";
     const descriptionExcerpt = description.length > 220 ? `${description.slice(0, 220)}...` : description;
+    const requiredCredits = botCostEstimate?.requiredCredits ?? null;
+    const missingCredits = botCostEstimate?.missingCredits ?? (
+        requiredCredits !== null && walletAvailable !== null ? Math.max(requiredCredits - walletAvailable, 0) : null
+    );
 
     return (
         <div className={styles.botContainer}>
@@ -53,8 +67,19 @@ const BotStarter = ({ error, selectedVideo, startBot, isBotRunning, notice, canS
                 <SiProbot className={styles.botIcon} />
                 {isBotRunning ? t("bot.replying") : t("reply.to.comments")}
             </button>
-            {walletAvailable !== null && walletAvailable <= 0 && (
-                <p className={styles.error}>{t("bot.insufficientCredits")}</p>
+            {estimateLoading && <p className={styles.notice}>{t("bot.estimateLoading")}</p>}
+            {!estimateLoading && requiredCredits !== null && walletAvailable !== null && (
+                <p className={styles.notice}>
+                    {t("bot.creditEstimate", { required: requiredCredits, available: walletAvailable })}
+                </p>
+            )}
+            {!estimateLoading && missingCredits !== null && missingCredits > 0 && (
+                <p className={styles.error}>
+                    {t("bot.insufficientCreditsDetailed", {
+                        required: requiredCredits,
+                        available: walletAvailable ?? 0
+                    })}
+                </p>
             )}
             {notice && <p className={styles.notice}>{notice}</p>}
         </div>

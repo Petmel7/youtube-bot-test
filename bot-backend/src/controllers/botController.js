@@ -1,5 +1,5 @@
 
-const { createBotRun, getOwnedBotRun } = require("../services/botRunService");
+const { createBotRun, getOwnedBotRun, getBotRunCreditEstimate } = require("../services/botRunService");
 const { toBotRunDto } = require("../utils/dto");
 const {
     assertObjectBody,
@@ -29,5 +29,17 @@ const getBotRunController = async (req, res) => {
     res.json({ success: true, run: toBotRunDto(run) });
 };
 
-module.exports = { startBotController, getBotRunController };
+const getBotCostEstimateController = async (req, res) => {
+    assertObjectBody(req.body);
+
+    const prompt = validatePrompt(req.body.prompt);
+    const estimate = await getBotRunCreditEstimate({ user: req.user, prompt });
+
+    res.json({
+        success: true,
+        cost: estimate
+    });
+};
+
+module.exports = { startBotController, getBotRunController, getBotCostEstimateController };
 

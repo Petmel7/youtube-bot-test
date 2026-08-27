@@ -1,5 +1,6 @@
 const {
     geminiMaxOutputTokens,
+    aiReplyCreditCost,
     aiPromptTokenCreditRate,
     aiOutputTokenCreditRate,
     aiEstimatedInputCharsPerToken
@@ -29,26 +30,22 @@ const calculateCredits = ({ promptTokens, outputTokens }) => {
 const estimateAiOperationCost = ({ comment, prompt }) => {
     const promptTokens = estimateInputTokens({ comment, prompt });
     const outputTokens = geminiMaxOutputTokens;
-    const credits = calculateCredits({ promptTokens, outputTokens });
+    const credits = aiReplyCreditCost;
 
     return { promptTokens, outputTokens, credits };
 };
 
 const calculateActualAiCost = ({ usage = {} }) => {
-    if (!Number.isInteger(usage.promptTokens) || !Number.isInteger(usage.outputTokens)) {
-        throw accountingError("ACCOUNTING_USAGE_MISSING", "AI usage metadata is required for billing");
-    }
-
     const credits = calculateCredits({
-        promptTokens: usage.promptTokens,
-        outputTokens: usage.outputTokens
+        promptTokens: 0,
+        outputTokens: 0
     });
 
     return {
-        promptTokens: usage.promptTokens,
-        outputTokens: usage.outputTokens,
+        promptTokens: Number.isInteger(usage.promptTokens) ? usage.promptTokens : null,
+        outputTokens: Number.isInteger(usage.outputTokens) ? usage.outputTokens : null,
         totalTokens: Number.isInteger(usage.totalTokens) ? usage.totalTokens : null,
-        credits
+        credits: credits + aiReplyCreditCost
     };
 };
 

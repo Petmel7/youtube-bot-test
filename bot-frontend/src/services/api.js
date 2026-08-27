@@ -1,10 +1,11 @@
 import config from "../config/config";
 
 export class ApiError extends Error {
-    constructor(status, code, message) {
+    constructor(status, code, message, details) {
         super(message);
         this.status = status;
         this.code = code;
+        this.details = details;
     }
 }
 
@@ -34,7 +35,7 @@ export const apiRequest = async (path, options = {}) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         const error = data.error || {};
-        throw new ApiError(res.status, error.code || "REQUEST_FAILED", error.message || "Request failed");
+        throw new ApiError(res.status, error.code || "REQUEST_FAILED", error.message || "Request failed", error.details);
     }
 
     return data;

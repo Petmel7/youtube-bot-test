@@ -1,9 +1,13 @@
 # Billing Foundation
 
-Phase 2 uses integer `AI_CREDIT` accounting. Wallet balances are not USD floats; provider/model pricing is represented by backend-controlled integer token rates:
+Phase 2 uses integer `AI_CREDIT` accounting. Wallet balances are not USD floats; one AI reply attempt is priced by a backend-controlled flat cost:
 
-- `AI_PROMPT_TOKEN_CREDIT_RATE`
-- `AI_OUTPUT_TOKEN_CREDIT_RATE`
+- `AI_REPLY_CREDIT_COST` defaults to `10`
+
+Gemini token usage is still recorded for observability, but prompt/output token counts do not determine the charged credits by default. The legacy token-rate settings may remain configured as non-negative integers for compatibility with older calculations:
+
+- `AI_PROMPT_TOKEN_CREDIT_RATE` defaults to `0`
+- `AI_OUTPUT_TOKEN_CREDIT_RATE` defaults to `0`
 - `AI_ESTIMATED_INPUT_CHARS_PER_TOKEN`
 
 ## Wallet Invariants
@@ -19,7 +23,7 @@ Phase 2 uses integer `AI_CREDIT` accounting. Wallet balances are not USD floats;
 
 ## Lifecycle
 
-1. Estimate maximum AI operation cost from backend prompt/comment inputs and configured max output tokens.
+1. Estimate AI operation cost from the configured flat reply cost and keep token estimates as metadata.
 2. Atomically reserve credits before calling Gemini and create an immutable `RESERVATION` ledger entry.
 3. Execute the AI provider operation.
 4. Record actual provider usage metadata in `aiusage`.

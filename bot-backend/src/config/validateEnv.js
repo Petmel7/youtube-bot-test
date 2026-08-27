@@ -7,6 +7,7 @@ const {
     botMaxCommentsPerRun,
     botMaxPagesPerRun,
     botReplyMaxLength,
+    aiReplyCreditCost,
     aiPromptTokenCreditRate,
     aiOutputTokenCreditRate,
     aiEstimatedInputCharsPerToken
@@ -53,6 +54,7 @@ const validateEnv = () => {
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
+        AI_REPLY_CREDIT_COST: aiReplyCreditCost,
         AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
         AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate,
         AI_ESTIMATED_INPUT_CHARS_PER_TOKEN: aiEstimatedInputCharsPerToken
@@ -64,9 +66,19 @@ const validateEnv = () => {
         }
     });
 
-    const positiveIntegerSettings = {
+    const nonNegativeIntegerSettings = {
         AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
-        AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate,
+        AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate
+    };
+
+    Object.entries(nonNegativeIntegerSettings).forEach(([name, value]) => {
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error(`Invalid ${name} configuration`);
+        }
+    });
+
+    const positiveIntegerSettings = {
+        AI_REPLY_CREDIT_COST: aiReplyCreditCost,
         AI_ESTIMATED_INPUT_CHARS_PER_TOKEN: aiEstimatedInputCharsPerToken
     };
 

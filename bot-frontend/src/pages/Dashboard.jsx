@@ -1,8 +1,8 @@
 
-import { useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { fetchBotRun, fetchStartBot } from "../services/botService";
+import { fetchBotCostEstimate, fetchBotRun, fetchStartBot } from "../services/botService";
 import { validateChannelTheme } from "../validate/validateInputs";
 import { fetchUserPrompt, fetchSaveTheme, fetchSaveGender, generateBotPrompt } from "../services/promptService";
 import { fetchWallet } from "../services/paymentService";
@@ -29,6 +29,8 @@ const Dashboard = () => {
     const [isEditingGender, setIsEditingGender] = useState(false);
     const [botRun, setBotRun] = useState(null);
     const [walletAvailable, setWalletAvailable] = useState(null);
+    const [botCostEstimate, setBotCostEstimate] = useState(null);
+    const [estimateLoading, setEstimateLoading] = useState(false);
     const { t } = useTranslation();
     const isConnected = useAuthStatus(null, "/");
 
@@ -43,18 +45,18 @@ const Dashboard = () => {
         getUserPrompt();
     }, []);
 
-    useEffect(() => {
-        const loadWalletSummary = async () => {
-            try {
-                const wallet = await fetchWallet();
-                setWalletAvailable(wallet?.available ?? null);
-            } catch (error) {
-                setWalletAvailable(null);
-            }
-        };
-
-        loadWalletSummary();
+    const loadWalletSummary = useCallback(async () => {
+        try {
+            const wallet = await fetchWallet();
+            setWalletAvailable(wallet?.available ?? null);
+        } catch (error) {
+            setWalletAvailable(null);
+        }
     }, []);
+
+    useEffect(() => {
+        loadWalletSummary();
+    }, [loadWalletSummary]);
 
     useEffect(() => {
         if (!botRun || !["queued", "running"].includes(botRun.status)) return;
@@ -92,7 +94,41 @@ const Dashboard = () => {
         setNotice("");
     };
 
+    const botPrompt = useMemo(
+        () => generateBotPrompt(botGender, savedTheme, channelTheme),
+        [botGender, savedTheme, channelTheme]
+    );
     const canStartBot = Boolean(selectedVideo?.videoId && (savedTheme || channelTheme).trim());
+
+    useEffect(() => {
+        let ignore = false;
+
+        const loadCostEstimate = async () => {
+            if (!botPrompt) {
+                setBotCostEstimate(null);
+                return;
+            }
+
+            setEstimateLoading(true);
+            try {
+                const estimate = await fetchBotCostEstimate(botPrompt.generalPrompt || "");
+                if (!ignore) {
+                    setBotCostEstimate(estimate);
+                    setWalletAvailable(estimate.availableCredits ?? null);
+                }
+            } catch (error) {
+                if (!ignore) setBotCostEstimate(null);
+            } finally {
+                if (!ignore) setEstimateLoading(false);
+            }
+        };
+
+        loadCostEstimate();
+
+        return () => {
+            ignore = true;
+        };
+    }, [botPrompt]);
 
     const startBot = async () => {
         const videoOk = Boolean(selectedVideo?.videoId);
@@ -100,22 +136,21 @@ const Dashboard = () => {
         const themeOk = validateChannelTheme(savedTheme || channelTheme, setError);
         if (!videoOk || !themeOk) return;
 
-        const prompt = generateBotPrompt(botGender, savedTheme, channelTheme);
-        if (!prompt) return;
+        if (!botPrompt) return;
 
         setNotice("");
-        const result = await fetchStartBot(selectedVideo.videoId, prompt, botGender, setIsBotRunning);
+        const result = await fetchStartBot(selectedVideo.videoId, botPrompt, botGender, setIsBotRunning);
+        await loadWalletSummary();
         if (result.run) {
             setBotRun(result.run);
         }
         if (result.code === "INSUFFICIENT_CREDITS") {
-            setNotice(t("bot.insufficientCredits"));
-            try {
-                const wallet = await fetchWallet();
-                setWalletAvailable(wallet?.available ?? 0);
-            } catch (error) {
-                setWalletAvailable(0);
-            }
+            setBotCostEstimate(result.details || null);
+            setWalletAvailable(result.details?.availableCredits ?? 0);
+            setNotice(t("bot.insufficientCreditsDetailed", {
+                required: result.details?.requiredCredits ?? "-",
+                available: result.details?.availableCredits ?? "-"
+            }));
         } else {
             setNotice(result.message);
         }
@@ -168,7 +203,9 @@ const Dashboard = () => {
                             isBotRunning,
                             notice,
                             canStartBot,
-                            walletAvailable
+                            walletAvailable,
+                            botCostEstimate,
+                            estimateLoading
                         }} />
                         {botRun && (
                             <>

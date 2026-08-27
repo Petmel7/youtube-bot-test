@@ -16,7 +16,11 @@ const errorHandler = (err, req, res, next) => {
 
     res.status(status).json({
         success: false,
-        error: { code, message }
+        error: {
+            code,
+            message,
+            ...(isKnown && err.details !== undefined ? { details: err.details } : {})
+        }
     });
 };
 

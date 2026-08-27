@@ -174,6 +174,51 @@ test("AiProvider records usage after a successful operation", async () => {
     assert.equal(statusUpdates[0].update.billingStatus, "CHARGE_FINALIZED");
 });
 
+test("AiProvider debits the flat reply credit cost and keeps token usage as metadata", async () => {
+    const records = [];
+    const walletEvents = [];
+    const provider = createAiProvider({
+        provider: {
+            provider: "gemini",
+            model: "gemini-test",
+            async generateReply() {
+                return {
+                    text: "Thanks!",
+                    provider: "gemini",
+                    model: "gemini-test",
+                    usage: {
+                        promptTokens: 250,
+                        outputTokens: 180,
+                        totalTokens: 430
+                    },
+                    latencyMs: 4,
+                    success: true
+                };
+            }
+        },
+        async usageRecorder(operation, result) {
+            records.push({ operation, result });
+        },
+        async usageStatusUpdater() {},
+        wallet: createFakeWallet(walletEvents)
+    });
+
+    await provider.generateReply({
+        userId: "64b000000000000000000000",
+        runId: "64b000000000000000000001",
+        videoId: "abcDEF123_-",
+        commentId: "comment-flat-cost",
+        comment: "Great video",
+        prompt: "Be friendly"
+    });
+
+    assert.equal(walletEvents[0].input.amount, 10);
+    assert.equal(walletEvents[1].input.reservedAmount, 10);
+    assert.equal(walletEvents[1].input.actualAmount, 10);
+    assert.equal(records[0].result.usage.totalTokens, 430);
+    assert.equal(records[0].result.actualCredits, 10);
+});
+
 test("AiProvider records failed operations and preserves error propagation", async () => {
     const records = [];
     const walletEvents = [];

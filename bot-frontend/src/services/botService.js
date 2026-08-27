@@ -35,9 +35,18 @@ export const fetchStartBot = async (videoId, prompt, botGender, setIsBotRunning)
         return {
             success: false,
             code: error.code,
+            details: error.details,
             message: error.message || "Error starting bot!"
         };
     }
+};
+
+export const fetchBotCostEstimate = async (prompt) => {
+    const data = await apiRequest("/bot/cost-estimate", {
+        method: "POST",
+        body: JSON.stringify({ prompt: prompt || "" })
+    });
+    return data.cost;
 };
 
 export const fetchBotRun = async (runId) => {
