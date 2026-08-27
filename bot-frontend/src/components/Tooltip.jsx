@@ -1,8 +1,8 @@
 
-const Tooltip = ({ children, isTooltipOpen }) => (
+const Tooltip = ({ children, isTooltipOpen, className = "", ...props }) => (
     <>
         {isTooltipOpen && (
-            <div className="dropdown-menu">
+            <div className={`dropdown-menu${className ? ` ${className}` : ""}`} {...props}>
                 {children}
             </div>)}
     </>

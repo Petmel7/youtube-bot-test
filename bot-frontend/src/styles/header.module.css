@@ -5,7 +5,6 @@
     flex-wrap: wrap;
     gap: 10px;
     position: relative;
-    cursor: pointer;
     text-align: center;
     margin-bottom: 20px;
 }
@@ -24,12 +23,45 @@
     height: 30px;
     border-radius: 50%;
     object-fit: cover;
-    margin: 0 8px;
 }
 
 .name {
     font-size: 16px;
     font-weight: 500;
+}
+
+.accountMenu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding-bottom: 8px;
+    margin-bottom: -8px;
+    z-index: 20;
+}
+
+.accountTrigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.accountTrigger:focus-visible {
+    outline: 2px solid #ff0033;
+    outline-offset: 3px;
+}
+
+.headerDropdown {
+    top: calc(100% - 2px);
+    right: 0;
+    z-index: 1000;
 }
 
 /* ✅ Адаптація */
@@ -81,6 +113,17 @@
 
     .name {
         font-size: 14px;
-        margin: 10px 0;
+        margin: 0;
+    }
+
+    .accountTrigger {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .headerDropdown {
+        top: calc(100% + 2px);
+        right: 50%;
+        transform: translateX(50%);
     }
 }

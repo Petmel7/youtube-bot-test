@@ -100,43 +100,51 @@ const Dashboard = () => {
 
             <h1 className={styles.dashboardTitle}>YouTube {t('bot.dashboard')}</h1>
 
-            <WalletPanel />
+            <div className={styles.dashboardLayout}>
+                <main className={styles.mainColumn}>
+                    <div className={styles.mainPanel}>
+                        <div className={styles.themeConteaner}>
+                            <Gender {...{
+                                isEditingGender,
+                                botGender,
+                                setBotGender,
+                                savedGender,
+                                saveGender,
+                                setIsEditingGender
+                            }} />
 
-            <div className={styles.themeConteaner}>
-                <Gender {...{
-                    isEditingGender,
-                    botGender,
-                    setBotGender,
-                    savedGender,
-                    saveGender,
-                    setIsEditingGender
-                }} />
+                            <Theme {...{
+                                isEditingTheme,
+                                error,
+                                channelTheme,
+                                setChannelTheme,
+                                savedTheme,
+                                saveTheme,
+                                setIsEditingTheme
+                            }} />
+                        </div>
 
-                <Theme {...{
-                    isEditingTheme,
-                    error,
-                    channelTheme,
-                    setChannelTheme,
-                    savedTheme,
-                    saveTheme,
-                    setIsEditingTheme
-                }} />
+                        <VideoListButton />
+
+                        <BotStarter {...{
+                            error,
+                            videoUrl,
+                            setVideoUrl,
+                            startBot,
+                            isBotRunning
+                        }} />
+                        {botRun && (
+                            <p className={styles.botRunStatus}>
+                                Bot run: {botRun.status}. Replies: {botRun.successCount}, failed: {botRun.failureCount}, skipped: {botRun.skippedCount}.
+                            </p>
+                        )}
+                    </div>
+                </main>
+
+                <aside className={styles.sidebarColumn}>
+                    <WalletPanel />
+                </aside>
             </div>
-
-            <VideoListButton />
-
-            <BotStarter {...{
-                error,
-                videoUrl,
-                setVideoUrl,
-                startBot,
-                isBotRunning
-            }} />
-            {botRun && (
-                <p>
-                    Bot run: {botRun.status}. Replies: {botRun.successCount}, failed: {botRun.failureCount}, skipped: {botRun.skippedCount}.
-                </p>
-            )}
         </div>
     );
 };

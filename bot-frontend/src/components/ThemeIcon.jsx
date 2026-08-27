@@ -8,9 +8,9 @@ const ThemeIcon = () => {
     if (!theme) return null;
 
     return (
-        <div onClick={toggleTheme} className="theme-toggle">
+        <button type="button" onClick={toggleTheme} className="theme-toggle">
             {theme === "light" ? <IoMdMoon /> : <IoMdSunny />}
-        </div>
+        </button>
     );
 };
 

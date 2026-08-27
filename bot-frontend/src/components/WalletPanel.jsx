@@ -129,15 +129,15 @@ const assetProvenanceLabel = (method, t) => {
 };
 const methodLabel = (method) => method ? (method.name || `${method.network} · ${method.token?.symbol || ""}`.trim()) : "-";
 const methodNetworkLabel = (method) => method?.name || method?.network || method?.caipNetworkId || "-";
-const methodSecondaryLabel = (method, t) => {
-    if (!method) return "";
-    const parts = [
-        assetProvenanceLabel(method, t) || method.token?.symbol,
-        method.caipNetworkId || (method.chainId ? `eip155:${method.chainId}` : method.networkId ? `solana:${method.networkId}` : ""),
+const methodCaipLabel = (method) => method?.caipNetworkId || (method?.chainId ? `eip155:${method.chainId}` : method?.networkId ? `solana:${method.networkId}` : "");
+const methodBadges = (method, t) => {
+    if (!method) return [];
+    return [
+        method.token?.symbol,
+        assetProvenanceLabel(method, t),
         method.testnet ? t("wallet.testnet") : "",
         method.enabled === false ? t("wallet.unavailableMethod") : ""
     ].filter(Boolean);
-    return parts.join(" · ");
 };
 const bytesToBase64 = (bytes) => window.btoa(String.fromCharCode(...Array.from(bytes)));
 const getSolanaProviderAddress = (provider) => (
@@ -177,6 +177,22 @@ const PrePaymentSummary = ({ selectedPackage, selectedPaymentMethod }) => {
     );
 };
 
+const PaymentMethodMeta = ({ method }) => {
+    const { t } = useTranslation();
+    const badges = methodBadges(method, t);
+
+    return (
+        <>
+            <span className={styles.methodCaip}>{methodCaipLabel(method)}</span>
+            {badges.length > 0 && (
+                <span className={styles.methodBadges}>
+                    {badges.map(badge => <span className={styles.methodBadge} key={badge}>{badge}</span>)}
+                </span>
+            )}
+        </>
+    );
+};
+
 const PaymentMethodChooser = ({
     paymentMethods,
     selectedPaymentMethodId,
@@ -196,7 +212,7 @@ const PaymentMethodChooser = ({
             <div className={styles.methodSummary} aria-label={t("wallet.availablePaymentMethod")}>
                 <span>{t("wallet.availablePaymentMethod")}</span>
                 <strong>{methodNetworkLabel(selectedMethod)}</strong>
-                <small>{methodSecondaryLabel(selectedMethod, t)}</small>
+                <PaymentMethodMeta method={selectedMethod} />
             </div>
         );
     }
@@ -217,7 +233,7 @@ const PaymentMethodChooser = ({
                         role="option"
                     >
                         <strong>{methodNetworkLabel(method)}</strong>
-                        <span>{methodSecondaryLabel(method, t)}</span>
+                        <PaymentMethodMeta method={method} />
                     </button>
                 );
             })}

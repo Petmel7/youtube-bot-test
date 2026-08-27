@@ -1,5 +1,5 @@
 
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
@@ -7,8 +7,11 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import "./index.css";
 
 function App() {
+    const location = useLocation();
+    const containerClassName = location.pathname === "/dashboard" ? "container dashboard-route-container" : "container";
+
     return (
-        <div className="container">
+        <div className={containerClassName}>
             <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/dashboard" element={<Dashboard />} />
