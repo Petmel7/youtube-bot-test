@@ -19,6 +19,7 @@
     "input.error.channel.theme": "Entrez un nouveau thème de chaîne!",
     "bot.replying": "Le bot répond...",
     "bot.run.status": "Exécution du bot pour « {{title}} » : {{status}}. Réponses : {{replies}}, échecs : {{failed}}, ignorés : {{skipped}}.",
+    "bot.insufficientCredits": "Crédits insuffisants. Rechargez votre portefeuille.",
     "connected.to": "Connecté à",
     "avatar.alt": "Avatar de l'utilisateur",
     "select.identity": "Sélectionnez l'identité du bot",

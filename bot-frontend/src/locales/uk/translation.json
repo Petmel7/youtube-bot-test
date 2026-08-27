@@ -19,6 +19,7 @@
     "input.error.channel.theme": "Введіть нову тему каналу!",
     "bot.replying": "Бот відповідає...",
     "bot.run.status": "Запуск бота для «{{title}}»: {{status}}. Відповіді: {{replies}}, помилки: {{failed}}, пропущено: {{skipped}}.",
+    "bot.insufficientCredits": "Недостатньо кредитів. Поповніть гаманець.",
     "connected.to": "Підключено до",
     "avatar.alt": "Аватар користувача",
     "select.identity": "Оберіть ідентичність бота",

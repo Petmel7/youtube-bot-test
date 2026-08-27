@@ -5,6 +5,7 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import { fetchBotRun, fetchStartBot } from "../services/botService";
 import { validateChannelTheme } from "../validate/validateInputs";
 import { fetchUserPrompt, fetchSaveTheme, fetchSaveGender, generateBotPrompt } from "../services/promptService";
+import { fetchWallet } from "../services/paymentService";
 import Gender from "../components/Gender";
 import Theme from "../components/Theme";
 import BotStarter from "../components/BotStarter";
@@ -27,6 +28,7 @@ const Dashboard = () => {
     const [isEditingTheme, setIsEditingTheme] = useState(false);
     const [isEditingGender, setIsEditingGender] = useState(false);
     const [botRun, setBotRun] = useState(null);
+    const [walletAvailable, setWalletAvailable] = useState(null);
     const { t } = useTranslation();
     const isConnected = useAuthStatus(null, "/");
 
@@ -39,6 +41,19 @@ const Dashboard = () => {
             }
         };
         getUserPrompt();
+    }, []);
+
+    useEffect(() => {
+        const loadWalletSummary = async () => {
+            try {
+                const wallet = await fetchWallet();
+                setWalletAvailable(wallet?.available ?? null);
+            } catch (error) {
+                setWalletAvailable(null);
+            }
+        };
+
+        loadWalletSummary();
     }, []);
 
     useEffect(() => {
@@ -93,7 +108,17 @@ const Dashboard = () => {
         if (result.run) {
             setBotRun(result.run);
         }
-        setNotice(result.message);
+        if (result.code === "INSUFFICIENT_CREDITS") {
+            setNotice(t("bot.insufficientCredits"));
+            try {
+                const wallet = await fetchWallet();
+                setWalletAvailable(wallet?.available ?? 0);
+            } catch (error) {
+                setWalletAvailable(0);
+            }
+        } else {
+            setNotice(result.message);
+        }
 
         setSavedTheme(channelTheme);
         setSavedGender(botGender);
@@ -142,18 +167,28 @@ const Dashboard = () => {
                             startBot,
                             isBotRunning,
                             notice,
-                            canStartBot
+                            canStartBot,
+                            walletAvailable
                         }} />
                         {botRun && (
-                            <p className={styles.botRunStatus}>
-                                {t("bot.run.status", {
-                                    title: selectedVideo?.title || botRun.videoId,
-                                    status: botRun.status,
-                                    replies: botRun.successCount,
-                                    failed: botRun.failureCount,
-                                    skipped: botRun.skippedCount
-                                })}
-                            </p>
+                            <>
+                                <p className={styles.botRunStatus}>
+                                    {t("bot.run.status", {
+                                        title: selectedVideo?.title || botRun.videoId,
+                                        status: botRun.status,
+                                        replies: botRun.successCount,
+                                        failed: botRun.failureCount,
+                                        skipped: botRun.skippedCount
+                                    })}
+                                </p>
+                                {botRun.errorCode && (
+                                    <p className={styles.error}>
+                                        {botRun.errorCode === "INSUFFICIENT_CREDITS"
+                                            ? t("bot.insufficientCredits")
+                                            : (botRun.errorMessage || botRun.errorCode)}
+                                    </p>
+                                )}
+                            </>
                         )}
                     </div>
                 </main>

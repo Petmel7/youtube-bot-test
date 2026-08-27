@@ -9,7 +9,7 @@ const formatCount = (value) => {
     return Number.isFinite(number) ? number.toLocaleString() : value;
 };
 
-const BotStarter = ({ error, selectedVideo, startBot, isBotRunning, notice, canStartBot }) => {
+const BotStarter = ({ error, selectedVideo, startBot, isBotRunning, notice, canStartBot, walletAvailable }) => {
 
     const { t } = useTranslation();
     const description = selectedVideo?.description || "";
@@ -53,6 +53,9 @@ const BotStarter = ({ error, selectedVideo, startBot, isBotRunning, notice, canS
                 <SiProbot className={styles.botIcon} />
                 {isBotRunning ? t("bot.replying") : t("reply.to.comments")}
             </button>
+            {walletAvailable !== null && walletAvailable <= 0 && (
+                <p className={styles.error}>{t("bot.insufficientCredits")}</p>
+            )}
             {notice && <p className={styles.notice}>{notice}</p>}
         </div>
     );

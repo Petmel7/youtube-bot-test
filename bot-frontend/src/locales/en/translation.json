@@ -19,6 +19,7 @@
     "input.error.channel.theme": "Enter new channel theme!",
     "bot.replying": "Bot is replying...",
     "bot.run.status": "Bot run for “{{title}}”: {{status}}. Replies: {{replies}}, failed: {{failed}}, skipped: {{skipped}}.",
+    "bot.insufficientCredits": "Insufficient credits. Top up your wallet.",
     "connected.to": "Connected to",
     "avatar.alt": "User Avatar",
     "select.identity": "Select bot identity",

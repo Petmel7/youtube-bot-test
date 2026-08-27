@@ -1,7 +1,11 @@
 const BotRun = require("../models/BotRun");
 const User = require("../models/User");
-const { conflict, notFound, forbidden } = require("../utils/errors");
+const walletService = require("./billing/walletService");
+const { estimateAiOperationCost } = require("./billing/costEstimator");
+const { conflict, notFound, forbidden, paymentRequired } = require("../utils/errors");
 const { executeBotRun } = require("./youtubeService");
+
+const getMinimumBotRunCredits = (prompt = "") => estimateAiOperationCost({ comment: "", prompt }).credits;
 
 const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
     const existing = await BotRun.findOne({ userId: user._id, idempotencyKey });
@@ -17,6 +21,12 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
 
     if (activeRun) {
         throw conflict("BOT_RUN_ACTIVE", "A bot run is already active for this video");
+    }
+
+    const minimumCredits = getMinimumBotRunCredits(prompt);
+    const availableCredits = await walletService.getAvailableCredits({ userId: user._id });
+    if (availableCredits < minimumCredits) {
+        throw paymentRequired("INSUFFICIENT_CREDITS", "Insufficient credits");
     }
 
     let run;

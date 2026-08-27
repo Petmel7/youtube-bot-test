@@ -32,7 +32,11 @@ export const fetchStartBot = async (videoId, prompt, botGender, setIsBotRunning)
         return { success: data.success, message: "Bot run started.", run: data.run };
     } catch (error) {
         setIsBotRunning(false);
-        return { success: false, message: error.message || "Error starting bot!" };
+        return {
+            success: false,
+            code: error.code,
+            message: error.message || "Error starting bot!"
+        };
     }
 };
 

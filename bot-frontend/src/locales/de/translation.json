@@ -19,6 +19,7 @@
     "input.error.channel.theme": "Neues Kanalthema eingeben!",
     "bot.replying": "Bot antwortet...",
     "bot.run.status": "Bot-Lauf für „{{title}}“: {{status}}. Antworten: {{replies}}, fehlgeschlagen: {{failed}}, übersprungen: {{skipped}}.",
+    "bot.insufficientCredits": "Nicht genügend Credits. Lade deine Wallet auf.",
     "connected.to": "Verbunden mit",
     "avatar.alt": "Benutzerbild",
     "select.identity": "Bot-Identität wählen",

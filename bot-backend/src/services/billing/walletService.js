@@ -51,6 +51,11 @@ const createWalletService = ({
 
     const getWallet = async ({ userId }) => getOrCreateWallet(userId);
 
+    const getAvailableCredits = async ({ userId }) => {
+        const wallet = await getOrCreateWallet(userId);
+        return Math.max((wallet.balance || 0) - (wallet.reserved || 0), 0);
+    };
+
     const grantDevelopmentCredits = async ({ userId, amount, idempotencyKey, reason = "development-credit" }) => {
         assertPositiveInteger(amount);
 
@@ -303,6 +308,7 @@ const createWalletService = ({
 
     return {
         finalizeCharge,
+        getAvailableCredits,
         getWallet,
         getOrCreateWallet,
         grantDevelopmentCredits,
