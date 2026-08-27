@@ -35,7 +35,8 @@
         "noDate": "Aucune date de publication",
         "views": "Vues",
         "likes": "J'aime",
-        "comments": "Commentaires"
+        "comments": "Commentaires",
+        "loadedCount": "{{loaded}} sur {{total}} chargées"
     },
     "wallet": {
         "title": "Portefeuille",

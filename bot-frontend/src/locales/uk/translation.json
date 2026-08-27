@@ -35,7 +35,8 @@
         "noDate": "Немає дати публікації",
         "views": "Перегляди",
         "likes": "Вподобання",
-        "comments": "Коментарі"
+        "comments": "Коментарі",
+        "loadedCount": "Завантажено {{loaded}} з {{total}}"
     },
     "wallet": {
         "title": "Гаманець",

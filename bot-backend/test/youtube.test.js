@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 process.env.YOUTUBE_API_BASE = process.env.YOUTUBE_API_BASE || "https://youtube.test/v3";
 
 const { validateYoutubeVideosQuery } = require("../src/utils/validators");
-const { getChannelVideos } = require("../src/services/youtubeService");
+const { getUserChannelInfo, getChannelVideos } = require("../src/services/youtubeService");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -37,25 +37,57 @@ test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
     assert.throws(() => validateYoutubeVideosQuery({ pageToken: "bad token" }), { code: "INVALID_PAGE_TOKEN" });
 });
 
-test("getChannelVideos fetches one page and returns pagination metadata", async (t) => {
+test("getUserChannelInfo fetches uploads playlist details", async (t) => {
+    t.mock.method(global, "fetch", async (url, options) => {
+        const parsed = new URL(url);
+
+        assert.equal(parsed.pathname.endsWith("/channels"), true);
+        assert.equal(parsed.searchParams.get("part"), "contentDetails");
+        assert.equal(parsed.searchParams.get("mine"), "true");
+        assert.equal(options.headers.Authorization, "Bearer access-token");
+
+        return jsonResponse({
+            items: [
+                {
+                    id: "channel-1",
+                    contentDetails: {
+                        relatedPlaylists: {
+                            uploads: "uploads-1"
+                        }
+                    }
+                }
+            ]
+        });
+    });
+
+    const result = await getUserChannelInfo(user);
+
+    assert.deepEqual(result, {
+        channelId: "channel-1",
+        uploadsPlaylistId: "uploads-1"
+    });
+});
+
+test("getChannelVideos fetches uploads playlist page and returns pagination metadata", async (t) => {
     const calls = [];
     t.mock.method(global, "fetch", async (url, options) => {
         calls.push({ url: String(url), options });
         const parsed = new URL(url);
 
-        if (parsed.pathname.endsWith("/search")) {
-            assert.equal(parsed.searchParams.get("part"), "snippet");
-            assert.equal(parsed.searchParams.get("channelId"), "channel-1");
-            assert.equal(parsed.searchParams.get("type"), "video");
-            assert.equal(parsed.searchParams.get("order"), "date");
+        if (parsed.pathname.endsWith("/playlistItems")) {
+            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails");
+            assert.equal(parsed.searchParams.get("playlistId"), "uploads-1");
             assert.equal(parsed.searchParams.get("maxResults"), "2");
             assert.equal(parsed.searchParams.get("pageToken"), "CAUQAA");
             assert.equal(options.headers.Authorization, "Bearer access-token");
 
             return jsonResponse({
                 items: [
-                    { id: { videoId: "video-1" } },
-                    { id: { videoId: "video-2" } }
+                    { contentDetails: { videoId: "video-1" } },
+                    { contentDetails: { videoId: "video-2" } },
+                    { contentDetails: { videoId: "video-1" } },
+                    { snippet: { resourceId: { videoId: "video-3" } } },
+                    { contentDetails: {} }
                 ],
                 nextPageToken: "CBQQAA",
                 prevPageToken: "CAAQAA",
@@ -68,7 +100,7 @@ test("getChannelVideos fetches one page and returns pagination metadata", async 
 
         if (parsed.pathname.endsWith("/videos")) {
             assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics");
-            assert.equal(parsed.searchParams.get("id"), "video-1,video-2");
+            assert.equal(parsed.searchParams.get("id"), "video-1,video-2,video-3");
             assert.equal(options.headers.Authorization, "Bearer access-token");
 
             return jsonResponse({
@@ -102,24 +134,34 @@ test("getChannelVideos fetches one page and returns pagination metadata", async 
         throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const result = await getChannelVideos(user, "channel-1", {
+    const result = await getChannelVideos(user, "uploads-1", {
         maxResults: 2,
         pageToken: "CAUQAA"
     });
 
     assert.equal(calls.length, 2);
+    assert.equal(calls.some(call => new URL(call.url).pathname.endsWith("/search")), false);
     assert.equal(result.nextPageToken, "CBQQAA");
     assert.equal(result.prevPageToken, "CAAQAA");
     assert.deepEqual(result.pageInfo, { totalResults: 20, resultsPerPage: 2 });
     assert.deepEqual(result.videos.map(video => video.videoId), ["video-1", "video-2"]);
+    assert.equal(result.videos.some(video => video.videoId === "video-3"), false);
     assert.equal(result.videos[0].title, "First");
     assert.equal(result.videos[0].views, "10");
 });
 
 test("getChannelVideos returns empty page without fetching video details", async (t) => {
     const calls = [];
-    t.mock.method(global, "fetch", async (url) => {
+    t.mock.method(global, "fetch", async (url, options) => {
         calls.push(String(url));
+        const parsed = new URL(url);
+
+        assert.equal(parsed.pathname.endsWith("/playlistItems"), true);
+        assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails");
+        assert.equal(parsed.searchParams.get("playlistId"), "uploads-empty");
+        assert.equal(parsed.searchParams.get("maxResults"), "12");
+        assert.equal(options.headers.Authorization, "Bearer access-token");
+
         return jsonResponse({
             items: [],
             pageInfo: {
@@ -129,7 +171,7 @@ test("getChannelVideos returns empty page without fetching video details", async
         });
     });
 
-    const result = await getChannelVideos(user, "channel-empty", { maxResults: 12 });
+    const result = await getChannelVideos(user, "uploads-empty", { maxResults: 12 });
 
     assert.equal(calls.length, 1);
     assert.deepEqual(result, {

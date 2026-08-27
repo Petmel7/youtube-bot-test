@@ -189,48 +189,77 @@ async function replyToComment(accessToken, commentId, responseText) {
     }
 }
 
-const getUserChannelId = async (user) => {
+const getUserChannelInfo = async (user) => {
     const accessToken = await getValidAccessToken(user);
+    const params = new URLSearchParams({
+        part: "contentDetails",
+        mine: "true"
+    });
 
-    const res = await fetch(`${youtubeApiBase}/channels?part=id&mine=true`, {
+    const res = await fetch(`${youtubeApiBase}/channels?${params.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!res.ok) throw upstream("YOUTUBE_CHANNEL_FAILED", "Failed to fetch channel ID");
+    if (!res.ok) throw upstream("YOUTUBE_CHANNEL_FAILED", "Failed to fetch channel details");
     const data = await res.json();
+    const channel = data.items?.[0];
 
-    if (!data.items?.length) throw notFound("YOUTUBE_CHANNEL_NOT_FOUND", "No channels found for user");
-    return data.items[0].id;
+    if (!channel?.id) throw notFound("YOUTUBE_CHANNEL_NOT_FOUND", "No channels found for user");
+
+    const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) {
+        throw notFound("YOUTUBE_UPLOADS_PLAYLIST_NOT_FOUND", "No uploads playlist found for user");
+    }
+
+    return {
+        channelId: channel.id,
+        uploadsPlaylistId
+    };
 };
 
-const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } = {}) => {
+const getUserChannelId = async (user) => {
+    const { channelId } = await getUserChannelInfo(user);
+    return channelId;
+};
+
+const getChannelVideos = async (user, uploadsPlaylistId, { maxResults = 12, pageToken } = {}) => {
     const accessToken = await getValidAccessToken(user);
-    const searchParams = new URLSearchParams({
-        part: "snippet",
-        channelId,
-        type: "video",
-        order: "date",
+    const playlistParams = new URLSearchParams({
+        part: "snippet,contentDetails",
+        playlistId: uploadsPlaylistId,
         maxResults: String(maxResults)
     });
 
     if (pageToken) {
-        searchParams.set("pageToken", pageToken);
+        playlistParams.set("pageToken", pageToken);
     }
 
-    const searchRes = await fetch(`${youtubeApiBase}/search?${searchParams.toString()}`, {
+    const playlistRes = await fetch(`${youtubeApiBase}/playlistItems?${playlistParams.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!searchRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
-    const searchData = await searchRes.json();
+    if (!playlistRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
+    const playlistData = await playlistRes.json();
 
     const pagination = {
-        nextPageToken: searchData.nextPageToken || null,
-        prevPageToken: searchData.prevPageToken || null,
-        pageInfo: searchData.pageInfo || {}
+        nextPageToken: playlistData.nextPageToken || null,
+        prevPageToken: playlistData.prevPageToken || null,
+        pageInfo: playlistData.pageInfo || {}
     };
 
-    const orderedVideoIds = (searchData.items || []).map(item => item.id?.videoId).filter(Boolean);
+    const seenVideoIds = new Set();
+    const orderedVideoIds = [];
+
+    for (const item of playlistData.items || []) {
+        const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+        if (!videoId || seenVideoIds.has(videoId)) {
+            continue;
+        }
+
+        seenVideoIds.add(videoId);
+        orderedVideoIds.push(videoId);
+    }
+
     if (orderedVideoIds.length === 0) {
         return {
             videos: [],
@@ -267,6 +296,7 @@ const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } 
 module.exports = {
     executeBotRun,
     replyToComment,
+    getUserChannelInfo,
     getUserChannelId,
     getChannelVideos,
     verifyVideoOwnership

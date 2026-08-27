@@ -35,7 +35,8 @@
         "noDate": "No publish date",
         "views": "Views",
         "likes": "Likes",
-        "comments": "Comments"
+        "comments": "Comments",
+        "loadedCount": "{{loaded}} of {{total}} loaded"
     },
     "wallet": {
         "title": "Wallet",
