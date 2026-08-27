@@ -28,6 +28,8 @@
     "show.videos": "Afficher mes vidéos",
     "hide.videos": "Masquer les vidéos",
     "no.videos": "Aucune vidéo trouvée",
+    "previous": "Précédent",
+    "next": "Suivant",
     "wallet": {
         "title": "Portefeuille",
         "subtitle": "Crédits disponibles pour les lancements du bot.",

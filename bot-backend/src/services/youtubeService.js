@@ -203,18 +203,39 @@ const getUserChannelId = async (user) => {
     return data.items[0].id;
 };
 
-const getChannelVideos = async (user, channelId) => {
+const getChannelVideos = async (user, channelId, { maxResults = 12, pageToken } = {}) => {
     const accessToken = await getValidAccessToken(user);
+    const searchParams = new URLSearchParams({
+        part: "snippet",
+        channelId,
+        type: "video",
+        maxResults: String(maxResults)
+    });
 
-    const searchRes = await fetch(`${youtubeApiBase}/search?part=snippet&channelId=${channelId}&type=video&maxResults=50`, {
+    if (pageToken) {
+        searchParams.set("pageToken", pageToken);
+    }
+
+    const searchRes = await fetch(`${youtubeApiBase}/search?${searchParams.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
     if (!searchRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
     const searchData = await searchRes.json();
 
-    const videoIds = (searchData.items || []).map(item => item.id.videoId).filter(Boolean).join(",");
-    if (!videoIds) return [];
+    const pagination = {
+        nextPageToken: searchData.nextPageToken || null,
+        prevPageToken: searchData.prevPageToken || null,
+        pageInfo: searchData.pageInfo || {}
+    };
+
+    const videoIds = (searchData.items || []).map(item => item.id?.videoId).filter(Boolean).join(",");
+    if (!videoIds) {
+        return {
+            videos: [],
+            ...pagination
+        };
+    }
 
     const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
@@ -223,17 +244,20 @@ const getChannelVideos = async (user, channelId) => {
     if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
     const detailsData = await detailsRes.json();
 
-    return (detailsData.items || []).map(video => ({
-        videoId: video.id,
-        title: video.snippet?.title || "",
-        description: video.snippet?.description || "",
-        publishedAt: video.snippet?.publishedAt || null,
-        thumbnail: video.snippet?.thumbnails?.medium?.url || null,
-        duration: video.contentDetails?.duration || null,
-        views: video.statistics?.viewCount || null,
-        likes: video.statistics?.likeCount || null,
-        comments: video.statistics?.commentCount || null
-    }));
+    return {
+        videos: (detailsData.items || []).map(video => ({
+            videoId: video.id,
+            title: video.snippet?.title || "",
+            description: video.snippet?.description || "",
+            publishedAt: video.snippet?.publishedAt || null,
+            thumbnail: video.snippet?.thumbnails?.medium?.url || null,
+            duration: video.contentDetails?.duration || null,
+            views: video.statistics?.viewCount || null,
+            likes: video.statistics?.likeCount || null,
+            comments: video.statistics?.commentCount || null
+        })),
+        ...pagination
+    };
 };
 
 module.exports = {

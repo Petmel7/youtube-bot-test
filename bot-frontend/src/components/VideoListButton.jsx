@@ -80,24 +80,49 @@ const VideoListButton = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+    const [nextPageToken, setNextPageToken] = useState(null);
+    const [currentPageToken, setCurrentPageToken] = useState(null);
+    const [pageHistory, setPageHistory] = useState([]);
+    const maxResults = 12;
 
-    const handleClick = async () => {
+    const loadVideos = async ({ pageToken = undefined, nextHistory = pageHistory } = {}) => {
+        setLoading(true);
+        const res = await fetchMyVideos({ pageToken, maxResults });
+        if (res.success) {
+            setVideos(res.videos);
+            setNextPageToken(res.nextPageToken);
+            setCurrentPageToken(pageToken || null);
+            setPageHistory(nextHistory);
+            setErrorMessage("");
+        } else {
+            setVideos([]);
+            setNextPageToken(null);
+            setCurrentPageToken(null);
+            setErrorMessage(res.error?.message || "Failed to fetch videos");
+        }
+        setIsOpen(true);
+        setLoading(false);
+    };
+
+    const handleClick = () => {
         if (isOpen) {
             setIsOpen(false);
             return;
         }
 
-        setLoading(true);
-        const res = await fetchMyVideos();
-        if (res.success) {
-            setVideos(res.videos);
-            setErrorMessage("");
-        } else {
-            setVideos([]);
-            setErrorMessage(res.error?.message || "Failed to fetch videos");
-        }
-        setIsOpen(true);
-        setLoading(false);
+        loadVideos({ pageToken: undefined, nextHistory: [] });
+    };
+
+    const handleNextPage = () => {
+        if (!nextPageToken) return;
+        loadVideos({ pageToken: nextPageToken, nextHistory: [...pageHistory, currentPageToken || ""] });
+    };
+
+    const handlePreviousPage = () => {
+        if (pageHistory.length === 0) return;
+        const nextHistory = pageHistory.slice(0, -1);
+        const pageToken = pageHistory[pageHistory.length - 1] || undefined;
+        loadVideos({ pageToken, nextHistory });
     };
 
     return (
@@ -132,6 +157,16 @@ const VideoListButton = () => {
                         </li>
                     ))}
                 </ul>
+            )}
+            {isOpen && !errorMessage && (pageHistory.length > 0 || nextPageToken) && (
+                <div className={styles.paginationControls}>
+                    <button type="button" onClick={handlePreviousPage} disabled={loading || pageHistory.length === 0}>
+                        {t("previous")}
+                    </button>
+                    <button type="button" onClick={handleNextPage} disabled={loading || !nextPageToken}>
+                        {t("next")}
+                    </button>
+                </div>
             )}
         </div>
     );

@@ -28,6 +28,8 @@
     "show.videos": "Show My Videos",
     "hide.videos": "Hide Videos",
     "no.videos": "No videos found",
+    "previous": "Previous",
+    "next": "Next",
     "wallet": {
         "title": "Wallet",
         "subtitle": "Credits available for bot runs.",

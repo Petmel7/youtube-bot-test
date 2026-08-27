@@ -28,6 +28,8 @@
     "show.videos": "Meine Videos anzeigen",
     "hide.videos": "Videos verbergen",
     "no.videos": "Keine Videos gefunden",
+    "previous": "Zurück",
+    "next": "Weiter",
     "wallet": {
         "title": "Wallet",
         "subtitle": "Credits für Bot-Läufe.",

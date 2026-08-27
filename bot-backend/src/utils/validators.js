@@ -11,6 +11,9 @@ const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_TX_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,128}$/;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const SOLANA_SIGNATURE_RE = /^[A-Za-z0-9+/]{80,100}={0,2}$/;
+const YOUTUBE_PAGE_TOKEN_RE = /^[A-Za-z0-9._~-]{1,256}$/;
+const YOUTUBE_DEFAULT_PAGE_SIZE = 12;
+const YOUTUBE_MAX_PAGE_SIZE = 25;
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -145,6 +148,31 @@ const validatePaymentSignature = (signature) => {
     return value;
 };
 
+const validateYoutubeVideosQuery = (query = {}) => {
+    const result = {
+        maxResults: YOUTUBE_DEFAULT_PAGE_SIZE,
+        pageToken: undefined
+    };
+
+    if (query.maxResults !== undefined && query.maxResults !== null && query.maxResults !== "") {
+        const maxResults = Number(query.maxResults);
+        if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > YOUTUBE_MAX_PAGE_SIZE) {
+            throw unprocessable("INVALID_MAX_RESULTS", `maxResults must be an integer between 1 and ${YOUTUBE_MAX_PAGE_SIZE}`);
+        }
+        result.maxResults = maxResults;
+    }
+
+    if (query.pageToken !== undefined && query.pageToken !== null && query.pageToken !== "") {
+        const pageToken = normalizeString(query.pageToken, "pageToken", 256);
+        if (!YOUTUBE_PAGE_TOKEN_RE.test(pageToken)) {
+            throw unprocessable("INVALID_PAGE_TOKEN", "Invalid page token");
+        }
+        result.pageToken = pageToken;
+    }
+
+    return result;
+};
+
 module.exports = {
     assertObjectBody,
     validateVideoId,
@@ -161,5 +189,6 @@ module.exports = {
     validatePayerAddress,
     validatePaymentPayerChallengeId,
     validatePaymentSignature,
+    validateYoutubeVideosQuery,
     MAX_PROMPT_LENGTH
 };
