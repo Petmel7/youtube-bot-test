@@ -2,16 +2,9 @@
 import { apiRequest, createIdempotencyKey } from "./api";
 import { fetchAddTheme, fetchGetTheme } from "./promptService";
 
-export const fetchStartBot = async (videoUrl, prompt, botGender, setIsBotRunning) => {
-    const extractVideoId = (url) => {
-        const match = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/);
-        return match ? match[1] : null;
-    };
-
-    const videoId = extractVideoId(videoUrl);
+export const fetchStartBot = async (videoId, prompt, botGender, setIsBotRunning) => {
     if (!videoId) {
-        console.warn("❌ Невірний формат посилання!");
-        return { success: false, message: "Invalid video URL format!" };
+        return { success: false, message: "Select a video first." };
     }
 
     setIsBotRunning(true);

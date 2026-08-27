@@ -6,10 +6,9 @@ import styles from "../styles/myVideos.module.css";
 
 const maxResults = 12;
 
-const MyVideos = () => {
+const MyVideos = ({ selectedVideo, onSelectVideo }) => {
     const { t } = useTranslation();
     const [videos, setVideos] = useState([]);
-    const [selectedVideoId, setSelectedVideoId] = useState("");
     const [nextPageToken, setNextPageToken] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -85,18 +84,20 @@ const MyVideos = () => {
             {!loading && videos.length > 0 && (
                 <ul className={styles.videoList}>
                     {videos.map(video => {
-                        const selected = selectedVideoId === video.videoId;
+                        const selected = selectedVideo?.videoId === video.videoId;
 
                         return (
                             <li key={video.videoId}>
                                 <button
                                     type="button"
                                     className={`${styles.videoItem} ${selected ? styles.selectedVideo : ""}`}
-                                    onClick={() => setSelectedVideoId(video.videoId)}
+                                    onClick={() => onSelectVideo(video)}
                                     aria-pressed={selected}
                                 >
-                                    {video.thumbnail && (
+                                    {video.thumbnail ? (
                                         <img src={video.thumbnail} alt="" className={styles.thumbnail} />
+                                    ) : (
+                                        <span className={styles.thumbnail} aria-hidden="true" />
                                     )}
                                     <span className={styles.videoInfo}>
                                         <strong>{video.title}</strong>

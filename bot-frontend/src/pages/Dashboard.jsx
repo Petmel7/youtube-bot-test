@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { fetchBotRun, fetchStartBot } from "../services/botService";
-import { validateChannelTheme, validateVideoUrl } from "../validate/validateInputs";
+import { validateChannelTheme } from "../validate/validateInputs";
 import { fetchUserPrompt, fetchSaveTheme, fetchSaveGender, generateBotPrompt } from "../services/promptService";
 import Gender from "../components/Gender";
 import Theme from "../components/Theme";
@@ -16,11 +16,12 @@ import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
 
 const Dashboard = () => {
-    const [videoUrl, setVideoUrl] = useState("");
+    const [selectedVideo, setSelectedVideo] = useState(null);
     const [channelTheme, setChannelTheme] = useState("");
     const [botGender, setBotGender] = useState("male");
     const [isBotRunning, setIsBotRunning] = useState(false);
-    const [error, setError] = useState({ videoUrl: false, channelTheme: false });
+    const [error, setError] = useState({ channelTheme: false, selectedVideo: false });
+    const [notice, setNotice] = useState("");
     const [savedTheme, setSavedTheme] = useState(null);
     const [savedGender, setSavedGender] = useState(null);
     const [isEditingTheme, setIsEditingTheme] = useState(false);
@@ -70,21 +71,30 @@ const Dashboard = () => {
         await fetchSaveGender(botGender, setSavedGender, setIsEditingGender);
     };
 
+    const handleSelectVideo = (video) => {
+        setSelectedVideo(video);
+        setError(prev => ({ ...prev, selectedVideo: false }));
+        setNotice("");
+    };
+
+    const canStartBot = Boolean(selectedVideo?.videoId && (savedTheme || channelTheme).trim());
+
     const startBot = async () => {
-        const videoOk = validateVideoUrl(videoUrl, setError);
+        const videoOk = Boolean(selectedVideo?.videoId);
+        setError(prev => ({ ...prev, selectedVideo: !videoOk }));
         const themeOk = validateChannelTheme(savedTheme || channelTheme, setError);
         if (!videoOk || !themeOk) return;
 
         const prompt = generateBotPrompt(botGender, savedTheme, channelTheme);
         if (!prompt) return;
 
-        const result = await fetchStartBot(videoUrl, prompt, botGender, setIsBotRunning);
+        setNotice("");
+        const result = await fetchStartBot(selectedVideo.videoId, prompt, botGender, setIsBotRunning);
         if (result.run) {
             setBotRun(result.run);
         }
-        alert(result.message);
+        setNotice(result.message);
 
-        setVideoUrl("");
         setSavedTheme(channelTheme);
         setSavedGender(botGender);
     };
@@ -124,18 +134,25 @@ const Dashboard = () => {
                             }} />
                         </div>
 
-                        <MyVideos />
+                        <MyVideos selectedVideo={selectedVideo} onSelectVideo={handleSelectVideo} />
 
                         <BotStarter {...{
                             error,
-                            videoUrl,
-                            setVideoUrl,
+                            selectedVideo,
                             startBot,
-                            isBotRunning
+                            isBotRunning,
+                            notice,
+                            canStartBot
                         }} />
                         {botRun && (
                             <p className={styles.botRunStatus}>
-                                Bot run: {botRun.status}. Replies: {botRun.successCount}, failed: {botRun.failureCount}, skipped: {botRun.skippedCount}.
+                                {t("bot.run.status", {
+                                    title: selectedVideo?.title || botRun.videoId,
+                                    status: botRun.status,
+                                    replies: botRun.successCount,
+                                    failed: botRun.failureCount,
+                                    skipped: botRun.skippedCount
+                                })}
                             </p>
                         )}
                     </div>
