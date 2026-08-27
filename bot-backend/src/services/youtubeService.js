@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 const BotRun = require("../models/BotRun");
+const VideoCatalog = require("../models/VideoCatalog");
 const { getValidAccessToken } = require("./authService");
 const aiProvider = require("./ai/aiProvider");
 const {
@@ -10,7 +11,10 @@ const {
     botMaxCommentsPerRun,
     botMaxPagesPerRun
 } = require("../config/config");
-const { forbidden, notFound, upstream } = require("../utils/errors");
+const { forbidden, notFound, unprocessable, upstream } = require("../utils/errors");
+
+const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
+const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
 
 const createYoutubeClient = async (user) => {
     const accessToken = await getValidAccessToken(user);
@@ -224,6 +228,79 @@ const getUserChannelId = async (user) => {
     return channelId;
 };
 
+const normalizeCatalogText = (value = "") => String(value)
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase();
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const encodeCatalogCursor = (video) => {
+    const payload = JSON.stringify({
+        publishedAt: video.publishedAt ? new Date(video.publishedAt).toISOString() : null,
+        id: String(video._id)
+    });
+
+    return Buffer.from(payload).toString("base64url");
+};
+
+const decodeCatalogCursor = (cursor) => {
+    try {
+        const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+        if (!parsed?.id || !/^[a-f0-9]{24}$/i.test(parsed.id)) {
+            throw new Error("Invalid cursor id");
+        }
+
+        const publishedAt = parsed.publishedAt ? new Date(parsed.publishedAt) : null;
+        if (parsed.publishedAt && Number.isNaN(publishedAt.getTime())) {
+            throw new Error("Invalid cursor date");
+        }
+
+        return { publishedAt, id: parsed.id };
+    } catch (error) {
+        throw unprocessable("INVALID_PAGE_TOKEN", "Invalid page token");
+    }
+};
+
+const toVideoDto = (video) => ({
+    videoId: video.videoId,
+    title: video.title || "",
+    description: video.description || "",
+    publishedAt: video.publishedAt ? new Date(video.publishedAt).toISOString() : null,
+    thumbnail: video.thumbnail || null,
+    duration: video.duration || null,
+    views: video.views || null,
+    likes: video.likes || null,
+    comments: video.comments || null
+});
+
+const createCatalogUpdate = ({ userId, channelId, video, syncedAt }) => ({
+    updateOne: {
+        filter: { userId, videoId: video.videoId },
+        update: {
+            $set: {
+                userId,
+                channelId,
+                videoId: video.videoId,
+                title: video.title,
+                description: video.description,
+                normalizedTitle: normalizeCatalogText(video.title),
+                normalizedDescription: normalizeCatalogText(video.description),
+                publishedAt: video.publishedAt ? new Date(video.publishedAt) : null,
+                thumbnail: video.thumbnail,
+                duration: video.duration,
+                views: video.views,
+                likes: video.likes,
+                comments: video.comments,
+                privacyStatus: video.privacyStatus || null,
+                uploadStatus: video.uploadStatus || null,
+                lastSyncedAt: syncedAt
+            }
+        },
+        upsert: true
+    }
+});
+
 const readYoutubeErrorInfo = async (res) => {
     try {
         const body = await res.json();
@@ -283,7 +360,7 @@ const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
     }
 
     const videoIds = orderedVideoIds.join(",");
-    const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics&id=${videoIds}`, {
+    const detailsRes = await fetch(`${youtubeApiBase}/videos?part=snippet,contentDetails,statistics,status&id=${videoIds}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
@@ -301,7 +378,9 @@ const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
             duration: video.contentDetails?.duration || null,
             views: video.statistics?.viewCount || null,
             likes: video.statistics?.likeCount || null,
-            comments: video.statistics?.commentCount || null
+            comments: video.statistics?.commentCount || null,
+            privacyStatus: video.status?.privacyStatus || null,
+            uploadStatus: video.status?.uploadStatus || null
         }]));
 
     return orderedVideoIds.map(videoId => videosById.get(videoId)).filter(Boolean);
@@ -360,60 +439,126 @@ const getChannelVideos = async (user, uploadsPlaylistId, { maxResults = 12, page
     };
 };
 
-const searchChannelVideos = async (user, channelId, searchQuery, { maxResults = 12, pageToken } = {}) => {
-    const accessToken = await getValidAccessToken(user);
-    const searchParams = new URLSearchParams({
-        part: "snippet",
-        channelId,
-        type: "video",
-        q: searchQuery,
-        order: "relevance",
-        maxResults: String(maxResults)
-    });
+const listCatalogVideos = async (userId, { maxResults = 12, pageToken, searchQuery } = {}) => {
+    const filter = { userId };
+    const normalizedQuery = searchQuery ? normalizeCatalogText(searchQuery) : "";
+
+    if (normalizedQuery) {
+        const safePattern = escapeRegExp(normalizedQuery);
+        filter.$or = [
+            { normalizedTitle: { $regex: safePattern, $options: "i" } },
+            { normalizedDescription: { $regex: safePattern, $options: "i" } }
+        ];
+    }
 
     if (pageToken) {
-        searchParams.set("pageToken", pageToken);
+        const cursor = decodeCatalogCursor(pageToken);
+        const cursorPublishedAt = cursor.publishedAt || new Date(0);
+        filter.$and = [
+            ...(filter.$and || []),
+            {
+                $or: [
+                    { publishedAt: { $lt: cursorPublishedAt } },
+                    { publishedAt: cursor.publishedAt, _id: { $lt: cursor.id } }
+                ]
+            }
+        ];
     }
 
-    const searchRes = await fetch(`${youtubeApiBase}/search?${searchParams.toString()}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-    });
+    const docs = await VideoCatalog.find(filter)
+        .sort({ publishedAt: -1, _id: -1 })
+        .limit(maxResults + 1)
+        .lean();
 
-    if (!searchRes.ok) {
-        await throwYoutubeUpstream(searchRes, "search", "YOUTUBE_SEARCH_FAILED", "Video search is temporarily unavailable");
-    }
-    const searchData = await searchRes.json();
-
-    const pagination = {
-        nextPageToken: searchData.nextPageToken || null,
-        prevPageToken: searchData.prevPageToken || null,
-        pageInfo: searchData.pageInfo || {}
-    };
-
-    const seenVideoIds = new Set();
-    const orderedVideoIds = [];
-
-    for (const item of searchData.items || []) {
-        const videoId = item.id?.videoId;
-        if (!videoId || seenVideoIds.has(videoId)) {
-            continue;
-        }
-
-        seenVideoIds.add(videoId);
-        orderedVideoIds.push(videoId);
-    }
-
-    if (orderedVideoIds.length === 0) {
-        return {
-            videos: [],
-            ...pagination
-        };
-    }
+    const pageDocs = docs.slice(0, maxResults);
+    const hasNextPage = docs.length > maxResults;
+    const totalResults = await VideoCatalog.countDocuments(
+        searchQuery ? { userId, $or: filter.$or } : { userId }
+    );
 
     return {
-        videos: await fetchVideoDetails(accessToken, orderedVideoIds),
-        ...pagination
+        videos: pageDocs.map(toVideoDto),
+        nextPageToken: hasNextPage ? encodeCatalogCursor(pageDocs[pageDocs.length - 1]) : null,
+        prevPageToken: null,
+        pageInfo: {
+            totalResults,
+            resultsPerPage: pageDocs.length,
+            source: "catalog"
+        }
     };
+};
+
+const syncVideoCatalog = async (user, { maxPages = VIDEO_CATALOG_SYNC_MAX_PAGES } = {}) => {
+    const { channelId, uploadsPlaylistId } = await getUserChannelInfo(user);
+    const accessToken = await getValidAccessToken(user);
+    const syncedAt = new Date();
+    let nextPageToken = null;
+    let pagesSynced = 0;
+    let videosSynced = 0;
+    const seenVideoIds = new Set();
+
+    do {
+        const playlistParams = new URLSearchParams({
+            part: "snippet,contentDetails",
+            playlistId: uploadsPlaylistId,
+            maxResults: String(VIDEO_CATALOG_SYNC_PAGE_SIZE)
+        });
+
+        if (nextPageToken) {
+            playlistParams.set("pageToken", nextPageToken);
+        }
+
+        const playlistRes = await fetch(`${youtubeApiBase}/playlistItems?${playlistParams.toString()}`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (!playlistRes.ok) {
+            await throwYoutubeUpstream(playlistRes, "playlistItems", "YOUTUBE_VIDEOS_FAILED", "Failed to sync videos");
+        }
+
+        const playlistData = await playlistRes.json();
+        const orderedVideoIds = [];
+
+        for (const item of playlistData.items || []) {
+            const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+            if (!videoId || seenVideoIds.has(videoId)) {
+                continue;
+            }
+
+            seenVideoIds.add(videoId);
+            orderedVideoIds.push(videoId);
+        }
+
+        const videos = await fetchVideoDetails(accessToken, orderedVideoIds);
+        if (videos.length > 0) {
+            await VideoCatalog.bulkWrite(
+                videos.map(video => createCatalogUpdate({ userId: user._id, channelId, video, syncedAt })),
+                { ordered: false }
+            );
+            videosSynced += videos.length;
+        }
+
+        pagesSynced++;
+        nextPageToken = playlistData.nextPageToken || null;
+    } while (nextPageToken && pagesSynced < maxPages);
+
+    return {
+        channelId,
+        uploadsPlaylistId,
+        videosSynced,
+        pagesSynced,
+        hasMore: Boolean(nextPageToken),
+        lastSyncedAt: syncedAt
+    };
+};
+
+const getCatalogVideos = async (user, { maxResults = 12, pageToken, searchQuery } = {}) => {
+    const existingCount = await VideoCatalog.countDocuments({ userId: user._id });
+    if (existingCount === 0 && !searchQuery) {
+        await syncVideoCatalog(user, { maxPages: 1 });
+    }
+
+    return listCatalogVideos(user._id, { maxResults, pageToken, searchQuery });
 };
 
 module.exports = {
@@ -422,6 +567,8 @@ module.exports = {
     getUserChannelInfo,
     getUserChannelId,
     getChannelVideos,
-    searchChannelVideos,
+    syncVideoCatalog,
+    getCatalogVideos,
+    listCatalogVideos,
     verifyVideoOwnership
 };

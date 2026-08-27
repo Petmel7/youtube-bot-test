@@ -43,10 +43,13 @@
         "noSearchResults": "Keine passenden Videos gefunden",
         "minSearchLength": "Gib mindestens 2 Zeichen zum Suchen ein",
         "searchFailed": "Die Videosuche ist vorübergehend nicht verfügbar. Versuche es erneut oder lösche die Suche, um deine neuesten Uploads zu sehen.",
-        "quotaExceeded": "Das YouTube-Suchkontingent ist vorübergehend erschöpft. Versuche es später erneut oder lösche die Suche, um Uploads zu sehen.",
+        "quotaExceeded": "Das YouTube-API-Kontingent ist vorübergehend erschöpft. Versuche es später erneut oder nutze zwischengespeicherte Videos.",
         "authFailed": "Verbinde YouTube erneut und versuche es noch einmal.",
         "detailsFailed": "Videodetails sind vorübergehend nicht verfügbar. Versuche es später erneut.",
-        "listFailed": "Deine Videos konnten nicht geladen werden. Versuche es später erneut."
+        "listFailed": "Deine Videos konnten nicht geladen werden. Versuche es später erneut.",
+        "refresh": "Videos aktualisieren",
+        "refreshing": "Wird aktualisiert...",
+        "catalogSearch": "Die Suche nutzt deinen zwischengespeicherten Videokatalog. Aktualisiere, um neue Uploads zu synchronisieren."
     },
     "wallet": {
         "title": "Wallet",

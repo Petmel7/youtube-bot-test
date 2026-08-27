@@ -43,10 +43,13 @@
         "noSearchResults": "Aucune vidéo correspondante trouvée",
         "minSearchLength": "Saisissez au moins 2 caractères pour rechercher",
         "searchFailed": "La recherche de vidéos est temporairement indisponible. Réessayez ou effacez la recherche pour parcourir vos dernières mises en ligne.",
-        "quotaExceeded": "Le quota de recherche YouTube est temporairement épuisé. Réessayez plus tard ou effacez la recherche pour parcourir vos vidéos.",
+        "quotaExceeded": "Le quota de l'API YouTube est temporairement épuisé. Réessayez plus tard ou utilisez les vidéos mises en cache.",
         "authFailed": "Reconnectez YouTube et réessayez.",
         "detailsFailed": "Les détails des vidéos sont temporairement indisponibles. Réessayez plus tard.",
-        "listFailed": "Impossible de charger vos vidéos. Réessayez plus tard."
+        "listFailed": "Impossible de charger vos vidéos. Réessayez plus tard.",
+        "refresh": "Actualiser les vidéos",
+        "refreshing": "Actualisation...",
+        "catalogSearch": "La recherche utilise votre catalogue vidéo mis en cache. Actualisez pour synchroniser les mises en ligne récentes."
     },
     "wallet": {
         "title": "Portefeuille",

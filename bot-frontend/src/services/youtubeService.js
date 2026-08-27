@@ -24,3 +24,12 @@ export const fetchMyVideos = async ({ pageToken, maxResults, query } = {}) => {
         return { success: false, videos: [], nextPageToken: null, prevPageToken: null, pageInfo: {}, error: err };
     }
 };
+
+export const refreshMyVideos = async () => {
+    try {
+        const data = await apiRequest("/youtube/my-videos/refresh", { method: "POST" });
+        return { success: true, sync: data.sync || null };
+    } catch (err) {
+        return { success: false, error: err };
+    }
+};

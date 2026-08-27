@@ -1,10 +1,20 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const express = require("express");
+const http = require("node:http");
 
 process.env.YOUTUBE_API_BASE = process.env.YOUTUBE_API_BASE || "https://youtube.test/v3";
 
+const youtubeRoutes = require("../src/routes/youtubeRoutes");
+const errorHandler = require("../src/middleware/errorHandler");
+const VideoCatalog = require("../src/models/VideoCatalog");
 const { validateYoutubeVideosQuery } = require("../src/utils/validators");
-const { getUserChannelInfo, getChannelVideos, searchChannelVideos } = require("../src/services/youtubeService");
+const {
+    getUserChannelInfo,
+    getChannelVideos,
+    listCatalogVideos,
+    syncVideoCatalog
+} = require("../src/services/youtubeService");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -20,6 +30,65 @@ const jsonResponse = (body, ok = true, status = ok ? 200 : 500) => ({
     status,
     json: async () => body
 });
+
+const createQuery = (docs) => ({
+    sort() {
+        return this;
+    },
+    limit(limitArg) {
+        this.limitArg = limitArg;
+        return this;
+    },
+    lean() {
+        return Promise.resolve(docs.slice(0, this.limitArg || docs.length));
+    }
+});
+
+const createApp = () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, res, next) => {
+        const requestUserId = req.get("X-Test-User");
+        req.isAuthenticated = () => Boolean(requestUserId);
+        if (requestUserId) req.user = { _id: requestUserId, id: requestUserId, tokens: user.tokens };
+        next();
+    });
+    app.use("/youtube", youtubeRoutes);
+    app.use(errorHandler);
+    return app;
+};
+
+const request = async (app, { method = "GET", path, userId: requestUserId, headers = {} }) => {
+    const server = app.listen(0);
+    try {
+        const port = server.address().port;
+        return await new Promise((resolve, reject) => {
+            const req = http.request({
+                hostname: "127.0.0.1",
+                port,
+                path,
+                method,
+                headers: {
+                    ...(requestUserId ? { "X-Test-User": requestUserId } : {}),
+                    ...headers
+                }
+            }, (res) => {
+                let rawBody = "";
+                res.setEncoding("utf8");
+                res.on("data", chunk => {
+                    rawBody += chunk;
+                });
+                res.on("end", () => {
+                    resolve({ status: res.statusCode, body: rawBody ? JSON.parse(rawBody) : {} });
+                });
+            });
+            req.on("error", reject);
+            req.end();
+        });
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+};
 
 test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
     assert.deepEqual(validateYoutubeVideosQuery({}), {
@@ -108,7 +177,7 @@ test("getChannelVideos fetches uploads playlist page and returns pagination meta
         }
 
         if (parsed.pathname.endsWith("/videos")) {
-            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics");
+            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics,status");
             assert.equal(parsed.searchParams.get("id"), "video-1,video-2,video-3");
             assert.equal(options.headers.Authorization, "Bearer access-token");
 
@@ -194,65 +263,88 @@ test("getChannelVideos returns empty page without fetching video details", async
     });
 });
 
-test("searchChannelVideos searches within channel and preserves search order", async (t) => {
-    const calls = [];
-    t.mock.method(global, "fetch", async (url, options) => {
-        calls.push({ url: String(url), options });
+test("listCatalogVideos searches cached Cyrillic titles without calling YouTube Search API", async (t) => {
+    const docs = [
+        {
+            _id: "66a000000000000000000002",
+            videoId: "video-old",
+            title: "Я готовлю это блюдо",
+            description: "Домашний рецепт",
+            publishedAt: new Date("2026-08-02T00:00:00.000Z"),
+            thumbnail: null,
+            duration: "PT2M",
+            views: "20",
+            likes: "2",
+            comments: "1"
+        }
+    ];
+
+    t.mock.method(global, "fetch", async (url) => {
+        throw new Error(`Unexpected YouTube call: ${url}`);
+    });
+    t.mock.method(VideoCatalog, "find", (filter) => {
+        assert.equal(String(filter.userId), user._id);
+        assert.equal(filter.$or[0].normalizedTitle.$regex, "готовлю");
+        return createQuery(docs);
+    });
+    t.mock.method(VideoCatalog, "countDocuments", async (filter) => {
+        assert.equal(String(filter.userId), user._id);
+        assert.ok(filter.$or);
+        return 1;
+    });
+
+    const result = await listCatalogVideos(user._id, { maxResults: 12, searchQuery: "готовлю" });
+
+    assert.equal(result.nextPageToken, null);
+    assert.equal(result.pageInfo.source, "catalog");
+    assert.equal(result.pageInfo.totalResults, 1);
+    assert.deepEqual(result.videos.map(video => video.videoId), ["video-old"]);
+});
+
+test("syncVideoCatalog upserts uploads playlist videos without duplicate records", async (t) => {
+    const bulkOps = [];
+    t.mock.method(global, "fetch", async (url) => {
         const parsed = new URL(url);
 
-        if (parsed.pathname.endsWith("/search")) {
-            assert.equal(parsed.searchParams.get("part"), "snippet");
-            assert.equal(parsed.searchParams.get("channelId"), "channel-1");
-            assert.equal(parsed.searchParams.get("type"), "video");
-            assert.equal(parsed.searchParams.get("q"), "Я готовлю это блюдо");
-            assert.equal(parsed.searchParams.get("order"), "relevance");
-            assert.equal(parsed.searchParams.get("maxResults"), "2");
-            assert.equal(parsed.searchParams.get("pageToken"), "SEARCH_PAGE");
-            assert.equal(options.headers.Authorization, "Bearer access-token");
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
 
+        if (parsed.pathname.endsWith("/playlistItems")) {
+            assert.equal(parsed.searchParams.get("playlistId"), "uploads-1");
+            assert.equal(parsed.searchParams.get("maxResults"), "50");
             return jsonResponse({
                 items: [
-                    { id: { videoId: "search-1" } },
-                    { id: { videoId: "search-2" } },
-                    { id: { videoId: "search-1" } }
-                ],
-                nextPageToken: "SEARCH_NEXT",
-                prevPageToken: "SEARCH_PREV",
-                pageInfo: {
-                    totalResults: 6,
-                    resultsPerPage: 2
-                }
+                    { contentDetails: { videoId: "video-1" } },
+                    { contentDetails: { videoId: "video-2" } },
+                    { contentDetails: { videoId: "video-1" } }
+                ]
             });
         }
 
         if (parsed.pathname.endsWith("/videos")) {
-            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics");
-            assert.equal(parsed.searchParams.get("id"), "search-1,search-2");
-            assert.equal(options.headers.Authorization, "Bearer access-token");
-
+            assert.equal(parsed.searchParams.get("part"), "snippet,contentDetails,statistics,status");
+            assert.equal(parsed.searchParams.get("id"), "video-1,video-2");
             return jsonResponse({
                 items: [
                     {
-                        id: "search-2",
-                        snippet: {
-                            title: "Second search result",
-                            description: "Two",
-                            publishedAt: "2026-08-12T00:00:00Z",
-                            thumbnails: { medium: { url: "https://img.test/search-2.jpg" } }
-                        },
+                        id: "video-2",
+                        snippet: { title: "Second", description: "", publishedAt: "2026-08-02T00:00:00Z", thumbnails: {} },
                         contentDetails: { duration: "PT2M" },
-                        statistics: { viewCount: "20", likeCount: "3", commentCount: "4" }
+                        statistics: {},
+                        status: { privacyStatus: "public", uploadStatus: "processed" }
                     },
                     {
-                        id: "search-1",
-                        snippet: {
-                            title: "First search result",
-                            description: "One",
-                            publishedAt: "2026-08-11T00:00:00Z",
-                            thumbnails: { medium: { url: "https://img.test/search-1.jpg" } }
-                        },
+                        id: "video-1",
+                        snippet: { title: "First", description: "", publishedAt: "2026-08-01T00:00:00Z", thumbnails: {} },
                         contentDetails: { duration: "PT1M" },
-                        statistics: { viewCount: "10", likeCount: "2", commentCount: "1" }
+                        statistics: {},
+                        status: { privacyStatus: "public", uploadStatus: "processed" }
                     }
                 ]
             });
@@ -260,57 +352,130 @@ test("searchChannelVideos searches within channel and preserves search order", a
 
         throw new Error(`Unexpected URL: ${url}`);
     });
-
-    const result = await searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", {
-        maxResults: 2,
-        pageToken: "SEARCH_PAGE"
+    t.mock.method(VideoCatalog, "bulkWrite", async (ops, options) => {
+        bulkOps.push(...ops);
+        assert.equal(options.ordered, false);
+        return { modifiedCount: 0, upsertedCount: ops.length };
     });
 
-    assert.equal(calls.length, 2);
-    assert.equal(calls.some(call => new URL(call.url).pathname.endsWith("/playlistItems")), false);
-    assert.equal(result.nextPageToken, "SEARCH_NEXT");
-    assert.equal(result.prevPageToken, "SEARCH_PREV");
-    assert.deepEqual(result.pageInfo, { totalResults: 6, resultsPerPage: 2 });
-    assert.deepEqual(result.videos.map(video => video.videoId), ["search-1", "search-2"]);
-    assert.equal(result.videos[0].title, "First search result");
+    const result = await syncVideoCatalog(user);
+
+    assert.equal(result.videosSynced, 2);
+    assert.equal(result.pagesSynced, 1);
+    assert.equal(result.hasMore, false);
+    assert.equal(bulkOps.length, 2);
+    assert.deepEqual(bulkOps.map(op => op.updateOne.filter.videoId), ["video-1", "video-2"]);
+    assert.equal(bulkOps[0].updateOne.filter.userId, user._id);
+    assert.equal(bulkOps[0].updateOne.update.$set.normalizedTitle, "first");
 });
 
-test("searchChannelVideos maps YouTube quota failure to safe error code", async (t) => {
+test("syncVideoCatalog maps YouTube quota failures to safe error code", async (t) => {
     t.mock.method(console, "warn", () => {});
     t.mock.method(global, "fetch", async (url) => {
         const parsed = new URL(url);
-        assert.equal(parsed.pathname.endsWith("/search"), true);
 
-        return jsonResponse({
-            error: {
-                code: 403,
-                errors: [{ reason: "quotaExceeded" }]
-            }
-        }, false, 403);
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        if (parsed.pathname.endsWith("/playlistItems")) {
+            return jsonResponse({
+                error: {
+                    code: 429,
+                    errors: [{ reason: "rateLimitExceeded" }]
+                }
+            }, false, 429);
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
     });
 
     await assert.rejects(
-        () => searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", { maxResults: 2 }),
+        () => syncVideoCatalog(user),
         { code: "YOUTUBE_QUOTA_EXCEEDED", status: 502 }
     );
 });
 
-test("searchChannelVideos maps YouTube search failure to safe search error code", async (t) => {
-    t.mock.method(console, "warn", () => {});
+test("POST /youtube/my-videos/refresh requires auth and write header", async (t) => {
+    const app = createApp();
+
+    const unauthenticated = await request(app, { method: "POST", path: "/youtube/my-videos/refresh" });
+    assert.equal(unauthenticated.status, 401);
+
+    const missingHeader = await request(app, {
+        method: "POST",
+        path: "/youtube/my-videos/refresh",
+        userId: user._id
+    });
+    assert.equal(missingHeader.status, 403);
+    assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+
     t.mock.method(global, "fetch", async (url) => {
         const parsed = new URL(url);
-        assert.equal(parsed.pathname.endsWith("/search"), true);
-
-        return jsonResponse({
-            error: {
-                code: 400,
-                errors: [{ reason: "invalidSearchFilter" }]
-            }
-        }, false, 400);
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+        if (parsed.pathname.endsWith("/playlistItems")) {
+            return jsonResponse({ items: [] });
+        }
+        throw new Error(`Unexpected URL: ${url}`);
+    });
+    t.mock.method(VideoCatalog, "bulkWrite", async () => {
+        throw new Error("bulkWrite should not run for an empty sync page");
     });
 
-    await assert.rejects(
-        () => searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", { maxResults: 2 }),
-        { code: "YOUTUBE_SEARCH_FAILED", status: 502 }
-    );
+    const ok = await request(app, {
+        method: "POST",
+        path: "/youtube/my-videos/refresh",
+        userId: user._id,
+        headers: { "X-CSRF-Protection": "1" }
+    });
+
+    assert.equal(ok.status, 202);
+    assert.equal(ok.body.success, true);
+    assert.equal(ok.body.sync.pagesSynced, 1);
+});
+
+test("GET /youtube/my-videos query reads catalog and does not call YouTube search", async (t) => {
+    const app = createApp();
+    t.mock.method(global, "fetch", async (url) => {
+        throw new Error(`Unexpected YouTube call: ${url}`);
+    });
+    t.mock.method(VideoCatalog, "find", (filter) => {
+        assert.equal(String(filter.userId), user._id);
+        assert.equal(filter.$or[0].normalizedTitle.$regex, "готовлю");
+        return createQuery([{
+            _id: "66a000000000000000000002",
+            videoId: "video-old",
+            title: "Я готовлю это блюдо",
+            description: "",
+            publishedAt: new Date("2026-08-02T00:00:00.000Z"),
+            thumbnail: null,
+            duration: null,
+            views: null,
+            likes: null,
+            comments: null
+        }]);
+    });
+    t.mock.method(VideoCatalog, "countDocuments", async () => 1);
+
+    const response = await request(app, {
+        path: "/youtube/my-videos?maxResults=12&query=%D0%B3%D0%BE%D1%82%D0%BE%D0%B2%D0%BB%D1%8E",
+        userId: user._id
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.success, true);
+    assert.deepEqual(response.body.videos.map(video => video.videoId), ["video-old"]);
+    assert.equal(response.body.pageInfo.source, "catalog");
 });

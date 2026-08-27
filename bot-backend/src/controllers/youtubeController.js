@@ -1,16 +1,27 @@
 
-const { getUserChannelInfo, getChannelVideos, searchChannelVideos } = require("../services/youtubeService");
+const { getCatalogVideos, syncVideoCatalog } = require("../services/youtubeService");
 const { validateYoutubeVideosQuery } = require("../utils/validators");
 
 const fetchUserVideos = async (req, res) => {
     const user = req.user;
     const { maxResults, pageToken, searchQuery } = validateYoutubeVideosQuery(req.query);
-    const { channelId, uploadsPlaylistId } = await getUserChannelInfo(user);
-    const result = searchQuery
-        ? await searchChannelVideos(user, channelId, searchQuery, { maxResults, pageToken })
-        : await getChannelVideos(user, uploadsPlaylistId, { maxResults, pageToken });
+    const result = await getCatalogVideos(user, { maxResults, pageToken, searchQuery });
 
     res.json({ success: true, ...result });
 };
 
-module.exports = { fetchUserVideos };
+const refreshUserVideos = async (req, res) => {
+    const result = await syncVideoCatalog(req.user);
+
+    res.status(202).json({
+        success: true,
+        sync: {
+            videosSynced: result.videosSynced,
+            pagesSynced: result.pagesSynced,
+            hasMore: result.hasMore,
+            lastSyncedAt: result.lastSyncedAt.toISOString()
+        }
+    });
+};
+
+module.exports = { fetchUserVideos, refreshUserVideos };

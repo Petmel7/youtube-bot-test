@@ -29,6 +29,28 @@
     font-size: 22px;
 }
 
+.refreshButton {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.refreshButton:hover:not(:disabled) {
+    border-color: #1e90ff;
+    color: #1e90ff;
+}
+
+.refreshButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .searchBar {
     display: grid;
     gap: 6px;
@@ -199,6 +221,7 @@
 
 :global(body.dark-mode) .videoItem,
 :global(body.dark-mode) .loadMoreButton,
+:global(body.dark-mode) .refreshButton,
 :global(body.dark-mode) .searchInput,
 :global(body.dark-mode) .clearSearchButton {
     border-color: #3d3d3d;
@@ -219,6 +242,15 @@
 }
 
 @media (max-width: 520px) {
+    .header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .refreshButton {
+        width: 100%;
+    }
+
     .searchControl {
         flex-direction: column;
     }

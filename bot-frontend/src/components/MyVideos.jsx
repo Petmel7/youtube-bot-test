@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MdLiveTv } from "react-icons/md";
 import { useTranslation } from "react-i18next";
-import { fetchMyVideos } from "../services/youtubeService";
+import { fetchMyVideos, refreshMyVideos } from "../services/youtubeService";
 import styles from "../styles/myVideos.module.css";
 
 const maxResults = 12;
@@ -66,6 +66,7 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
     const [pageInfo, setPageInfo] = useState({});
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const pendingPageTokenRef = useRef(null);
     const requestIdRef = useRef(0);
@@ -149,6 +150,25 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
         setSearchInput("");
     };
 
+    const handleRefreshVideos = async () => {
+        setRefreshing(true);
+        setErrorMessage("");
+
+        const res = await refreshMyVideos();
+        if (res.success) {
+            pendingPageTokenRef.current = null;
+            setVideos([]);
+            setNextPageToken(null);
+            setPageInfo({});
+            setLoadingMore(false);
+            await loadVideos({ searchQuery: debouncedSearchQuery });
+        } else {
+            setErrorMessage(getVideoErrorMessage(res.error, t));
+        }
+
+        setRefreshing(false);
+    };
+
     return (
         <section className={styles.myVideos}>
             <div className={styles.header}>
@@ -156,6 +176,14 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                     <MdLiveTv className={styles.icon} />
                     <h2>{t("my.videos")}</h2>
                 </div>
+                <button
+                    type="button"
+                    className={styles.refreshButton}
+                    onClick={handleRefreshVideos}
+                    disabled={refreshing || loading}
+                >
+                    {refreshing ? t("videos.refreshing") : t("videos.refresh")}
+                </button>
             </div>
 
             <div className={styles.searchBar}>
@@ -183,6 +211,9 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                 </div>
                 {showSearchHint && (
                     <p className={styles.searchHint}>{t("videos.minSearchLength")}</p>
+                )}
+                {!showSearchHint && (
+                    <p className={styles.searchHint}>{t("videos.catalogSearch")}</p>
                 )}
             </div>
 

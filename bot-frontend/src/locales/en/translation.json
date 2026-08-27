@@ -43,10 +43,13 @@
         "noSearchResults": "No matching videos found",
         "minSearchLength": "Type at least 2 characters to search",
         "searchFailed": "Video search is temporarily unavailable. Try again or clear search to browse your latest uploads.",
-        "quotaExceeded": "YouTube search quota is temporarily exhausted. Try again later or clear search to browse uploads.",
+        "quotaExceeded": "YouTube API quota is temporarily exhausted. Try again later or use cached videos.",
         "authFailed": "Reconnect YouTube and try again.",
         "detailsFailed": "Video details are temporarily unavailable. Try again later.",
-        "listFailed": "Could not load your videos. Try again later."
+        "listFailed": "Could not load your videos. Try again later.",
+        "refresh": "Refresh videos",
+        "refreshing": "Refreshing...",
+        "catalogSearch": "Search uses your cached video catalog. Refresh to sync recent uploads."
     },
     "wallet": {
         "title": "Wallet",
