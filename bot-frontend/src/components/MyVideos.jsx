@@ -40,6 +40,23 @@ const appendUniqueVideos = (currentVideos, nextVideos) => {
     return [...currentVideos, ...uniqueNextVideos];
 };
 
+const getVideoErrorMessage = (error, t) => {
+    switch (error?.code) {
+        case "YOUTUBE_SEARCH_FAILED":
+            return t("videos.searchFailed");
+        case "YOUTUBE_QUOTA_EXCEEDED":
+            return t("videos.quotaExceeded");
+        case "YOUTUBE_AUTH_FAILED":
+            return t("videos.authFailed");
+        case "YOUTUBE_VIDEO_DETAILS_FAILED":
+            return t("videos.detailsFailed");
+        case "YOUTUBE_VIDEOS_FAILED":
+            return t("videos.listFailed");
+        default:
+            return error?.message || t("videos.error");
+    }
+};
+
 const MyVideos = ({ selectedVideo, onSelectVideo }) => {
     const { t } = useTranslation();
     const [searchInput, setSearchInput] = useState("");
@@ -95,7 +112,7 @@ const MyVideos = ({ selectedVideo, onSelectVideo }) => {
                     setNextPageToken(null);
                     setPageInfo({});
                 }
-                setErrorMessage(res.error?.message || t("videos.error"));
+                setErrorMessage(getVideoErrorMessage(res.error, t));
             }
         } finally {
             if (pendingPageTokenRef.current === requestKey) {

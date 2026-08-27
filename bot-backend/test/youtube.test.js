@@ -15,8 +15,9 @@ const user = {
     }
 };
 
-const jsonResponse = (body, ok = true) => ({
+const jsonResponse = (body, ok = true, status = ok ? 200 : 500) => ({
     ok,
+    status,
     json: async () => body
 });
 
@@ -30,6 +31,11 @@ test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
         maxResults: 25,
         pageToken: "CAUQAA",
         searchQuery: "launch vlog"
+    });
+    assert.deepEqual(validateYoutubeVideosQuery({ q: "  Я готовлю это блюдо  " }), {
+        maxResults: 12,
+        pageToken: undefined,
+        searchQuery: "Я готовлю это блюдо"
     });
 
     assert.throws(() => validateYoutubeVideosQuery({ maxResults: "0" }), { code: "INVALID_MAX_RESULTS" });
@@ -198,7 +204,7 @@ test("searchChannelVideos searches within channel and preserves search order", a
             assert.equal(parsed.searchParams.get("part"), "snippet");
             assert.equal(parsed.searchParams.get("channelId"), "channel-1");
             assert.equal(parsed.searchParams.get("type"), "video");
-            assert.equal(parsed.searchParams.get("q"), "launch vlog");
+            assert.equal(parsed.searchParams.get("q"), "Я готовлю это блюдо");
             assert.equal(parsed.searchParams.get("order"), "relevance");
             assert.equal(parsed.searchParams.get("maxResults"), "2");
             assert.equal(parsed.searchParams.get("pageToken"), "SEARCH_PAGE");
@@ -255,7 +261,7 @@ test("searchChannelVideos searches within channel and preserves search order", a
         throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const result = await searchChannelVideos(user, "channel-1", "launch vlog", {
+    const result = await searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", {
         maxResults: 2,
         pageToken: "SEARCH_PAGE"
     });
@@ -267,4 +273,44 @@ test("searchChannelVideos searches within channel and preserves search order", a
     assert.deepEqual(result.pageInfo, { totalResults: 6, resultsPerPage: 2 });
     assert.deepEqual(result.videos.map(video => video.videoId), ["search-1", "search-2"]);
     assert.equal(result.videos[0].title, "First search result");
+});
+
+test("searchChannelVideos maps YouTube quota failure to safe error code", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+        assert.equal(parsed.pathname.endsWith("/search"), true);
+
+        return jsonResponse({
+            error: {
+                code: 403,
+                errors: [{ reason: "quotaExceeded" }]
+            }
+        }, false, 403);
+    });
+
+    await assert.rejects(
+        () => searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", { maxResults: 2 }),
+        { code: "YOUTUBE_QUOTA_EXCEEDED", status: 502 }
+    );
+});
+
+test("searchChannelVideos maps YouTube search failure to safe search error code", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+        assert.equal(parsed.pathname.endsWith("/search"), true);
+
+        return jsonResponse({
+            error: {
+                code: 400,
+                errors: [{ reason: "invalidSearchFilter" }]
+            }
+        }, false, 400);
+    });
+
+    await assert.rejects(
+        () => searchChannelVideos(user, "channel-1", "Я готовлю это блюдо", { maxResults: 2 }),
+        { code: "YOUTUBE_SEARCH_FAILED", status: 502 }
+    );
 });

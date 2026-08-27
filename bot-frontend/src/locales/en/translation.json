@@ -41,7 +41,12 @@
         "clearSearch": "Clear search",
         "searching": "Searching videos...",
         "noSearchResults": "No matching videos found",
-        "minSearchLength": "Type at least 2 characters to search"
+        "minSearchLength": "Type at least 2 characters to search",
+        "searchFailed": "Video search is temporarily unavailable. Try again or clear search to browse your latest uploads.",
+        "quotaExceeded": "YouTube search quota is temporarily exhausted. Try again later or clear search to browse uploads.",
+        "authFailed": "Reconnect YouTube and try again.",
+        "detailsFailed": "Video details are temporarily unavailable. Try again later.",
+        "listFailed": "Could not load your videos. Try again later."
     },
     "wallet": {
         "title": "Wallet",

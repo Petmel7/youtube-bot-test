@@ -200,7 +200,9 @@ const getUserChannelInfo = async (user) => {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!res.ok) throw upstream("YOUTUBE_CHANNEL_FAILED", "Failed to fetch channel details");
+    if (!res.ok) {
+        await throwYoutubeUpstream(res, "channels", "YOUTUBE_CHANNEL_FAILED", "Failed to fetch channel details");
+    }
     const data = await res.json();
     const channel = data.items?.[0];
 
@@ -222,6 +224,59 @@ const getUserChannelId = async (user) => {
     return channelId;
 };
 
+const readYoutubeErrorInfo = async (res) => {
+    try {
+        const body = await res.json();
+        const error = body?.error || {};
+        const reason = error.errors?.[0]?.reason || error.status || null;
+
+        return {
+            status: res.status || null,
+            providerCode: error.code || res.status || null,
+            reason
+        };
+    } catch (error) {
+        return {
+            status: res.status || null,
+            providerCode: res.status || null,
+            reason: null
+        };
+    }
+};
+
+const isYoutubeQuotaFailure = (info) => {
+    const reason = String(info.reason || "").toLowerCase();
+    return reason.includes("quota") || reason.includes("ratelimit") || reason.includes("ratelimitexceeded");
+};
+
+const isYoutubeAuthFailure = (info) => {
+    const reason = String(info.reason || "").toLowerCase();
+    return info.status === 401
+        || reason.includes("auth")
+        || reason.includes("credential")
+        || reason.includes("unauthorized");
+};
+
+const throwYoutubeUpstream = async (res, endpointKind, code, message) => {
+    const info = await readYoutubeErrorInfo(res);
+    console.warn("YouTube upstream request failed", {
+        endpointKind,
+        status: info.status,
+        providerCode: info.providerCode,
+        reason: info.reason
+    });
+
+    if (isYoutubeAuthFailure(info)) {
+        throw upstream("YOUTUBE_AUTH_FAILED", "Reconnect YouTube and try again");
+    }
+
+    if (isYoutubeQuotaFailure(info)) {
+        throw upstream("YOUTUBE_QUOTA_EXCEEDED", "YouTube API quota exceeded. Try again later.");
+    }
+
+    throw upstream(code, message);
+};
+
 const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
     if (orderedVideoIds.length === 0) {
         return [];
@@ -232,7 +287,9 @@ const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!detailsRes.ok) throw upstream("YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
+    if (!detailsRes.ok) {
+        await throwYoutubeUpstream(detailsRes, "videos", "YOUTUBE_VIDEO_DETAILS_FAILED", "Failed to fetch video details");
+    }
     const detailsData = await detailsRes.json();
 
     const videosById = new Map((detailsData.items || []).map(video => [video.id, {
@@ -266,7 +323,9 @@ const getChannelVideos = async (user, uploadsPlaylistId, { maxResults = 12, page
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!playlistRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
+    if (!playlistRes.ok) {
+        await throwYoutubeUpstream(playlistRes, "playlistItems", "YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
+    }
     const playlistData = await playlistRes.json();
 
     const pagination = {
@@ -320,7 +379,9 @@ const searchChannelVideos = async (user, channelId, searchQuery, { maxResults = 
         headers: { Authorization: `Bearer ${accessToken}` }
     });
 
-    if (!searchRes.ok) throw upstream("YOUTUBE_VIDEOS_FAILED", "Failed to fetch videos");
+    if (!searchRes.ok) {
+        await throwYoutubeUpstream(searchRes, "search", "YOUTUBE_SEARCH_FAILED", "Video search is temporarily unavailable");
+    }
     const searchData = await searchRes.json();
 
     const pagination = {
