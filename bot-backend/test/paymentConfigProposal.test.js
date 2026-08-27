@@ -291,7 +291,16 @@ test("payment config activation writes active config and affects future PaymentI
         }),
         payerChallengeService: {
             async verifyAndUseChallenge() {
-                return { payerAddress, challenge: { _id: payerChallengeId, namespace: "eip155" } };
+                return {
+                    payerAddress,
+                    challenge: {
+                        _id: payerChallengeId,
+                        paymentMethodId: "base-mainnet-usdc",
+                        namespace: "eip155",
+                        networkId: "8453",
+                        caipNetworkId: "eip155:8453"
+                    }
+                };
             }
         },
         config: envConfig(),

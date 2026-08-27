@@ -75,9 +75,11 @@ const createPaymentController = (
         assertObjectBody(req.body);
 
         const namespace = validatePaymentNamespace(req.body.namespace);
+        const paymentMethodId = validatePaymentMethodId(req.body.paymentMethodId);
         const payerAddress = validatePayerAddress(req.body.payerAddress, namespace);
         const { challenge } = await payerChallengeService.createChallenge({
             userId: getUserId(req),
+            paymentMethodId,
             namespace,
             payerAddress
         });

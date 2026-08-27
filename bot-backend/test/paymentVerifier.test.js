@@ -9,6 +9,7 @@ const {
     createPaymentVerifier
 } = require("../src/services/payments/paymentVerifier");
 const { createSolanaPaymentVerifier } = require("../src/services/payments/solanaPaymentVerifier");
+const { findTokenTransfer } = require("../src/services/payments/solanaProvider");
 
 const baseUsdcAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const baseSepoliaUsdcAddress = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
@@ -44,6 +45,7 @@ const txHash = `0x${"a".repeat(64)}`;
 const solanaSignature = encodeBase58(Buffer.alloc(64, 7));
 const solanaPayerAddress = "9xQeWvG816bUx9EPfDTwBX7VgQZnE8qNvSgtV6fSTH3";
 const solanaTreasuryAddress = "8qbHbw2DZ7YFgfTwD5WfoG5f8XjQwP36N3WBsAtJLWqe";
+const solanaOtherAddress = "7wB2rYAmxScuz21u6dE3x6Lj7cxQG54YNgQUL4yMQkPr";
 const solanaDevnetUsdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const transferInterface = new Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
@@ -162,6 +164,119 @@ const makeSolanaProvider = ({
     },
     findTokenTransfer() {
         return transfer;
+    }
+});
+
+const makeParsedSolanaTransferTransaction = ({
+    sourceOwner = solanaPayerAddress,
+    destinationOwner = solanaTreasuryAddress,
+    authority = solanaPayerAddress,
+    sourceTokenAccount = "SrcToken111111111111111111111111111111111",
+    destinationTokenAccount = "DstToken111111111111111111111111111111111",
+    amount = "5000000",
+    mintAddress = solanaDevnetUsdcMint,
+    ambiguous = false
+} = {}) => ({
+    slot: 123,
+    transaction: {
+        message: {
+            accountKeys: [
+                { pubkey: sourceTokenAccount },
+                { pubkey: destinationTokenAccount },
+                { pubkey: "OtherSrc11111111111111111111111111111111" },
+                { pubkey: "OtherDst11111111111111111111111111111111" }
+            ],
+            instructions: [{
+                program: "spl-token",
+                parsed: {
+                    type: "transferChecked",
+                    info: {
+                        source: sourceTokenAccount,
+                        mint: mintAddress,
+                        destination: destinationTokenAccount,
+                        authority,
+                        tokenAmount: { amount, decimals: 6 }
+                    }
+                }
+            }, ...(ambiguous ? [{
+                program: "spl-token",
+                parsed: {
+                    type: "transferChecked",
+                    info: {
+                        source: sourceTokenAccount,
+                        mint: mintAddress,
+                        destination: destinationTokenAccount,
+                        authority,
+                        tokenAmount: { amount, decimals: 6 }
+                    }
+                }
+            }] : [])]
+        }
+    },
+    meta: {
+        err: null,
+        preTokenBalances: [
+            { accountIndex: 0, mint: mintAddress, owner: sourceOwner, uiTokenAmount: { amount } },
+            { accountIndex: 1, mint: mintAddress, owner: destinationOwner, uiTokenAmount: { amount: "0" } }
+        ],
+        postTokenBalances: [
+            { accountIndex: 0, mint: mintAddress, owner: sourceOwner, uiTokenAmount: { amount: "0" } },
+            { accountIndex: 1, mint: mintAddress, owner: destinationOwner, uiTokenAmount: { amount } }
+        ]
+    }
+});
+
+const makeMisattributedSolanaBundle = () => ({
+    slot: 123,
+    transaction: {
+        message: {
+            accountKeys: [
+                { pubkey: "PayerAta11111111111111111111111111111111" },
+                { pubkey: "OtherAta11111111111111111111111111111111" },
+                { pubkey: "OtherSrc11111111111111111111111111111111" },
+                { pubkey: "TreasuryAta111111111111111111111111111111" }
+            ],
+            instructions: [{
+                program: "spl-token",
+                parsed: {
+                    type: "transferChecked",
+                    info: {
+                        source: "PayerAta11111111111111111111111111111111",
+                        mint: solanaDevnetUsdcMint,
+                        destination: "OtherAta11111111111111111111111111111111",
+                        authority: solanaPayerAddress,
+                        tokenAmount: { amount: "5000000", decimals: 6 }
+                    }
+                }
+            }, {
+                program: "spl-token",
+                parsed: {
+                    type: "transferChecked",
+                    info: {
+                        source: "OtherSrc11111111111111111111111111111111",
+                        mint: solanaDevnetUsdcMint,
+                        destination: "TreasuryAta111111111111111111111111111111",
+                        authority: solanaOtherAddress,
+                        tokenAmount: { amount: "5000000", decimals: 6 }
+                    }
+                }
+            }]
+        }
+    },
+    meta: {
+        err: null,
+        preTokenBalances: [
+            { accountIndex: 0, mint: solanaDevnetUsdcMint, owner: solanaPayerAddress, uiTokenAmount: { amount: "5000000" } },
+            { accountIndex: 1, mint: solanaDevnetUsdcMint, owner: solanaOtherAddress, uiTokenAmount: { amount: "0" } },
+            { accountIndex: 2, mint: solanaDevnetUsdcMint, owner: solanaOtherAddress, uiTokenAmount: { amount: "5000000" } },
+            { accountIndex: 3, mint: solanaDevnetUsdcMint, owner: solanaTreasuryAddress, uiTokenAmount: { amount: "0" } }
+        ],
+        postTokenBalances: [
+            { accountIndex: 0, mint: solanaDevnetUsdcMint, owner: solanaPayerAddress, uiTokenAmount: { amount: "0" } },
+            { accountIndex: 1, mint: solanaDevnetUsdcMint, owner: solanaOtherAddress, uiTokenAmount: { amount: "5000000" } },
+            { accountIndex: 2, mint: solanaDevnetUsdcMint, owner: solanaOtherAddress, uiTokenAmount: { amount: "0" } },
+            { accountIndex: 3, mint: solanaDevnetUsdcMint, owner: solanaTreasuryAddress, uiTokenAmount: { amount: "5000000" } }
+        ]
     }
 });
 
@@ -346,6 +461,33 @@ test("PaymentVerifier accepts configured Base Sepolia chain and token", async ()
     assert.equal(result.outcome, PAYMENT_OUTCOMES.VERIFIED);
     assert.equal(result.chainId, 84532);
     assert.equal(result.tokenAddress, baseSepoliaUsdcAddress);
+});
+
+test("PaymentVerifier resolves provider RPC from server config when intent snapshot omits rpcUrl", async () => {
+    let providerFactoryMethod = null;
+    const snapshotWithoutRpc = methodSnapshot();
+    delete snapshotWithoutRpc.rpcUrl;
+
+    const verified = await createPaymentVerifier({
+        config: {
+            ...config,
+            methodsJson: JSON.stringify([{
+                id: "base-mainnet-usdc",
+                enabled: true,
+                rpcUrl: "https://server-side-rpc.example.invalid/key",
+                treasuryAddress,
+                confirmations: 60
+            }])
+        },
+        providerFactory(method) {
+            providerFactoryMethod = method;
+            return makeProvider();
+        }
+    }).verifyPaymentIntent(makeIntent({ paymentMethodSnapshot: snapshotWithoutRpc }));
+
+    assert.equal(verified.outcome, PAYMENT_OUTCOMES.VERIFIED);
+    assert.equal(providerFactoryMethod.rpcUrl, "https://server-side-rpc.example.invalid/key");
+    assert.equal(snapshotWithoutRpc.rpcUrl, undefined);
 });
 
 test("PaymentVerifier accepts configured Ethereum mainnet USDC transfer", async () => {
@@ -1042,6 +1184,51 @@ test("Solana verifier accepts finalized SPL token transfer from bound payer", as
     assert.equal(result.fromAddress, solanaPayerAddress);
     assert.equal(result.verifiedTokenAmountBaseUnits, "5000000");
     assert.equal(result.transactionStatus, "SUCCESS");
+});
+
+test("Solana verifier uses instruction-level SPL transfer proof instead of balance deltas", async () => {
+    const validTransaction = makeParsedSolanaTransferTransaction();
+    const valid = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({
+            transaction: validTransaction,
+            transfer: findTokenTransfer(validTransaction, {
+                mintAddress: solanaDevnetUsdcMint,
+                sourceOwner: solanaPayerAddress,
+                destinationOwner: solanaTreasuryAddress
+            })
+        })
+    }).verifyPaymentIntent(makeSolanaIntent());
+
+    assert.equal(valid.outcome, PAYMENT_OUTCOMES.VERIFIED);
+
+    const bundled = makeMisattributedSolanaBundle();
+    const bundledResult = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({
+            transaction: bundled,
+            transfer: findTokenTransfer(bundled, {
+                mintAddress: solanaDevnetUsdcMint,
+                sourceOwner: solanaPayerAddress,
+                destinationOwner: solanaTreasuryAddress
+            })
+        })
+    }).verifyPaymentIntent(makeSolanaIntent());
+
+    assert.equal(bundledResult.outcome, PAYMENT_OUTCOMES.REJECTED);
+    assert.equal(bundledResult.code, PAYMENT_VERIFICATION_CODES.TRANSFER_NOT_FOUND);
+
+    const ambiguousTransaction = makeParsedSolanaTransferTransaction({ ambiguous: true });
+    const ambiguousResult = await createSolanaPaymentVerifier({
+        provider: makeSolanaProvider({
+            transaction: ambiguousTransaction,
+            transfer: findTokenTransfer(ambiguousTransaction, {
+                mintAddress: solanaDevnetUsdcMint,
+                sourceOwner: solanaPayerAddress,
+                destinationOwner: solanaTreasuryAddress
+            })
+        })
+    }).verifyPaymentIntent(makeSolanaIntent());
+
+    assert.equal(ambiguousResult.code, PAYMENT_VERIFICATION_CODES.TRANSFER_AMBIGUOUS);
 });
 
 test("Solana verifier rejects wrong mint, destination, and underpayment safely", async () => {

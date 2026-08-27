@@ -113,6 +113,12 @@ const toPaymentPayerChallengeDto = (challenge) => {
 
     return {
         id: String(challenge._id || challenge.id),
+        paymentMethodId: challenge.paymentMethodId,
+        namespace: challenge.namespace || "eip155",
+        networkId: challenge.networkId || null,
+        caipNetworkId: challenge.caipNetworkId || null,
+        chainId: challenge.chainId ?? null,
+        tokenSymbol: challenge.tokenSymbol || null,
         payerAddress: challenge.payerAddress,
         message: challenge.message,
         expiresAt: challenge.expiresAt

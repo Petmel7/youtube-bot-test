@@ -18,10 +18,10 @@ export const fetchPaymentMethods = async () => {
     };
 };
 
-export const createPayerChallenge = async (payerAddress, namespace = "eip155") => {
+export const createPayerChallenge = async ({ payerAddress, paymentMethodId, namespace = "eip155" }) => {
     const data = await apiRequest("/api/payments/payer-challenges", {
         method: "POST",
-        body: JSON.stringify({ payerAddress, namespace })
+        body: JSON.stringify({ payerAddress, paymentMethodId, namespace })
     });
 
     return data.challenge;

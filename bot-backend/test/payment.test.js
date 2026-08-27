@@ -185,13 +185,21 @@ const createFakePaymentIntentModel = () => {
     return model;
 };
 
-const createFakePayerChallengeService = () => ({
+const createFakePayerChallengeService = (challengeOverrides = {}) => ({
     calls: [],
     async verifyAndUseChallenge(args) {
         this.calls.push(args);
+        const allowed = allowedPaymentMethods[args.paymentMethodId || "base-mainnet-usdc"] || allowedPaymentMethods["base-mainnet-usdc"];
         return {
             payerAddress,
-            challenge: { _id: args.payerChallengeId }
+            challenge: {
+                _id: args.payerChallengeId,
+                paymentMethodId: allowed.id,
+                namespace: allowed.namespace || "eip155",
+                networkId: allowed.networkId || String(allowed.chainId),
+                caipNetworkId: allowed.caipNetworkId,
+                ...challengeOverrides
+            }
         };
     }
 });
@@ -900,13 +908,16 @@ test("payment payer challenge verifies signature, expiry, and one-time use", asy
     const ChallengeModel = createFakeChallengeModel();
     const service = createPaymentPayerChallengeService({
         ChallengeModel,
+        config: validPaymentConfig(),
         now: () => now,
         randomBytes: () => Buffer.from("123456789012345678901234")
     });
 
-    const { challenge } = await service.createChallenge({ userId, payerAddress: wallet.address });
+    const { challenge } = await service.createChallenge({ userId, payerAddress: wallet.address, paymentMethodId: "base-mainnet-usdc" });
     assert.equal(challenge.payerAddress, normalizedAddress);
     assert.equal(challenge.message.includes("Bind this wallet as payer for YouTube Bot credit purchase"), true);
+    assert.equal(challenge.message.includes("Payment method: base-mainnet-usdc"), true);
+    assert.equal(challenge.message.includes("CAIP network ID: eip155:8453"), true);
     assert.equal(challenge.message.includes(String(userId)), true);
 
     const signature = await wallet.signMessage(challenge.message);
@@ -936,6 +947,12 @@ test("payment payer challenge verifies signature, expiry, and one-time use", asy
     };
     expiredChallenge.message = buildChallengeMessage({
         userId,
+        paymentMethodId: "base-mainnet-usdc",
+        namespace: "eip155",
+        networkId: "8453",
+        caipNetworkId: "eip155:8453",
+        chainId: 8453,
+        tokenSymbol: "USDC",
         payerAddress: expiredChallenge.payerAddress,
         nonce: expiredChallenge.nonce,
         expiresAt: expiredChallenge.expiresAt
@@ -958,6 +975,12 @@ test("payment payer challenge verifies signature, expiry, and one-time use", asy
     };
     invalidChallenge.message = buildChallengeMessage({
         userId,
+        paymentMethodId: "base-mainnet-usdc",
+        namespace: "eip155",
+        networkId: "8453",
+        caipNetworkId: "eip155:8453",
+        chainId: 8453,
+        tokenSymbol: "USDC",
         payerAddress: invalidChallenge.payerAddress,
         nonce: invalidChallenge.nonce,
         expiresAt: invalidChallenge.expiresAt
@@ -979,12 +1002,24 @@ test("Solana payer challenge verifies valid signature and rejects invalid signat
     const now = new Date("2026-08-17T10:00:00.000Z");
     const challengeService = createPaymentPayerChallengeService({
         ChallengeModel: createFakeChallengeModel(),
+        config: validPaymentConfig({
+            allowTestnetPayments: true,
+            methodsJson: JSON.stringify([{
+                id: "solana-devnet-usdc",
+                enabled: true,
+                rpcUrl: "https://api.devnet.solana.com",
+                treasuryAddress: solanaTreasuryAddress,
+                confirmations: 1
+            }]),
+            defaultMethodId: "solana-devnet-usdc"
+        }),
         now: () => now,
         randomBytes: () => Buffer.from("1".repeat(48), "hex")
     });
 
     const { challenge } = await challengeService.createChallenge({
         userId,
+        paymentMethodId: "solana-devnet-usdc",
         namespace: "solana",
         payerAddress: payerPublicKey
     });
@@ -1006,6 +1041,7 @@ test("Solana payer challenge verifies valid signature and rejects invalid signat
 
     const { challenge: secondChallenge } = await challengeService.createChallenge({
         userId,
+        paymentMethodId: "solana-devnet-usdc",
         namespace: "solana",
         payerAddress: payerPublicKey
     });
@@ -1054,6 +1090,7 @@ test("payment intent creation stores backend-owned immutable snapshot and expira
     assert.equal(result.intent.paymentMethodSnapshot.production, true);
     assert.equal(result.intent.paymentMethodSnapshot.testnet, false);
     assert.equal(result.intent.paymentMethodSnapshot.smoke, false);
+    assert.equal(result.intent.paymentMethodSnapshot.rpcUrl, undefined);
     assert.equal(result.intent.namespace, "eip155");
     assert.equal(result.intent.networkId, "8453");
     assert.equal(result.intent.chainId, 8453);
@@ -1139,6 +1176,45 @@ test("payment intent creation rejects invalid or disabled payment method", async
         payerChallengeId: String(payerChallengeId),
         signature: validSignature
     }), { code: "PAYMENT_METHOD_UNAVAILABLE" });
+    assert.equal(PaymentIntentModel.intents.length, 0);
+});
+
+test("payment intent creation rejects payer challenge bound to a different payment method", async () => {
+    const PaymentIntentModel = createFakePaymentIntentModel();
+    const service = createPaymentIntentService({
+        PaymentIntentModel,
+        pricingService: createPaymentPricingService({ packagesJson: validPackagesJson, pricingVersion: "pricing-v1" }),
+        payerChallengeService: createFakePayerChallengeService({
+            paymentMethodId: "base-mainnet-usdc",
+            networkId: "8453",
+            caipNetworkId: "eip155:8453"
+        }),
+        config: validPaymentConfig({
+            pricingVersion: "pricing-v1",
+            methodsJson: JSON.stringify([{
+                id: "base-mainnet-usdc",
+                enabled: true,
+                rpcUrl: "https://base.example.invalid/rpc",
+                treasuryAddress
+            }, {
+                id: "ethereum-mainnet-usdc",
+                enabled: true,
+                rpcUrl: "https://ethereum.example.invalid/rpc",
+                treasuryAddress
+            }]),
+            defaultMethodId: "base-mainnet-usdc"
+        }),
+        now: () => new Date("2026-08-17T10:00:00.000Z")
+    });
+
+    await assert.rejects(() => service.createPaymentIntent({
+        userId: "64b000000000000000000000",
+        packageId: "starter_credits",
+        paymentMethodId: "ethereum-mainnet-usdc",
+        idempotencyKey: "idem-wrong-method",
+        payerChallengeId: String(payerChallengeId),
+        signature: validSignature
+    }), { code: "PAYER_CHALLENGE_WRONG_PAYMENT_METHOD" });
     assert.equal(PaymentIntentModel.intents.length, 0);
 });
 

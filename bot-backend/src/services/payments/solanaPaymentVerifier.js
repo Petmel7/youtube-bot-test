@@ -1,4 +1,5 @@
 const { getAllowedPaymentMethod } = require("../../config/paymentNetworks");
+const { getPaymentMethodById } = require("../../config/paymentMethods");
 const { paymentConfig } = require("../../config/config");
 const { isValidSolanaSignature } = require("../../utils/solana");
 const { createSolanaProvider } = require("./solanaProvider");
@@ -69,7 +70,8 @@ const createSolanaPaymentVerifier = ({
                 return createPaymentResult({ ...context, outcome: PAYMENT_OUTCOMES.REJECTED, code: PAYMENT_VERIFICATION_CODES.INVALID_AMOUNT });
             }
 
-            const verifierProvider = provider || providerFactory(method);
+            const runtimeMethod = getPaymentMethodById(config, method.id) || method;
+            const verifierProvider = provider || providerFactory(runtimeMethod);
             const genesisHash = await verifierProvider.getGenesisHash();
             if (genesisHash !== method.networkId) {
                 return createPaymentResult({ ...context, outcome: PAYMENT_OUTCOMES.REJECTED, code: PAYMENT_VERIFICATION_CODES.WRONG_NETWORK });

@@ -373,7 +373,11 @@ const AppKitWalletControls = ({
                 throw new Error(t("wallet.errors.wrongNetwork", { network: expectedNetworkName }));
             }
 
-            const challenge = await createPayerChallenge(address, "eip155");
+            const challenge = await createPayerChallenge({
+                payerAddress: address,
+                paymentMethodId: selectedPaymentMethod.id,
+                namespace: "eip155"
+            });
             if (operationId !== operationIdRef.current) return;
             if (normalizeAddress(challenge.payerAddress) !== normalizeAddress(address)) {
                 throw new Error(t("wallet.errors.walletChanged"));
@@ -561,7 +565,11 @@ const SolanaWalletControls = ({
             if (!payer) {
                 throw new Error(t("wallet.connection.disabledConnect"));
             }
-            const challenge = await createPayerChallenge(payer, "solana");
+            const challenge = await createPayerChallenge({
+                payerAddress: payer,
+                paymentMethodId: selectedPaymentMethod.id,
+                namespace: "solana"
+            });
             if (operationId !== operationIdRef.current) return;
             if (challenge.payerAddress !== payer) {
                 throw new Error(t("wallet.errors.walletChanged"));

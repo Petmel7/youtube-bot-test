@@ -22,38 +22,96 @@ const jsonRpc = async ({ rpcUrl, method, params = [] }) => {
     return body.result;
 };
 
-const tokenAmount = (balance) => {
-    const amount = balance?.uiTokenAmount?.amount;
-    return typeof amount === "string" && /^(0|[1-9][0-9]*)$/.test(amount) ? BigInt(amount) : 0n;
+const accountKeyAt = (transaction, accountIndex) => {
+    const key = transaction?.transaction?.message?.accountKeys?.[accountIndex];
+    if (!key) return null;
+    if (typeof key === "string") return key;
+    return key.pubkey || key.toString?.() || null;
+};
+
+const tokenBalanceKey = (transaction, balance) => (
+    balance?.pubkey || balance?.account || accountKeyAt(transaction, balance?.accountIndex)
+);
+
+const tokenAccountMap = (transaction, mintAddress) => {
+    const map = new Map();
+    for (const balance of [...(transaction?.meta?.preTokenBalances || []), ...(transaction?.meta?.postTokenBalances || [])]) {
+        if (balance?.mint !== mintAddress) continue;
+        const key = tokenBalanceKey(transaction, balance);
+        if (!key) continue;
+        map.set(key, {
+            account: key,
+            mint: balance.mint,
+            owner: balance.owner || null
+        });
+    }
+    return map;
+};
+
+const flattenInstructions = (transaction) => {
+    const instructions = [];
+    for (const instruction of transaction?.transaction?.message?.instructions || []) {
+        instructions.push(instruction);
+    }
+    for (const group of transaction?.meta?.innerInstructions || []) {
+        for (const instruction of group.instructions || []) {
+            instructions.push(instruction);
+        }
+    }
+    return instructions;
+};
+
+const parsedTransferFromInstruction = (instruction) => {
+    const parsed = instruction?.parsed;
+    const type = parsed?.type;
+    const info = parsed?.info || {};
+    if (instruction?.program !== "spl-token" && instruction?.programId !== "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
+        return null;
+    }
+    if (type !== "transfer" && type !== "transferChecked") {
+        return null;
+    }
+
+    const amount = type === "transferChecked"
+        ? info.tokenAmount?.amount
+        : info.amount;
+    if (typeof amount !== "string" || !/^(0|[1-9][0-9]*)$/.test(amount)) {
+        return null;
+    }
+
+    return {
+        source: info.source,
+        destination: info.destination,
+        authority: info.authority || info.multisigAuthority || null,
+        mint: info.mint || info.tokenAmount?.mint || null,
+        value: BigInt(amount)
+    };
 };
 
 const findTokenTransfer = (transaction, { mintAddress, sourceOwner, destinationOwner }) => {
-    const meta = transaction?.meta;
-    if (!meta) return null;
-
-    const preByIndex = new Map((meta.preTokenBalances || []).map(balance => [balance.accountIndex, balance]));
     const transfers = [];
+    const tokenAccounts = tokenAccountMap(transaction, mintAddress);
 
-    for (const post of meta.postTokenBalances || []) {
-        if (post.mint !== mintAddress || post.owner !== destinationOwner) continue;
+    for (const instruction of flattenInstructions(transaction)) {
+        const transfer = parsedTransferFromInstruction(instruction);
+        if (!transfer) continue;
+        if (transfer.mint && transfer.mint !== mintAddress) continue;
 
-        const pre = preByIndex.get(post.accountIndex);
-        const received = tokenAmount(post) - tokenAmount(pre);
-        if (received <= 0n) continue;
+        const source = tokenAccounts.get(transfer.source);
+        const destination = tokenAccounts.get(transfer.destination);
+        if (!source || !destination) continue;
+        if (source.mint !== mintAddress || destination.mint !== mintAddress) continue;
+        if (source.owner !== sourceOwner || destination.owner !== destinationOwner) continue;
+        if (transfer.authority && transfer.authority !== sourceOwner) continue;
+        if (transfer.value <= 0n) continue;
 
-        const source = (meta.preTokenBalances || []).find((candidate) => (
-            candidate.mint === mintAddress &&
-            candidate.owner === sourceOwner &&
-            tokenAmount(candidate) - tokenAmount((meta.postTokenBalances || []).find(item => item.accountIndex === candidate.accountIndex)) === received
-        ));
-
-        if (source) {
-            transfers.push({
-                from: source.owner,
-                to: post.owner,
-                value: received
-            });
-        }
+        transfers.push({
+            from: source.owner,
+            to: destination.owner,
+            sourceTokenAccount: transfer.source,
+            destinationTokenAccount: transfer.destination,
+            value: transfer.value
+        });
     }
 
     if (transfers.length !== 1) return transfers.length > 1 ? { ambiguous: true } : null;

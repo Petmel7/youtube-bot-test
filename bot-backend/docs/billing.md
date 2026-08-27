@@ -74,7 +74,7 @@ Payment methods are backend-owned and whitelist-based. `PAYMENT_METHODS_JSON` is
 
 Enabled methods must match the whitelist exactly for namespace, network identity, token or mint address, token symbol, token decimals, asset type, and asset provenance. Environment config may enable a method and provide method-specific `rpcUrl`, `treasuryAddress`, and confirmations, but it must not redefine token identity. Production accepts production methods only. Testnet and smoke methods require `ALLOW_TESTNET_PAYMENTS=true` and a local non-production `NODE_ENV`.
 
-Public payment method DTOs intentionally omit RPC URLs and internal env details. They expose display and wallet-transfer fields only: id, name, namespace, network, CAIP network id, enabled/testnet/smoke indicators, and token or mint metadata. Existing `PaymentIntent` documents keep immutable snapshots, so later config changes must not alter verification, settlement, recipient, amount, payer, pricing, or credit expectations for already-created intents.
+Public payment method DTOs intentionally omit RPC URLs and internal env details. They expose display and wallet-transfer fields only: id, name, namespace, network, CAIP network id, enabled/testnet/smoke indicators, and token or mint metadata. Existing `PaymentIntent` documents keep immutable snapshots, so later config changes must not alter verification, settlement, recipient, amount, payer, pricing, or credit expectations for already-created intents. New `PaymentIntent` snapshots intentionally omit payment method `rpcUrl`; verification resolves provider RPC endpoints from current server-side config while still checking the frozen non-secret payment identity fields from the intent.
 
 ## Phase 3O Admin Payment Config Change Workflow
 
@@ -142,3 +142,5 @@ Clients read lifecycle state with `GET /api/payments/intents/:id`. Lookups are s
 After sending Base USDC, the client submits only the canonical transaction hash to `POST /api/payments/intents/:id/verify`. The backend stores the hash on the user's intent, runs the verifier, persists verifier-derived metadata, maps the result into the existing `PaymentIntent` statuses, and calls settlement only for `CONFIRMED` or `CONFIRMED_OVERPAID`.
 
 Insufficient confirmations remain `CONFIRMING`; underpaid and rejected payments do not settle. Successful settlement credits exactly the frozen `PaymentIntent.creditAmount`, and overpayment remains metadata only.
+
+Payment verify throttling runs before provider/RPC verification. The middleware supports an injected shared throttle store interface, but the default store is process-local in memory. Multi-instance production deployments should wire this interface to MongoDB, Redis, or another shared TTL-capable store before relying on the limit as a fleet-wide RPC quota control.

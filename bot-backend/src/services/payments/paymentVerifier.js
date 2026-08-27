@@ -1,4 +1,5 @@
 const { paymentConfig } = require("../../config/config");
+const { getPaymentMethodById } = require("../../config/paymentMethods");
 const { getAllowedPaymentMethod } = require("../../config/paymentNetworks");
 const { normalizeEvmAddress } = require("../../utils/evmAddress");
 const { createEvmProvider } = require("./evmProvider");
@@ -111,7 +112,7 @@ const createPaymentVerifier = ({
             const method = paymentIntent.paymentMethodSnapshot || null;
             const allowedMethod = method?.id ? getAllowedPaymentMethod(method.id) : null;
 
-            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id || (method.namespace || "eip155") !== "eip155" || method.enabled !== true) {
+            if (!method || !allowedMethod || paymentIntent.paymentMethodId !== method.id || (method.namespace || "eip155") !== "eip155" || method.enabled === false) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_METHOD, context);
             }
 
@@ -129,7 +130,8 @@ const createPaymentVerifier = ({
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);
             }
 
-            const verifierProvider = provider || providerFactory(method);
+            const runtimeMethod = getPaymentMethodById(config, method.id) || method;
+            const verifierProvider = provider || providerFactory(runtimeMethod);
             const networkChainId = await verifierProvider.getNetworkChainId();
             if (networkChainId !== method.chainId) {
                 return rejectResult(PAYMENT_VERIFICATION_CODES.WRONG_NETWORK, context);

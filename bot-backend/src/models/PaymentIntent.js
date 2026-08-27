@@ -123,7 +123,7 @@ const paymentIntentSchema = new mongoose.Schema({
         caipNetworkId: { type: String, default: null, immutable: true },
         cluster: nullableString,
         chainId: { type: Number, default: null, immutable: true },
-        rpcUrl: immutableString,
+        rpcUrl: { type: String, default: undefined, immutable: true },
         assetType: { type: String, default: "erc20", immutable: true },
         assetProvenance: nullableString,
         tokenAddress: { type: String, default: null, immutable: true },

@@ -4,7 +4,10 @@ const express = require("express");
 
 const { createPaymentRoutes } = require("../src/routes/paymentRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
-const { createPaymentVerifyThrottle } = require("../src/middleware/paymentVerifyThrottle");
+const {
+    createInMemoryPaymentVerifyThrottleStore,
+    createPaymentVerifyThrottle
+} = require("../src/middleware/paymentVerifyThrottle");
 const { notFound } = require("../src/utils/errors");
 const { createPaymentLifecycleService } = require("../src/services/payments/paymentLifecycleService");
 const { PAYMENT_OUTCOMES } = require("../src/services/payments/paymentVerifier");
@@ -208,6 +211,12 @@ const createFakePaymentDependencies = () => ({
             return {
                 challenge: {
                     _id: payerChallengeId,
+                    paymentMethodId: args.paymentMethodId,
+                    namespace: args.namespace || "eip155",
+                    networkId: "8453",
+                    caipNetworkId: "eip155:8453",
+                    chainId: 8453,
+                    tokenSymbol: "USDC",
                     payerAddress: args.payerAddress.toLowerCase(),
                     message: `YouTube Bot\nBind this wallet as payer for YouTube Bot credit purchase\nUser ID: ${args.userId}`,
                     expiresAt: new Date("2026-08-18T12:10:00.000Z")
@@ -308,11 +317,13 @@ test("payment API creates payer challenge for authenticated user", async () => {
         path: "/api/payments/payer-challenges",
         userId: userA,
         headers: { "X-CSRF-Protection": "1" },
-        body: { payerAddress: "0x2222222222222222222222222222222222222222" }
+        body: { payerAddress: "0x2222222222222222222222222222222222222222", paymentMethodId: "base-mainnet-usdc" }
     });
 
     assert.equal(response.status, 201);
     assert.equal(response.body.challenge.id, payerChallengeId);
+    assert.equal(response.body.challenge.paymentMethodId, "base-mainnet-usdc");
+    assert.equal(response.body.challenge.caipNetworkId, "eip155:8453");
     assert.equal(response.body.challenge.payerAddress, payerAddress);
     assert.equal(response.body.challenge.message.includes(userA), true);
 });
@@ -411,7 +422,7 @@ test("payment API write endpoints require write header", async () => {
         method: "POST",
         path: "/api/payments/payer-challenges",
         userId: userA,
-        body: { payerAddress }
+        body: { payerAddress, paymentMethodId: "base-mainnet-usdc" }
     });
     const response = await request(app, {
         method: "POST",
@@ -502,6 +513,28 @@ test("payment API verify throttling returns 429 before lifecycle/provider work",
 
     assert.equal(throttled.status, 429);
     assert.equal(throttled.body.error.code, "PAYMENT_VERIFY_RATE_LIMITED");
+    assert.equal(lifecycle.calls.filter(call => call.method === "verifyIntent").length, 2);
+});
+
+test("payment API verify throttling supports an injected shared store", async () => {
+    const lifecycle = createFakeLifecycle();
+    const now = () => Date.parse("2026-08-18T12:00:00.000Z");
+    const sharedStore = createInMemoryPaymentVerifyThrottleStore({ now });
+    const firstMiddleware = createPaymentVerifyThrottle({ windowMs: 60000, max: 2, now, store: sharedStore });
+    const secondMiddleware = createPaymentVerifyThrottle({ windowMs: 60000, max: 2, now, store: sharedStore });
+    const requestOptions = {
+        method: "POST",
+        path: `/api/payments/intents/${intentId}/verify`,
+        userId: userA,
+        headers: { "X-CSRF-Protection": "1" },
+        body: { txHash }
+    };
+
+    assert.equal((await request(createApp(lifecycle, { verifyThrottleMiddleware: firstMiddleware }), requestOptions)).status, 200);
+    assert.equal((await request(createApp(lifecycle, { verifyThrottleMiddleware: secondMiddleware }), requestOptions)).status, 200);
+    const throttled = await request(createApp(lifecycle, { verifyThrottleMiddleware: secondMiddleware }), requestOptions);
+
+    assert.equal(throttled.status, 429);
     assert.equal(lifecycle.calls.filter(call => call.method === "verifyIntent").length, 2);
 });
 
