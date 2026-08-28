@@ -4,11 +4,12 @@ const { startBotController, getBotRunController, getBotCostEstimateController } 
 const { isAuthenticated, requireYouTubeConnection } = require("../middleware/auth");
 const requireWriteHeader = require("../middleware/requireWriteHeader");
 const asyncHandler = require("../middleware/asyncHandler");
+const noCache = require("../middleware/noCache");
 
 const router = express.Router();
 
 router.post("/cost-estimate", isAuthenticated, requireYouTubeConnection, asyncHandler(getBotCostEstimateController));
 router.post("/start", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(startBotController));
-router.get("/runs/:runId", isAuthenticated, asyncHandler(getBotRunController));
+router.get("/runs/:runId", noCache, isAuthenticated, asyncHandler(getBotRunController));
 
 module.exports = router;

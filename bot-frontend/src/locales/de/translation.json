@@ -23,6 +23,8 @@
     "bot.insufficientCreditsDetailed": "Nicht genügend Credits. Erforderlich: {{required}}, verfügbar: {{available}}.",
     "bot.creditEstimate": "Erforderliche Credits: {{required}}. Verfügbar: {{available}}.",
     "bot.estimateLoading": "Erforderliche Credits werden geprüft...",
+    "bot.aiTimeout": "Der KI-Anbieter hat nicht rechtzeitig geantwortet. Versuche es später erneut.",
+    "bot.pollingFailed": "Bot-Status konnte nicht aktualisiert werden. Bitte prüfe es gleich erneut.",
     "connected.to": "Verbunden mit",
     "avatar.alt": "Benutzerbild",
     "select.identity": "Bot-Identität wählen",

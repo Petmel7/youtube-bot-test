@@ -16,6 +16,10 @@ import MyVideos from "../components/MyVideos";
 import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
 
+const ACTIVE_BOT_RUN_STATUSES = new Set(["queued", "running"]);
+const TERMINAL_BOT_RUN_STATUSES = new Set(["completed", "partial", "failed", "cancelled"]);
+const MAX_POLL_FAILURES = 3;
+
 const Dashboard = () => {
     const [selectedVideo, setSelectedVideo] = useState(null);
     const [channelTheme, setChannelTheme] = useState("");
@@ -58,25 +62,52 @@ const Dashboard = () => {
         loadWalletSummary();
     }, [loadWalletSummary]);
 
-    useEffect(() => {
-        if (!botRun || !["queued", "running"].includes(botRun.status)) return;
+    const botRunId = botRun?.id;
+    const botRunStatus = botRun?.status;
 
-        const timerId = setInterval(async () => {
+    useEffect(() => {
+        if (!botRunId) return;
+        if (TERMINAL_BOT_RUN_STATUSES.has(botRunStatus)) {
+            setIsBotRunning(false);
+            return;
+        }
+        if (!ACTIVE_BOT_RUN_STATUSES.has(botRunStatus)) return;
+
+        let stopped = false;
+        let timerId;
+        let consecutiveFailures = 0;
+
+        const poll = async () => {
             try {
-                const run = await fetchBotRun(botRun.id);
+                const run = await fetchBotRun(botRunId);
+                if (stopped) return;
+
                 setBotRun(run);
-                if (!["queued", "running"].includes(run.status)) {
+                consecutiveFailures = 0;
+                if (TERMINAL_BOT_RUN_STATUSES.has(run.status)) {
                     setIsBotRunning(false);
-                    clearInterval(timerId);
+                    return;
                 }
             } catch (error) {
-                setIsBotRunning(false);
-                clearInterval(timerId);
+                if (stopped) return;
+                consecutiveFailures += 1;
+                if (consecutiveFailures >= MAX_POLL_FAILURES) {
+                    setIsBotRunning(false);
+                    setNotice(t("bot.pollingFailed"));
+                    return;
+                }
             }
-        }, 3000);
 
-        return () => clearInterval(timerId);
-    }, [botRun]);
+            timerId = setTimeout(poll, 3000);
+        };
+
+        timerId = setTimeout(poll, 3000);
+
+        return () => {
+            stopped = true;
+            clearTimeout(timerId);
+        };
+    }, [botRunId, botRunStatus, t]);
 
     const saveTheme = async () => {
         if (!validateChannelTheme(channelTheme, setError)) return;
@@ -159,6 +190,18 @@ const Dashboard = () => {
         setSavedGender(botGender);
     };
 
+    const getBotRunErrorMessage = (run) => {
+        const code = run?.topErrorCode || run?.errorCode;
+        if (code === "GEMINI_TIMEOUT") {
+            return t("bot.aiTimeout");
+        }
+        if (code === "INSUFFICIENT_CREDITS") {
+            return t("bot.insufficientCredits");
+        }
+
+        return run?.topErrorMessage || run?.errorMessage || code;
+    };
+
     if (isConnected === null) {
         return <Loading />;
     }
@@ -218,11 +261,9 @@ const Dashboard = () => {
                                         skipped: botRun.skippedCount
                                     })}
                                 </p>
-                                {botRun.errorCode && (
+                                {(botRun.errorCode || botRun.topErrorCode) && (
                                     <p className={styles.error}>
-                                        {botRun.errorCode === "INSUFFICIENT_CREDITS"
-                                            ? t("bot.insufficientCredits")
-                                            : (botRun.errorMessage || botRun.errorCode)}
+                                        {getBotRunErrorMessage(botRun)}
                                     </p>
                                 )}
                             </>

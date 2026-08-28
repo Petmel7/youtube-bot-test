@@ -23,6 +23,8 @@
     "bot.insufficientCreditsDetailed": "Crédits insuffisants. Requis : {{required}}, disponible : {{available}}.",
     "bot.creditEstimate": "Crédits requis : {{required}}. Disponible : {{available}}.",
     "bot.estimateLoading": "Vérification des crédits requis...",
+    "bot.aiTimeout": "Le fournisseur d'IA a expiré. Réessayez plus tard.",
+    "bot.pollingFailed": "Impossible d'actualiser le statut du bot. Réessayez dans un instant.",
     "connected.to": "Connecté à",
     "avatar.alt": "Avatar de l'utilisateur",
     "select.identity": "Sélectionnez l'identité du bot",

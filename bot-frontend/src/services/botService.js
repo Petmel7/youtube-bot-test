@@ -50,7 +50,12 @@ export const fetchBotCostEstimate = async (prompt) => {
 };
 
 export const fetchBotRun = async (runId) => {
-    const data = await apiRequest(`/bot/runs/${runId}`);
+    const data = await apiRequest(`/bot/runs/${runId}`, {
+        cache: "no-store",
+        headers: {
+            "Cache-Control": "no-cache"
+        }
+    });
     return data.run;
 };
 

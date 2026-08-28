@@ -18,8 +18,9 @@ const createFakeGenAI = ({ text = " Thanks! ", usageMetadata, error, finishReaso
             return {
                 config,
                 async generateContent(prompt) {
-                    const next = queue ? queue.shift() : { text, usageMetadata, error, finishReason };
-                    if (next?.error) throw next.error;
+                const next = queue ? queue.shift() : { text, usageMetadata, error, finishReason };
+                if (next?.hang) return new Promise(() => {});
+                if (next?.error) throw next.error;
 
                     return {
                         prompt,
@@ -391,6 +392,43 @@ test("AiProvider releases reservation when Gemini cannot produce a valid reply",
     }), { code: "GEMINI_REPLY_MALFORMED" });
 
     assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
+    assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
+    assert.equal(records[0].result.actualCredits, 0);
+});
+
+test("AiProvider releases reservation when Gemini times out", async () => {
+    const records = [];
+    const walletEvents = [];
+    const provider = createAiProvider({
+        provider: createGeminiProvider({
+            genAI: createFakeGenAI({
+                responses: [
+                    {
+                        hang: true
+                    }
+                ]
+            }),
+            modelName: "gemini-test",
+            timeoutMs: 5,
+            retryCount: 0
+        }),
+        async usageRecorder(operation, result) {
+            records.push({ operation, result });
+        },
+        wallet: createFakeWallet(walletEvents)
+    });
+
+    await assert.rejects(() => provider.generateReply({
+        userId: "64b000000000000000000000",
+        runId: "64b000000000000000000001",
+        videoId: "abcDEF123_-",
+        commentId: "comment-timeout",
+        comment: "Great video",
+        prompt: "Be friendly"
+    }), { code: "GEMINI_TIMEOUT" });
+
+    assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
+    assert.equal(records[0].result.errorCode, "GEMINI_TIMEOUT");
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.equal(records[0].result.actualCredits, 0);
 });

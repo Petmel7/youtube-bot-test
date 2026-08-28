@@ -23,6 +23,8 @@
     "bot.insufficientCreditsDetailed": "Недостатньо кредитів. Потрібно: {{required}}, доступно: {{available}}.",
     "bot.creditEstimate": "Потрібно кредитів: {{required}}. Доступно: {{available}}.",
     "bot.estimateLoading": "Перевірка потрібних кредитів...",
+    "bot.aiTimeout": "Постачальник AI не відповів вчасно. Спробуйте пізніше.",
+    "bot.pollingFailed": "Не вдалося оновити статус запуску бота. Перевірте ще раз за мить.",
     "connected.to": "Підключено до",
     "avatar.alt": "Аватар користувача",
     "select.identity": "Оберіть ідентичність бота",

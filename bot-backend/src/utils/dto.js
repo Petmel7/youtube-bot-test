@@ -26,6 +26,15 @@ const toPromptDto = (prompt) => {
 
 const toBotRunDto = (run) => {
     if (!run) return null;
+    const failedResults = Array.isArray(run.results)
+        ? run.results.filter(result => result?.status === "failed" && result.errorCode)
+        : [];
+    const errorCounts = failedResults.reduce((counts, result) => {
+        counts.set(result.errorCode, (counts.get(result.errorCode) || 0) + 1);
+        return counts;
+    }, new Map());
+    const topErrorCode = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    const topError = topErrorCode ? failedResults.find(result => result.errorCode === topErrorCode) : null;
 
     return {
         id: String(run._id || run.id),
@@ -37,6 +46,8 @@ const toBotRunDto = (run) => {
         skippedCount: run.skippedCount,
         errorCode: run.errorCode || null,
         errorMessage: run.errorMessage || null,
+        topErrorCode,
+        topErrorMessage: topError?.errorMessage || null,
         startedAt: run.startedAt || null,
         completedAt: run.completedAt || null,
         createdAt: run.createdAt,

@@ -54,7 +54,11 @@ const request = async (app, { method = "GET", path, userId, body, headers = {} }
                     responseBody += chunk;
                 });
                 res.on("end", () => {
-                    resolve({ status: res.statusCode, body: responseBody ? JSON.parse(responseBody) : {} });
+                    resolve({
+                        status: res.statusCode,
+                        headers: res.headers,
+                        body: responseBody ? JSON.parse(responseBody) : {}
+                    });
                 });
             });
             req.on("error", reject);
@@ -222,4 +226,47 @@ test("POST /bot/cost-estimate returns backend-owned cost metadata", async (t) =>
     assert.equal(response.body.cost.requiredCredits, 10);
     assert.equal(response.body.cost.requiredCredits, response.body.cost.estimate.credits);
     assert.equal(response.body.cost.estimate.outputTokens > 0, true);
+});
+
+test("GET /bot/runs/:runId disables cache and returns safe top comment error", async (t) => {
+    t.mock.method(BotRun, "findById", async () => ({
+        _id: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        status: "failed",
+        processedCount: 2,
+        successCount: 0,
+        failureCount: 2,
+        skippedCount: 0,
+        errorCode: "BOT_RUN_NO_REPLIES",
+        errorMessage: "Bot run did not create any replies",
+        results: [
+            {
+                commentId: "comment-1",
+                status: "failed",
+                errorCode: "GEMINI_TIMEOUT",
+                errorMessage: "Gemini request timed out"
+            },
+            {
+                commentId: "comment-2",
+                status: "failed",
+                errorCode: "GEMINI_TIMEOUT",
+                errorMessage: "Gemini request timed out"
+            }
+        ]
+    }));
+
+    const response = await request(createApp(), {
+        path: "/bot/runs/66b000000000000000000001",
+        userId: user._id,
+        headers: { "If-None-Match": "\"stale-etag\"" }
+    });
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers["cache-control"], /no-store/);
+    assert.equal(response.headers.pragma, "no-cache");
+    assert.equal(response.headers.expires, "0");
+    assert.equal(response.body.run.errorCode, "BOT_RUN_NO_REPLIES");
+    assert.equal(response.body.run.topErrorCode, "GEMINI_TIMEOUT");
+    assert.equal(response.body.run.topErrorMessage, "Gemini request timed out");
 });
