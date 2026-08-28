@@ -39,6 +39,9 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         releaseKey: result.releaseKey || null,
         billingStatus: result.billingStatus || "NOT_BILLED",
         finishReason: result.finishReason || null,
+        providerErrorCode: result.providerErrorCode || null,
+        attemptCount: nullableNumber(result.attemptCount),
+        retryExhausted: result.retryExhausted === undefined ? null : Boolean(result.retryExhausted),
         latencyMs: nullableNumber(result.latencyMs),
         success: Boolean(result.success),
         errorCode: result.errorCode || null

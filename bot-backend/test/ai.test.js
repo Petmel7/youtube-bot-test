@@ -6,6 +6,7 @@ const { buildOperationKey, recordAiUsage } = require("../src/services/ai/aiUsage
 const {
     buildGeminiPrompt,
     createGeminiProvider,
+    normalizeGeminiError,
     normalizeUsage,
     validateGeneratedReply
 } = require("../src/services/ai/providers/geminiProvider");
@@ -164,6 +165,42 @@ test("Gemini provider exposes normalized failure information", async () => {
             return true;
         }
     );
+});
+
+test("Gemini provider classifies provider SDK error shapes safely", () => {
+    assert.equal(normalizeGeminiError({ code: "GEMINI_TIMEOUT" }), "GEMINI_TIMEOUT");
+    assert.equal(normalizeGeminiError({ message: "quota exceeded" }), "GEMINI_RATE_LIMIT");
+    assert.equal(normalizeGeminiError({ message: "model is overloaded" }), "GEMINI_PROVIDER_UNAVAILABLE");
+    assert.equal(normalizeGeminiError({ message: "API key not valid" }), "GEMINI_AUTH_FAILED");
+    assert.equal(normalizeGeminiError({ message: "invalid model name" }), "GEMINI_INVALID_MODEL");
+    assert.equal(normalizeGeminiError({ message: "response blocked for safety" }), "GEMINI_BLOCKED");
+});
+
+test("Gemini provider retries rate-limit-like SDK errors without status", async () => {
+    const rateLimit = new Error("quota exceeded");
+    const provider = createGeminiProvider({
+        genAI: createFakeGenAI({
+            responses: [
+                { error: rateLimit },
+                {
+                    text: "Yes, that paprika tip is a good way to deepen the flavor.",
+                    finishReason: "STOP"
+                }
+            ]
+        }),
+        modelName: "gemini-test",
+        timeoutMs: 1000,
+        retryCount: 1,
+        retryDelayMs: 1
+    });
+
+    const result = await provider.generateReply({
+        comment: "The paprika tip improved the flavor",
+        prompt: "Cooking channel"
+    });
+
+    assert.equal(result.text, "Yes, that paprika tip is a good way to deepen the flavor.");
+    assert.equal(result.attemptCount, 2);
 });
 
 test("Gemini provider retries once on invalid output and returns the repaired reply", async () => {
@@ -396,21 +433,21 @@ test("AiProvider releases reservation when Gemini cannot produce a valid reply",
     assert.equal(records[0].result.actualCredits, 0);
 });
 
-test("AiProvider releases reservation when Gemini times out", async () => {
+test("AiProvider retries Gemini timeout and releases reservation if all attempts fail", async () => {
     const records = [];
     const walletEvents = [];
     const provider = createAiProvider({
         provider: createGeminiProvider({
             genAI: createFakeGenAI({
                 responses: [
-                    {
-                        hang: true
-                    }
+                    { hang: true },
+                    { hang: true }
                 ]
             }),
             modelName: "gemini-test",
             timeoutMs: 5,
-            retryCount: 0
+            retryCount: 1,
+            retryDelayMs: 1
         }),
         async usageRecorder(operation, result) {
             records.push({ operation, result });
@@ -429,6 +466,9 @@ test("AiProvider releases reservation when Gemini times out", async () => {
 
     assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
     assert.equal(records[0].result.errorCode, "GEMINI_TIMEOUT");
+    assert.equal(records[0].result.providerErrorCode, "GEMINI_TIMEOUT");
+    assert.equal(records[0].result.attemptCount, 2);
+    assert.equal(records[0].result.retryExhausted, true);
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.equal(records[0].result.actualCredits, 0);
 });

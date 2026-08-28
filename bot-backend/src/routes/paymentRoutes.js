@@ -13,12 +13,13 @@ const { isAuthenticated } = require("../middleware/auth");
 const requireWriteHeader = require("../middleware/requireWriteHeader");
 const paymentVerifyThrottle = require("../middleware/paymentVerifyThrottle");
 const asyncHandler = require("../middleware/asyncHandler");
+const noCache = require("../middleware/noCache");
 
 const router = express.Router();
 
 router.get("/packages", isAuthenticated, asyncHandler(getPaymentPackagesController));
 router.get("/methods", isAuthenticated, asyncHandler(getPaymentMethodsController));
-router.get("/wallet", isAuthenticated, asyncHandler(getWalletController));
+router.get("/wallet", noCache, isAuthenticated, asyncHandler(getWalletController));
 router.post("/payer-challenges", isAuthenticated, requireWriteHeader, asyncHandler(createPayerChallengeController));
 router.post("/intents", isAuthenticated, requireWriteHeader, asyncHandler(createPaymentIntentController));
 router.get("/intents/:id", isAuthenticated, asyncHandler(getPaymentIntentController));
@@ -32,7 +33,7 @@ module.exports.createPaymentRoutes = (paymentLifecycleService, dependencies) => 
 
     injectedRouter.get("/packages", isAuthenticated, asyncHandler(controller.getPaymentPackagesController));
     injectedRouter.get("/methods", isAuthenticated, asyncHandler(controller.getPaymentMethodsController));
-    injectedRouter.get("/wallet", isAuthenticated, asyncHandler(controller.getWalletController));
+    injectedRouter.get("/wallet", noCache, isAuthenticated, asyncHandler(controller.getWalletController));
     injectedRouter.post("/payer-challenges", isAuthenticated, requireWriteHeader, asyncHandler(controller.createPayerChallengeController));
     injectedRouter.post("/intents", isAuthenticated, requireWriteHeader, asyncHandler(controller.createPaymentIntentController));
     injectedRouter.get("/intents/:id", isAuthenticated, asyncHandler(controller.getPaymentIntentController));

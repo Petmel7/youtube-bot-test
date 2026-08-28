@@ -29,7 +29,7 @@ const request = async (app, { path = "/user-prompt", userId: requestUserId } = {
         const response = await fetch(`http://127.0.0.1:${port}${path}`, {
             headers: requestUserId ? { "X-Test-User": requestUserId } : {}
         });
-        return { status: response.status, body: await response.json() };
+        return { status: response.status, headers: response.headers, body: await response.json() };
     } finally {
         await new Promise(resolve => server.close(resolve));
     }
@@ -44,6 +44,9 @@ test("GET /user-prompt returns 200 with null prompt for authenticated first-time
     const response = await request(createApp(), { userId });
 
     assert.equal(response.status, 200);
+    assert.match(response.headers.get("cache-control"), /no-store/);
+    assert.equal(response.headers.get("pragma"), "no-cache");
+    assert.equal(response.headers.get("expires"), "0");
     assert.deepEqual(response.body, { success: true, prompt: null });
 });
 

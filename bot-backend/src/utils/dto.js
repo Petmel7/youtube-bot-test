@@ -33,6 +33,7 @@ const toBotRunDto = (run) => {
         counts.set(result.errorCode, (counts.get(result.errorCode) || 0) + 1);
         return counts;
     }, new Map());
+    const failedReasonCounts = Object.fromEntries(errorCounts.entries());
     const topErrorCode = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     const topError = topErrorCode ? failedResults.find(result => result.errorCode === topErrorCode) : null;
 
@@ -48,6 +49,7 @@ const toBotRunDto = (run) => {
         errorMessage: run.errorMessage || null,
         topErrorCode,
         topErrorMessage: topError?.errorMessage || null,
+        failedReasonCounts,
         startedAt: run.startedAt || null,
         completedAt: run.completedAt || null,
         createdAt: run.createdAt,

@@ -48,7 +48,10 @@ export const fetchSaveTheme = async (channelTheme, setSavedTheme, setIsEditingTh
 
 export const fetchUserPrompt = async (setSavedTheme, setSavedGender) => {
     try {
-        const data = await apiRequest("/user-prompt");
+        const data = await apiRequest("/user-prompt", {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" }
+        });
         if (data.success && data.prompt) {
             setSavedTheme(data.prompt.channelTheme);
             setSavedGender(data.prompt.gender);
@@ -68,7 +71,10 @@ export const fetchUserPrompt = async (setSavedTheme, setSavedGender) => {
 // ✅ Отримати тематику каналу
 export const fetchGetTheme = async () => {
     try {
-        const data = await apiRequest("/user-prompt");
+        const data = await apiRequest("/user-prompt", {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" }
+        });
         return data.prompt || null;
     } catch (error) {
         if (isMissingPromptError(error)) {

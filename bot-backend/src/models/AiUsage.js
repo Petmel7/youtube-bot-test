@@ -31,6 +31,9 @@ const aiUsageSchema = new mongoose.Schema({
         default: "NOT_BILLED"
     },
     finishReason: { type: String, default: null },
+    providerErrorCode: { type: String, default: null },
+    attemptCount: { type: Number, default: null },
+    retryExhausted: { type: Boolean, default: null },
     latencyMs: { type: Number, default: null },
     success: { type: Boolean, required: true },
     errorCode: { type: String, default: null }

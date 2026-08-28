@@ -178,10 +178,33 @@ const normalizeUsage = (metadata = {}) => ({
 });
 
 const normalizeGeminiError = (error) => {
-    if (error.code) return error.code;
-    if (error.status === 429) return "GEMINI_RATE_LIMIT";
-    if (error.status === 503) return "GEMINI_PROVIDER_UNAVAILABLE";
+    const status = error?.status || error?.response?.status || error?.cause?.status;
+    const code = String(error?.code || error?.providerErrorCode || error?.statusText || "");
+    const message = String(error?.message || error?.cause?.message || "");
+    const raw = `${code} ${message}`.toLocaleLowerCase();
+
+    if (error?.code === "GEMINI_TIMEOUT") return "GEMINI_TIMEOUT";
+    if (status === 429 || raw.includes("429") || raw.includes("rate") || raw.includes("quota")) return "GEMINI_RATE_LIMIT";
+    if (status === 503 || raw.includes("503") || raw.includes("unavailable") || raw.includes("overload")) return "GEMINI_PROVIDER_UNAVAILABLE";
+    if (status === 401 || status === 403 || raw.includes("api key") || raw.includes("permission") || raw.includes("auth")) return "GEMINI_AUTH_FAILED";
+    if (status === 400 || raw.includes("invalid model") || raw.includes("model not found")) return "GEMINI_INVALID_MODEL";
+    if (raw.includes("safety") || raw.includes("blocked")) return "GEMINI_BLOCKED";
+    if (error?.code) return error.code;
     return "GEMINI_PROVIDER_ERROR";
+};
+
+const isTransientGeminiError = (error) => {
+    const code = normalizeGeminiError(error);
+    return ["GEMINI_TIMEOUT", "GEMINI_RATE_LIMIT", "GEMINI_PROVIDER_UNAVAILABLE"].includes(code);
+};
+
+const attachFailureMetadata = (error, metadata) => {
+    error.providerErrorCode = error.providerErrorCode || normalizeGeminiError(error);
+    error.attemptCount = metadata.attemptCount;
+    error.retryExhausted = metadata.retryExhausted;
+    error.finishReason = metadata.finishReason || error.finishReason || null;
+    error.latencyMs = metadata.latencyMs;
+    return error;
 };
 
 const createGeminiProvider = ({
@@ -200,15 +223,16 @@ const createGeminiProvider = ({
         }
     });
 
-    const generateReply = async ({ comment, prompt }, retries = retryCount, qualityRetries = 1) => {
+    const generateReply = async ({ comment, prompt }, retries = retryCount, qualityRetries = 1, attempt = 1) => {
         const startedAt = Date.now();
+        let finishReason = null;
 
         try {
             const result = await withTimeout(
                 getModel().generateContent(buildGeminiPrompt(comment, prompt, { repair: qualityRetries < 1 })),
                 timeoutMs
             );
-            const finishReason = getFinishReason(result);
+            finishReason = getFinishReason(result);
             validateFinishReason(finishReason);
             const text = validateGeneratedReply(await result.response.text(), { comment });
 
@@ -218,6 +242,7 @@ const createGeminiProvider = ({
                 model: modelName,
                 usage: normalizeUsage(result.response.usageMetadata),
                 finishReason,
+                attemptCount: attempt,
                 latencyMs: Date.now() - startedAt,
                 success: true
             };
@@ -229,21 +254,31 @@ const createGeminiProvider = ({
                 "GEMINI_INVALID_RESPONSE",
                 "GEMINI_UNSAFE_FINISH_REASON"
             ].includes(error.code) && qualityRetries > 0) {
-                return generateReply({ comment, prompt }, retries, qualityRetries - 1);
+                return generateReply({ comment, prompt }, retries, qualityRetries - 1, attempt + 1);
             }
 
-            if ((error.status === 503 || error.status === 429) && retries > 0) {
+            if (isTransientGeminiError(error) && retries > 0) {
                 await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-                return generateReply({ comment, prompt }, retries - 1, qualityRetries);
+                return generateReply({ comment, prompt }, retries - 1, qualityRetries, attempt + 1);
             }
 
             if (error.isOperational) {
-                throw error;
+                throw attachFailureMetadata(error, {
+                    attemptCount: attempt,
+                    retryExhausted: isTransientGeminiError(error),
+                    finishReason,
+                    latencyMs: Date.now() - startedAt
+                });
             }
 
             const providerError = upstream("GEMINI_PROVIDER_ERROR", "Gemini generation failed");
             providerError.providerErrorCode = normalizeGeminiError(error);
-            throw providerError;
+            throw attachFailureMetadata(providerError, {
+                attemptCount: attempt,
+                retryExhausted: isTransientGeminiError(error),
+                finishReason,
+                latencyMs: Date.now() - startedAt
+            });
         }
     };
 

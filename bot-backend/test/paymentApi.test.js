@@ -110,7 +110,7 @@ const request = async (app, { method = "GET", path, userId, body, headers = {} }
             },
             body: body === undefined ? undefined : JSON.stringify(body)
         });
-        return { status: response.status, body: await response.json() };
+        return { status: response.status, headers: response.headers, body: await response.json() };
     } finally {
         await new Promise(resolve => server.close(resolve));
     }
@@ -372,6 +372,9 @@ test("payment API lists packages and wallet DTO for authenticated user", async (
     assert.equal(methods.body.paymentMethods[0].rpcUrl, undefined);
 
     assert.equal(wallet.status, 200);
+    assert.match(wallet.headers.get("cache-control"), /no-store/);
+    assert.equal(wallet.headers.get("pragma"), "no-cache");
+    assert.equal(wallet.headers.get("expires"), "0");
     assert.deepEqual(wallet.body.wallet, {
         id: "wallet-1",
         balance: 1200,

@@ -1,5 +1,5 @@
 
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { fetchBotCostEstimate, fetchBotRun, fetchStartBot } from "../services/botService";
@@ -19,6 +19,8 @@ import styles from "../styles/dashboard.module.css";
 const ACTIVE_BOT_RUN_STATUSES = new Set(["queued", "running"]);
 const TERMINAL_BOT_RUN_STATUSES = new Set(["completed", "partial", "failed", "cancelled"]);
 const MAX_POLL_FAILURES = 3;
+const BOT_RUN_STILL_PROCESSING_MS = 30000;
+const BOT_RUN_MAX_POLLING_MS = 10 * 60 * 1000;
 
 const Dashboard = () => {
     const [selectedVideo, setSelectedVideo] = useState(null);
@@ -35,6 +37,7 @@ const Dashboard = () => {
     const [walletAvailable, setWalletAvailable] = useState(null);
     const [botCostEstimate, setBotCostEstimate] = useState(null);
     const [estimateLoading, setEstimateLoading] = useState(false);
+    const pollStartedAtRef = useRef(null);
     const { t } = useTranslation();
     const isConnected = useAuthStatus(null, "/");
 
@@ -69,6 +72,7 @@ const Dashboard = () => {
         if (!botRunId) return;
         if (TERMINAL_BOT_RUN_STATUSES.has(botRunStatus)) {
             setIsBotRunning(false);
+            pollStartedAtRef.current = null;
             return;
         }
         if (!ACTIVE_BOT_RUN_STATUSES.has(botRunStatus)) return;
@@ -76,8 +80,16 @@ const Dashboard = () => {
         let stopped = false;
         let timerId;
         let consecutiveFailures = 0;
+        pollStartedAtRef.current = pollStartedAtRef.current || Date.now();
 
         const poll = async () => {
+            const elapsedMs = Date.now() - pollStartedAtRef.current;
+            if (elapsedMs > BOT_RUN_MAX_POLLING_MS) {
+                setIsBotRunning(false);
+                setNotice(t("bot.pollingTimedOut"));
+                return;
+            }
+
             try {
                 const run = await fetchBotRun(botRunId);
                 if (stopped) return;
@@ -86,7 +98,11 @@ const Dashboard = () => {
                 consecutiveFailures = 0;
                 if (TERMINAL_BOT_RUN_STATUSES.has(run.status)) {
                     setIsBotRunning(false);
+                    pollStartedAtRef.current = null;
                     return;
+                }
+                if (elapsedMs > BOT_RUN_STILL_PROCESSING_MS) {
+                    setNotice(t("bot.stillProcessing"));
                 }
             } catch (error) {
                 if (stopped) return;
@@ -170,6 +186,7 @@ const Dashboard = () => {
         if (!botPrompt) return;
 
         setNotice("");
+        pollStartedAtRef.current = null;
         const result = await fetchStartBot(selectedVideo.videoId, botPrompt, botGender, setIsBotRunning);
         await loadWalletSummary();
         if (result.run) {
@@ -192,8 +209,12 @@ const Dashboard = () => {
 
     const getBotRunErrorMessage = (run) => {
         const code = run?.topErrorCode || run?.errorCode;
-        if (code === "GEMINI_TIMEOUT") {
-            return t("bot.aiTimeout");
+        if (code === "GEMINI_TIMEOUT") return t("bot.aiTimeout");
+        if (code === "GEMINI_RATE_LIMIT") return t("bot.aiRateLimited");
+        if (code === "GEMINI_PROVIDER_UNAVAILABLE") return t("bot.aiUnavailable");
+        if (code === "GEMINI_PROVIDER_ERROR") return t("bot.aiProviderError");
+        if (code === "GEMINI_AUTH_FAILED" || code === "GEMINI_INVALID_MODEL") {
+            return t("bot.aiConfigError");
         }
         if (code === "INSUFFICIENT_CREDITS") {
             return t("bot.insufficientCredits");

@@ -1,7 +1,10 @@
 import { apiRequest, createIdempotencyKey } from "./api";
 
 export const fetchWallet = async () => {
-    const data = await apiRequest("/api/payments/wallet");
+    const data = await apiRequest("/api/payments/wallet", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+    });
     return data.wallet;
 };
 

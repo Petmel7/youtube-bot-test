@@ -269,4 +269,5 @@ test("GET /bot/runs/:runId disables cache and returns safe top comment error", a
     assert.equal(response.body.run.errorCode, "BOT_RUN_NO_REPLIES");
     assert.equal(response.body.run.topErrorCode, "GEMINI_TIMEOUT");
     assert.equal(response.body.run.topErrorMessage, "Gemini request timed out");
+    assert.deepEqual(response.body.run.failedReasonCounts, { GEMINI_TIMEOUT: 2 });
 });
