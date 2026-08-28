@@ -30,6 +30,7 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         model: operation.model,
         promptTokens: nullableNumber(usage.promptTokens),
         outputTokens: nullableNumber(usage.outputTokens),
+        thoughtsTokenCount: nullableNumber(usage.thoughtsTokenCount),
         totalTokens: nullableNumber(usage.totalTokens),
         estimatedCredits: nullableNumber(result.estimatedCredits),
         reservedCredits: nullableNumber(result.reservedCredits),

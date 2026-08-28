@@ -159,21 +159,28 @@ const getFinishReason = (result) => {
         || null;
 };
 
-const validateFinishReason = (finishReason) => {
+const validateFinishReason = (finishReason, metadata = {}) => {
     if (!finishReason || CLEAN_FINISH_REASONS.has(finishReason)) {
         return;
     }
 
     if (INCOMPLETE_FINISH_REASONS.has(finishReason)) {
-        throw unprocessable("GEMINI_REPLY_INCOMPLETE", "Gemini reply was incomplete");
+        const error = unprocessable("GEMINI_REPLY_INCOMPLETE", "Gemini reply was incomplete");
+        error.finishReason = finishReason;
+        error.usage = metadata.usage || null;
+        throw error;
     }
 
-    throw upstream("GEMINI_UNSAFE_FINISH_REASON", "Gemini did not complete a safe reply");
+    const error = upstream("GEMINI_UNSAFE_FINISH_REASON", "Gemini did not complete a safe reply");
+    error.finishReason = finishReason;
+    error.usage = metadata.usage || null;
+    throw error;
 };
 
 const normalizeUsage = (metadata = {}) => ({
     promptTokens: Number.isFinite(metadata.promptTokenCount) ? metadata.promptTokenCount : null,
     outputTokens: Number.isFinite(metadata.candidatesTokenCount) ? metadata.candidatesTokenCount : null,
+    thoughtsTokenCount: Number.isFinite(metadata.thoughtsTokenCount) ? metadata.thoughtsTokenCount : null,
     totalTokens: Number.isFinite(metadata.totalTokenCount) ? metadata.totalTokenCount : null
 });
 
@@ -222,6 +229,7 @@ const attachFailureMetadata = (error, metadata) => {
     error.retryExhausted = metadata.retryExhausted;
     error.finishReason = metadata.finishReason || error.finishReason || null;
     error.latencyMs = metadata.latencyMs;
+    error.usage = error.usage || metadata.usage || null;
     return error;
 };
 
@@ -244,6 +252,7 @@ const createGeminiProvider = ({
     const generateReply = async ({ comment, prompt }, retries = retryCount, qualityRetries = 1, attempt = 1) => {
         const startedAt = Date.now();
         let finishReason = null;
+        let usage = null;
 
         try {
             const result = await withTimeout(
@@ -251,14 +260,15 @@ const createGeminiProvider = ({
                 timeoutMs
             );
             finishReason = getFinishReason(result);
-            validateFinishReason(finishReason);
+            usage = normalizeUsage(result.response.usageMetadata);
+            validateFinishReason(finishReason, { usage });
             const text = validateGeneratedReply(await result.response.text(), { comment });
 
             return {
                 text,
                 provider: PROVIDER,
                 model: modelName,
-                usage: normalizeUsage(result.response.usageMetadata),
+                usage,
                 finishReason,
                 attemptCount: attempt,
                 latencyMs: Date.now() - startedAt,
@@ -285,7 +295,8 @@ const createGeminiProvider = ({
                     attemptCount: attempt,
                     retryExhausted: isTransientGeminiError(error),
                     finishReason,
-                    latencyMs: Date.now() - startedAt
+                    latencyMs: Date.now() - startedAt,
+                    usage
                 });
             }
 
@@ -295,7 +306,8 @@ const createGeminiProvider = ({
                 attemptCount: attempt,
                 retryExhausted: isTransientGeminiError(error),
                 finishReason,
-                latencyMs: Date.now() - startedAt
+                latencyMs: Date.now() - startedAt,
+                usage
             });
         }
     };

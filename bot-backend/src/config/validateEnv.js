@@ -2,6 +2,7 @@ const {
     paymentConfig,
     geminiModel,
     geminiMaxOutputTokens,
+    geminiThinkingBudget,
     geminiTimeoutMs,
     geminiRetryCount,
     botMaxCommentsPerRun,
@@ -49,6 +50,7 @@ const validateEnv = () => {
 
     const numericSettings = {
         GEMINI_MAX_OUTPUT_TOKENS: geminiMaxOutputTokens,
+        ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
         GEMINI_TIMEOUT_MS: geminiTimeoutMs,
         GEMINI_RETRY_COUNT: geminiRetryCount,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
@@ -68,6 +70,7 @@ const validateEnv = () => {
 
     const nonNegativeIntegerSettings = {
         GEMINI_RETRY_COUNT: geminiRetryCount,
+        ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
         AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
         AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate
     };

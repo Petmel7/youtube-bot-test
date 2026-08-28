@@ -53,6 +53,7 @@ const createAiProvider = ({
                 usage: {
                     promptTokens: usageRecord.promptTokens,
                     outputTokens: usageRecord.outputTokens,
+                    thoughtsTokenCount: usageRecord.thoughtsTokenCount,
                     totalTokens: usageRecord.totalTokens
                 },
                 provider: usageRecord.provider,
@@ -231,7 +232,7 @@ const createAiProvider = ({
 
             try {
                 await usageRecorder(operationWithKey, {
-                    usage: {},
+                    usage: error.usage || {},
                     latencyMs: error.latencyMs ?? null,
                     success: false,
                     errorCode: error.providerErrorCode || error.code || "GEMINI_PROVIDER_ERROR",

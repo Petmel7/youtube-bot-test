@@ -24,6 +24,7 @@
     "bot.creditEstimate": "Потрібно кредитів: {{required}}. Доступно: {{available}}.",
     "bot.estimateLoading": "Перевірка потрібних кредитів...",
     "bot.aiTimeout": "Постачальник AI не відповів вчасно. Спробуйте пізніше.",
+    "bot.aiIncomplete": "AI не встиг сформувати повну відповідь через ліміт генерації. Спробуйте ще раз або збільште GEMINI_MAX_OUTPUT_TOKENS.",
     "bot.aiRateLimited": "Ліміт Gemini/API тимчасово вичерпано. Перевірте квоту або billing у Google AI Studio та спробуйте пізніше.",
     "bot.aiUnavailable": "Постачальник AI тимчасово недоступний. Спробуйте пізніше.",
     "bot.aiProviderError": "Не вдалося отримати відповідь від AI. Спробуйте пізніше.",

@@ -210,6 +210,7 @@ const Dashboard = () => {
     const getBotRunErrorMessage = (run) => {
         const code = run?.topErrorCode || run?.errorCode;
         if (code === "GEMINI_TIMEOUT") return t("bot.aiTimeout");
+        if (code === "GEMINI_REPLY_INCOMPLETE") return t("bot.aiIncomplete");
         if (code === "GEMINI_RATE_LIMIT") return t("bot.aiRateLimited");
         if (code === "GEMINI_PROVIDER_UNAVAILABLE") return t("bot.aiUnavailable");
         if (code === "GEMINI_PROVIDER_ERROR") return t("bot.aiProviderError");

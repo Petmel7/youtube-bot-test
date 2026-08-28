@@ -24,6 +24,7 @@
     "bot.creditEstimate": "Required credits: {{required}}. Available: {{available}}.",
     "bot.estimateLoading": "Checking required credits...",
     "bot.aiTimeout": "AI provider timed out. Try again later.",
+    "bot.aiIncomplete": "AI could not finish a complete reply within the generation limit. Try again or increase GEMINI_MAX_OUTPUT_TOKENS.",
     "bot.aiRateLimited": "Gemini/API quota is temporarily exhausted. Check quota or billing in Google AI Studio and try again later.",
     "bot.aiUnavailable": "AI provider is temporarily unavailable. Try again later.",
     "bot.aiProviderError": "AI provider failed. Try again later.",

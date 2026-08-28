@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+const { geminiMaxOutputTokens } = require("../src/config/config");
 const { createAiProvider } = require("../src/services/ai/aiProvider");
 const { buildOperationKey, recordAiUsage } = require("../src/services/ai/aiUsageService");
 const {
@@ -92,12 +93,17 @@ const createFakeWallet = (events = []) => ({
     }
 });
 
+test("Gemini max output token default gives thinking models enough response budget", () => {
+    assert.equal(geminiMaxOutputTokens, 1024);
+});
+
 test("Gemini provider returns text and normalized model/provider usage", async () => {
     const provider = createGeminiProvider({
         genAI: createFakeGenAI({
             usageMetadata: {
                 promptTokenCount: 12,
                 candidatesTokenCount: 5,
+                thoughtsTokenCount: 7,
                 totalTokenCount: 17
             }
         }),
@@ -117,6 +123,7 @@ test("Gemini provider returns text and normalized model/provider usage", async (
     assert.deepEqual(result.usage, {
         promptTokens: 12,
         outputTokens: 5,
+        thoughtsTokenCount: 7,
         totalTokens: 17
     });
     assert.equal(result.success, true);
@@ -127,6 +134,7 @@ test("Gemini provider does not fabricate missing token usage", async () => {
     assert.deepEqual(normalizeUsage(), {
         promptTokens: null,
         outputTokens: null,
+        thoughtsTokenCount: null,
         totalTokens: null
     });
 
@@ -145,7 +153,22 @@ test("Gemini provider does not fabricate missing token usage", async () => {
     assert.deepEqual(result.usage, {
         promptTokens: null,
         outputTokens: null,
+        thoughtsTokenCount: null,
         totalTokens: null
+    });
+});
+
+test("Gemini usage normalization records nullable hidden thinking tokens", () => {
+    assert.deepEqual(normalizeUsage({
+        promptTokenCount: 20,
+        candidatesTokenCount: 9,
+        thoughtsTokenCount: 161,
+        totalTokenCount: 190
+    }), {
+        promptTokens: 20,
+        outputTokens: 9,
+        thoughtsTokenCount: 161,
+        totalTokens: 190
     });
 });
 
@@ -260,6 +283,58 @@ test("Gemini provider retries MAX_TOKENS finish reason before returning a reply"
     });
 
     assert.equal(result.text, "Так, цей соус добре працює саме завдяки балансу кислоти й солодкості.");
+});
+
+test("Gemini provider preserves usage metadata on final MAX_TOKENS failure", async () => {
+    const provider = createGeminiProvider({
+        genAI: createFakeGenAI({
+            responses: [
+                {
+                    text: "Дякую за цікаве пор",
+                    finishReason: "MAX_TOKENS",
+                    usageMetadata: {
+                        promptTokenCount: 12,
+                        candidatesTokenCount: 4,
+                        thoughtsTokenCount: 100,
+                        totalTokenCount: 116
+                    }
+                },
+                {
+                    text: "Дякую за цікаве пор",
+                    finishReason: "MAX_TOKENS",
+                    usageMetadata: {
+                        promptTokenCount: 14,
+                        candidatesTokenCount: 5,
+                        thoughtsTokenCount: 120,
+                        totalTokenCount: 139
+                    }
+                }
+            ]
+        }),
+        modelName: "gemini-test",
+        timeoutMs: 1000,
+        retryCount: 0
+    });
+
+    await assert.rejects(
+        () => provider.generateReply({
+            comment: "Соус вийшов дуже збалансований",
+            prompt: "Cooking channel"
+        }),
+        (error) => {
+            assert.equal(error.code, "GEMINI_REPLY_INCOMPLETE");
+            assert.equal(error.providerErrorCode, "GEMINI_REPLY_INCOMPLETE");
+            assert.equal(error.finishReason, "MAX_TOKENS");
+            assert.equal(error.attemptCount, 2);
+            assert.deepEqual(error.usage, {
+                promptTokens: 14,
+                outputTokens: 5,
+                thoughtsTokenCount: 120,
+                totalTokens: 139
+            });
+            return true;
+        }
+    );
 });
 
 test("AiProvider records usage after a successful operation", async () => {
@@ -431,6 +506,68 @@ test("AiProvider releases reservation when Gemini cannot produce a valid reply",
     assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.equal(records[0].result.actualCredits, 0);
+});
+
+test("AiProvider records usage metadata and releases reservation on MAX_TOKENS final failure", async () => {
+    const records = [];
+    const walletEvents = [];
+    const provider = createAiProvider({
+        provider: createGeminiProvider({
+            genAI: createFakeGenAI({
+                responses: [
+                    {
+                        text: "Дякую за цікаве пор",
+                        finishReason: "MAX_TOKENS",
+                        usageMetadata: {
+                            promptTokenCount: 10,
+                            candidatesTokenCount: 4,
+                            thoughtsTokenCount: 90,
+                            totalTokenCount: 104
+                        }
+                    },
+                    {
+                        text: "Дякую за цікаве пор",
+                        finishReason: "MAX_TOKENS",
+                        usageMetadata: {
+                            promptTokenCount: 11,
+                            candidatesTokenCount: 5,
+                            thoughtsTokenCount: 95,
+                            totalTokenCount: 111
+                        }
+                    }
+                ]
+            }),
+            modelName: "gemini-test",
+            timeoutMs: 1000,
+            retryCount: 0
+        }),
+        async usageRecorder(operation, result) {
+            records.push({ operation, result });
+        },
+        wallet: createFakeWallet(walletEvents)
+    });
+
+    await assert.rejects(() => provider.generateReply({
+        userId: "64b000000000000000000000",
+        runId: "64b000000000000000000001",
+        videoId: "abcDEF123_-",
+        commentId: "comment-max-tokens",
+        comment: "Соус вийшов дуже збалансований",
+        prompt: "Cooking channel"
+    }), { code: "GEMINI_REPLY_INCOMPLETE" });
+
+    assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
+    assert.equal(records[0].result.errorCode, "GEMINI_REPLY_INCOMPLETE");
+    assert.equal(records[0].result.providerErrorCode, "GEMINI_REPLY_INCOMPLETE");
+    assert.equal(records[0].result.finishReason, "MAX_TOKENS");
+    assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
+    assert.equal(records[0].result.actualCredits, 0);
+    assert.deepEqual(records[0].result.usage, {
+        promptTokens: 11,
+        outputTokens: 5,
+        thoughtsTokenCount: 95,
+        totalTokens: 111
+    });
 });
 
 test("AiProvider retries Gemini timeout and releases reservation if all attempts fail", async () => {
@@ -785,7 +922,7 @@ test("AI usage operationKey is deterministic and duplicate inserts are prevented
     };
 
     await recordAiUsage(operation, {
-        usage: { promptTokens: 1, outputTokens: 2, totalTokens: 3 },
+        usage: { promptTokens: 1, outputTokens: 2, thoughtsTokenCount: 4, totalTokens: 3 },
         latencyMs: 4,
         success: true
     }, fakeModel);
@@ -797,4 +934,5 @@ test("AI usage operationKey is deterministic and duplicate inserts are prevented
 
     assert.equal(store.size, 1);
     assert.equal(store.get(key).totalTokens, 3);
+    assert.equal(store.get(key).thoughtsTokenCount, 4);
 });

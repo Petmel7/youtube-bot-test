@@ -10,6 +10,7 @@ const aiUsageSchema = new mongoose.Schema({
     model: { type: String, required: true },
     promptTokens: { type: Number, default: null },
     outputTokens: { type: Number, default: null },
+    thoughtsTokenCount: { type: Number, default: null },
     totalTokens: { type: Number, default: null },
     estimatedCredits: { type: Number, default: null },
     reservedCredits: { type: Number, default: null },

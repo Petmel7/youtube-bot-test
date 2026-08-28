@@ -18,7 +18,10 @@ module.exports = {
     mongoUri: process.env.MONGO_URI,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
-    geminiMaxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 180),
+    geminiMaxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 1024),
+    geminiThinkingBudget: process.env.GEMINI_THINKING_BUDGET === undefined
+        ? null
+        : Number(process.env.GEMINI_THINKING_BUDGET),
     geminiTimeoutMs: Number(process.env.GEMINI_TIMEOUT_MS || 30000),
     geminiRetryCount: Number(process.env.GEMINI_RETRY_COUNT || 2),
     botMaxCommentsPerRun: Number(process.env.BOT_MAX_COMMENTS_PER_RUN || 10),
