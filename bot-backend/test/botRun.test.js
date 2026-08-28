@@ -7,7 +7,8 @@ const BotRun = require("../src/models/BotRun");
 const botRoutes = require("../src/routes/botRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
 const walletService = require("../src/services/billing/walletService");
-const { createBotRun, getBotRunCreditEstimate } = require("../src/services/botRunService");
+const userPromptService = require("../src/services/userPromptService");
+const { createBotRun, getBotRunCreditEstimate, resolveBotRunPrompt } = require("../src/services/botRunService");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -65,7 +66,16 @@ const request = async (app, { method = "GET", path, userId, body, headers = {} }
     }
 };
 
+const mockPromptNotFound = (t) => {
+    t.mock.method(userPromptService, "getUserPromptData", async () => {
+        const error = new Error("Prompt not found");
+        error.code = "PROMPT_NOT_FOUND";
+        throw error;
+    });
+};
+
 test("createBotRun rejects insufficient credits before creating BotRun", async (t) => {
+    mockPromptNotFound(t);
     let createCalled = false;
     t.mock.method(BotRun, "findOne", async () => null);
     t.mock.method(BotRun, "create", async () => {
@@ -104,6 +114,7 @@ test("createBotRun rejects insufficient credits before creating BotRun", async (
 });
 
 test("getBotRunCreditEstimate returns safe required and available details", async (t) => {
+    mockPromptNotFound(t);
     t.mock.method(walletService, "getAvailableCredits", async () => 200);
 
     const result = await getBotRunCreditEstimate({ user, prompt: "Reply politely" });
@@ -115,7 +126,22 @@ test("getBotRunCreditEstimate returns safe required and available details", asyn
     assert.deepEqual(Object.keys(result.estimate).sort(), ["credits", "outputTokens", "promptTokens"]);
 });
 
+test("resolveBotRunPrompt regenerates saved theme guidance instead of trusting stale generalPrompt", async (t) => {
+    t.mock.method(userPromptService, "getUserPromptData", async () => ({
+        channelTheme: "домашню кухню",
+        gender: "female",
+        generalPrompt: "AI. * Respond"
+    }));
+
+    const resolved = await resolveBotRunPrompt({ user, fallbackPrompt: "AI. * Respond" });
+
+    assert.match(resolved, /домашню кухню/);
+    assert.match(resolved, /You are a woman/);
+    assert.doesNotMatch(resolved, /AI\. \* Respond/);
+});
+
 test("createBotRun starts as before when available credits pass preflight", async (t) => {
+    mockPromptNotFound(t);
     let scheduled = false;
     const run = {
         _id: "66b000000000000000000001",
@@ -149,6 +175,7 @@ test("createBotRun starts as before when available credits pass preflight", asyn
 });
 
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {
+    mockPromptNotFound(t);
     let createCalled = false;
     t.mock.method(BotRun, "findOne", async () => null);
     t.mock.method(BotRun, "create", async () => {
@@ -179,6 +206,7 @@ test("POST /bot/start returns 402 details and does not create BotRun when credit
 });
 
 test("POST /bot/cost-estimate returns backend-owned cost metadata", async (t) => {
+    mockPromptNotFound(t);
     t.mock.method(walletService, "getAvailableCredits", async () => 200);
 
     const response = await request(createApp(), {

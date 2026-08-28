@@ -2,11 +2,29 @@ const BotRun = require("../models/BotRun");
 const User = require("../models/User");
 const walletService = require("./billing/walletService");
 const { estimateAiOperationCost } = require("./billing/costEstimator");
+const userPromptService = require("./userPromptService");
+const { generatePrompt } = require("../config/promptConfig");
 const { conflict, notFound, forbidden, paymentRequired } = require("../utils/errors");
 const { executeBotRun } = require("./youtubeService");
 
+const resolveBotRunPrompt = async ({ user, fallbackPrompt = "" }) => {
+    try {
+        const savedPrompt = await userPromptService.getUserPromptData(user._id);
+        if (savedPrompt?.channelTheme) {
+            return generatePrompt(savedPrompt.channelTheme, savedPrompt.gender || "male");
+        }
+    } catch (error) {
+        if (error.code !== "PROMPT_NOT_FOUND") {
+            throw error;
+        }
+    }
+
+    return fallbackPrompt;
+};
+
 const getBotRunCreditEstimate = async ({ user, prompt = "" }) => {
-    const estimate = estimateAiOperationCost({ comment: "", prompt });
+    const resolvedPrompt = await resolveBotRunPrompt({ user, fallbackPrompt: prompt });
+    const estimate = estimateAiOperationCost({ comment: "", prompt: resolvedPrompt });
     const availableCredits = await walletService.getAvailableCredits({ userId: user._id });
     const requiredCredits = estimate.credits;
 
@@ -34,7 +52,15 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
         throw conflict("BOT_RUN_ACTIVE", "A bot run is already active for this video");
     }
 
-    const creditEstimate = await getBotRunCreditEstimate({ user, prompt });
+    const resolvedPrompt = await resolveBotRunPrompt({ user, fallbackPrompt: prompt });
+    const estimate = estimateAiOperationCost({ comment: "", prompt: resolvedPrompt });
+    const availableCredits = await walletService.getAvailableCredits({ userId: user._id });
+    const creditEstimate = {
+        availableCredits,
+        requiredCredits: estimate.credits,
+        missingCredits: Math.max(estimate.credits - availableCredits, 0),
+        estimate
+    };
     if (creditEstimate.availableCredits < creditEstimate.requiredCredits) {
         throw paymentRequired("INSUFFICIENT_CREDITS", "Insufficient credits", creditEstimate);
     }
@@ -69,7 +95,7 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
             return;
         }
 
-        await executeBotRun(run._id, freshUser, videoId, prompt);
+        await executeBotRun(run._id, freshUser, videoId, resolvedPrompt);
     });
 
     return { run, created: true };
@@ -88,4 +114,4 @@ const getOwnedBotRun = async (userId, runId) => {
     return run;
 };
 
-module.exports = { createBotRun, getOwnedBotRun, getBotRunCreditEstimate };
+module.exports = { createBotRun, getOwnedBotRun, getBotRunCreditEstimate, resolveBotRunPrompt };

@@ -38,6 +38,7 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         debitKey: result.debitKey || null,
         releaseKey: result.releaseKey || null,
         billingStatus: result.billingStatus || "NOT_BILLED",
+        finishReason: result.finishReason || null,
         latencyMs: nullableNumber(result.latencyMs),
         success: Boolean(result.success),
         errorCode: result.errorCode || null
