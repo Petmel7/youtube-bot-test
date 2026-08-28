@@ -32,6 +32,8 @@ const aiUsageSchema = new mongoose.Schema({
     },
     finishReason: { type: String, default: null },
     providerErrorCode: { type: String, default: null },
+    providerStatus: { type: Number, default: null },
+    providerErrorCategory: { type: String, default: null },
     attemptCount: { type: Number, default: null },
     retryExhausted: { type: Boolean, default: null },
     latencyMs: { type: Number, default: null },

@@ -469,6 +469,7 @@ test("AiProvider retries Gemini timeout and releases reservation if all attempts
     assert.equal(records[0].result.providerErrorCode, "GEMINI_TIMEOUT");
     assert.equal(records[0].result.attemptCount, 2);
     assert.equal(records[0].result.retryExhausted, true);
+    assert.equal(typeof records[0].result.latencyMs, "number");
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.equal(records[0].result.actualCredits, 0);
 });
@@ -482,7 +483,9 @@ test("AiProvider records failed operations and preserves error propagation", asy
             model: "gemini-test",
             async generateReply() {
                 const error = new Error("failed");
-                error.code = "GEMINI_TIMEOUT";
+                error.code = "GEMINI_PROVIDER_ERROR";
+                error.providerErrorCode = "GEMINI_RATE_LIMIT";
+                error.latencyMs = 123;
                 error.isOperational = true;
                 throw error;
             }
@@ -503,12 +506,14 @@ test("AiProvider records failed operations and preserves error propagation", asy
             comment: "Great video",
             prompt: "Be friendly"
         }),
-        { code: "GEMINI_TIMEOUT" }
+        { code: "GEMINI_PROVIDER_ERROR" }
     );
 
     assert.equal(records.length, 1);
     assert.equal(records[0].result.success, false);
-    assert.equal(records[0].result.errorCode, "GEMINI_TIMEOUT");
+    assert.equal(records[0].result.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(records[0].result.providerErrorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(records[0].result.latencyMs, 123);
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "release"]);
 });

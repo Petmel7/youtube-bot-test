@@ -232,10 +232,12 @@ const createAiProvider = ({
             try {
                 await usageRecorder(operationWithKey, {
                     usage: {},
-                    latencyMs: null,
+                    latencyMs: error.latencyMs ?? null,
                     success: false,
                     errorCode: error.providerErrorCode || error.code || "GEMINI_PROVIDER_ERROR",
                     providerErrorCode: error.providerErrorCode || null,
+                    providerStatus: error.providerStatus ?? null,
+                    providerErrorCategory: error.providerErrorCategory || null,
                     finishReason: error.finishReason || null,
                     attemptCount: error.attemptCount || null,
                     retryExhausted: error.retryExhausted,

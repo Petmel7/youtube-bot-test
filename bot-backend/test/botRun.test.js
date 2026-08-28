@@ -228,15 +228,15 @@ test("POST /bot/cost-estimate returns backend-owned cost metadata", async (t) =>
     assert.equal(response.body.cost.estimate.outputTokens > 0, true);
 });
 
-test("GET /bot/runs/:runId disables cache and returns safe top comment error", async (t) => {
+test("GET /bot/runs/:runId disables cache and returns safe dominant comment error", async (t) => {
     t.mock.method(BotRun, "findById", async () => ({
         _id: "66b000000000000000000001",
         userId: user._id,
         videoId: "abcDEF12345",
         status: "failed",
-        processedCount: 2,
+        processedCount: 3,
         successCount: 0,
-        failureCount: 2,
+        failureCount: 3,
         skippedCount: 0,
         errorCode: "BOT_RUN_NO_REPLIES",
         errorMessage: "Bot run did not create any replies",
@@ -244,14 +244,20 @@ test("GET /bot/runs/:runId disables cache and returns safe top comment error", a
             {
                 commentId: "comment-1",
                 status: "failed",
-                errorCode: "GEMINI_TIMEOUT",
-                errorMessage: "Gemini request timed out"
+                errorCode: "GEMINI_RATE_LIMIT",
+                errorMessage: "Gemini generation failed"
             },
             {
                 commentId: "comment-2",
                 status: "failed",
-                errorCode: "GEMINI_TIMEOUT",
-                errorMessage: "Gemini request timed out"
+                errorCode: "GEMINI_RATE_LIMIT",
+                errorMessage: "Gemini generation failed"
+            },
+            {
+                commentId: "comment-3",
+                status: "failed",
+                errorCode: "GEMINI_PROVIDER_ERROR",
+                errorMessage: "Gemini generation failed"
             }
         ]
     }));
@@ -267,7 +273,7 @@ test("GET /bot/runs/:runId disables cache and returns safe top comment error", a
     assert.equal(response.headers.pragma, "no-cache");
     assert.equal(response.headers.expires, "0");
     assert.equal(response.body.run.errorCode, "BOT_RUN_NO_REPLIES");
-    assert.equal(response.body.run.topErrorCode, "GEMINI_TIMEOUT");
-    assert.equal(response.body.run.topErrorMessage, "Gemini request timed out");
-    assert.deepEqual(response.body.run.failedReasonCounts, { GEMINI_TIMEOUT: 2 });
+    assert.equal(response.body.run.topErrorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(response.body.run.topErrorMessage, "Gemini generation failed");
+    assert.deepEqual(response.body.run.failedReasonCounts, { GEMINI_RATE_LIMIT: 2, GEMINI_PROVIDER_ERROR: 1 });
 });

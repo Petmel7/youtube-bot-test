@@ -24,7 +24,7 @@
     "bot.creditEstimate": "Crédits requis : {{required}}. Disponible : {{available}}.",
     "bot.estimateLoading": "Vérification des crédits requis...",
     "bot.aiTimeout": "Le fournisseur d'IA a expiré. Réessayez plus tard.",
-    "bot.aiRateLimited": "Le fournisseur d'IA limite temporairement les requêtes. Réessayez plus tard.",
+    "bot.aiRateLimited": "Le quota Gemini/API est temporairement épuisé. Vérifiez le quota ou la facturation dans Google AI Studio, puis réessayez plus tard.",
     "bot.aiUnavailable": "Le fournisseur d'IA est temporairement indisponible. Réessayez plus tard.",
     "bot.aiProviderError": "Le fournisseur d'IA a échoué. Réessayez plus tard.",
     "bot.aiConfigError": "La configuration du fournisseur d'IA doit être vérifiée.",

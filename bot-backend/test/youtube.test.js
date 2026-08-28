@@ -2,14 +2,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const http = require("node:http");
+const { google } = require("googleapis");
 
 process.env.YOUTUBE_API_BASE = process.env.YOUTUBE_API_BASE || "https://youtube.test/v3";
 
 const youtubeRoutes = require("../src/routes/youtubeRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
+const BotRun = require("../src/models/BotRun");
 const VideoCatalog = require("../src/models/VideoCatalog");
+const aiProvider = require("../src/services/ai/aiProvider");
 const { validateYoutubeVideosQuery } = require("../src/utils/validators");
 const {
+    executeBotRun,
     getUserChannelInfo,
     getChannelVideos,
     listCatalogVideos,
@@ -399,6 +403,89 @@ test("syncVideoCatalog maps YouTube quota failures to safe error code", async (t
         () => syncVideoCatalog(user),
         { code: "YOUTUBE_QUOTA_EXCEEDED", status: 502 }
     );
+});
+
+test("executeBotRun stores provider-specific AI error codes in comment results", async (t) => {
+    const updates = [];
+    let findByIdCalls = 0;
+
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                topLevelComment: {
+                                    id: "comment-1",
+                                    snippet: { textOriginal: "Great recipe!" }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert() {
+                throw new Error("comments.insert should not be called after AI failure");
+            }
+        }
+    }));
+    t.mock.method(BotRun, "exists", async () => false);
+    t.mock.method(BotRun, "findById", async () => {
+        findByIdCalls += 1;
+        if (findByIdCalls === 1) {
+            return { _id: "66b000000000000000000001", status: "queued" };
+        }
+
+        return {
+            _id: "66b000000000000000000001",
+            successCount: 0,
+            failureCount: 1,
+            skippedCount: 0
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        const error = new Error("Gemini generation failed");
+        error.code = "GEMINI_PROVIDER_ERROR";
+        error.providerErrorCode = "GEMINI_RATE_LIMIT";
+        error.isOperational = true;
+        throw error;
+    });
+
+    await executeBotRun("66b000000000000000000001", user, "abcDEF12345", "Reply politely");
+
+    const resultUpdate = updates.find(entry => entry.update.$push?.results);
+    assert.equal(resultUpdate.update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(resultUpdate.update.$push.results.errorMessage, "Gemini generation failed");
+
+    const finalUpdate = updates.find(entry => entry.update.status === "failed");
+    assert.equal(finalUpdate.update.errorCode, "BOT_RUN_NO_REPLIES");
 });
 
 test("POST /youtube/my-videos/refresh requires auth and write header", async (t) => {

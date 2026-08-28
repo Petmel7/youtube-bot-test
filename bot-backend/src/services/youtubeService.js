@@ -139,10 +139,11 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                     await replyToComment(accessToken, commentId, responseText);
                     await addRunResult(runId, { commentId, status: "replied" });
                 } catch (error) {
+                    const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
                     await addRunResult(runId, {
                         commentId,
                         status: "failed",
-                        errorCode: error.code || "COMMENT_FAILED",
+                        errorCode,
                         errorMessage: error.isOperational ? error.message : "Failed to process comment"
                     });
                 }

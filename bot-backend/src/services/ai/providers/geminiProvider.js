@@ -179,7 +179,11 @@ const normalizeUsage = (metadata = {}) => ({
 
 const normalizeGeminiError = (error) => {
     const status = error?.status || error?.response?.status || error?.cause?.status;
-    const code = String(error?.code || error?.providerErrorCode || error?.statusText || "");
+    const code = [
+        error?.code,
+        error?.providerErrorCode,
+        error?.statusText
+    ].filter(Boolean).join(" ");
     const message = String(error?.message || error?.cause?.message || "");
     const raw = `${code} ${message}`.toLocaleLowerCase();
 
@@ -193,6 +197,18 @@ const normalizeGeminiError = (error) => {
     return "GEMINI_PROVIDER_ERROR";
 };
 
+const getProviderStatus = (error) => error?.status || error?.response?.status || error?.cause?.status || null;
+
+const getProviderErrorCategory = (code) => {
+    if (code === "GEMINI_TIMEOUT") return "timeout";
+    if (code === "GEMINI_RATE_LIMIT") return "rate_limit";
+    if (code === "GEMINI_PROVIDER_UNAVAILABLE") return "unavailable";
+    if (code === "GEMINI_AUTH_FAILED") return "auth";
+    if (code === "GEMINI_INVALID_MODEL") return "configuration";
+    if (code === "GEMINI_BLOCKED" || code === "GEMINI_UNSAFE_FINISH_REASON") return "safety";
+    return "provider";
+};
+
 const isTransientGeminiError = (error) => {
     const code = normalizeGeminiError(error);
     return ["GEMINI_TIMEOUT", "GEMINI_RATE_LIMIT", "GEMINI_PROVIDER_UNAVAILABLE"].includes(code);
@@ -200,6 +216,8 @@ const isTransientGeminiError = (error) => {
 
 const attachFailureMetadata = (error, metadata) => {
     error.providerErrorCode = error.providerErrorCode || normalizeGeminiError(error);
+    error.providerStatus = getProviderStatus(error);
+    error.providerErrorCategory = getProviderErrorCategory(error.providerErrorCode);
     error.attemptCount = metadata.attemptCount;
     error.retryExhausted = metadata.retryExhausted;
     error.finishReason = metadata.finishReason || error.finishReason || null;

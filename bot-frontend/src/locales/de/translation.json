@@ -24,7 +24,7 @@
     "bot.creditEstimate": "Erforderliche Credits: {{required}}. Verfügbar: {{available}}.",
     "bot.estimateLoading": "Erforderliche Credits werden geprüft...",
     "bot.aiTimeout": "Der KI-Anbieter hat nicht rechtzeitig geantwortet. Versuche es später erneut.",
-    "bot.aiRateLimited": "Der KI-Anbieter begrenzt Anfragen vorübergehend. Versuche es später erneut.",
+    "bot.aiRateLimited": "Das Gemini/API-Kontingent ist vorübergehend erschöpft. Prüfe Kontingent oder Abrechnung in Google AI Studio und versuche es später erneut.",
     "bot.aiUnavailable": "Der KI-Anbieter ist vorübergehend nicht verfügbar. Versuche es später erneut.",
     "bot.aiProviderError": "Der KI-Anbieter ist fehlgeschlagen. Versuche es später erneut.",
     "bot.aiConfigError": "Die KI-Anbieter-Konfiguration muss geprüft werden.",
