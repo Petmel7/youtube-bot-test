@@ -582,6 +582,86 @@ test("executeBotRun stops early after Gemini rate limit to avoid burning quota",
     assert.equal(resultUpdates[0].update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
 });
 
+test("executeBotRun records separate AI and YouTube insert latency diagnostics", async (t) => {
+    const updates = [];
+    let findByIdCalls = 0;
+
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                topLevelComment: {
+                                    id: "comment-1",
+                                    snippet: { textOriginal: "Great recipe!" }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert() {
+                return {};
+            }
+        }
+    }));
+    t.mock.method(BotRun, "exists", async () => false);
+    t.mock.method(BotRun, "findById", async () => {
+        findByIdCalls += 1;
+        if (findByIdCalls === 1) {
+            return { _id: "66b000000000000000000001", status: "queued" };
+        }
+
+        return {
+            _id: "66b000000000000000000001",
+            successCount: 1,
+            failureCount: 0,
+            skippedCount: 0
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => ({
+        text: "Thanks for noticing the sauce balance in this recipe.",
+        latencyMs: 1234,
+        attemptCount: 1
+    }));
+
+    await executeBotRun("66b000000000000000000001", user, "abcDEF12345", "Reply politely");
+
+    const resultUpdate = updates.find(entry => entry.update.$push?.results);
+    assert.equal(resultUpdate.update.$push.results.status, "replied");
+    assert.equal(resultUpdate.update.$push.results.aiLatencyMs, 1234);
+    assert.equal(Number.isInteger(resultUpdate.update.$push.results.youtubeInsertLatencyMs), true);
+    assert.equal(resultUpdate.update.$push.results.attemptCount, 1);
+});
+
 test("POST /youtube/my-videos/refresh requires auth and write header", async (t) => {
     const app = createApp();
 

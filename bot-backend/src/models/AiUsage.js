@@ -1,5 +1,21 @@
 const mongoose = require("mongoose");
 
+const aiAttemptSchema = new mongoose.Schema({
+    attempt: { type: Number, required: true },
+    startedAt: { type: Date, default: null },
+    endedAt: { type: Date, default: null },
+    latencyMs: { type: Number, default: null },
+    providerErrorCode: { type: String, default: null },
+    providerStatus: { type: Number, default: null },
+    finishReason: { type: String, default: null },
+    promptTokens: { type: Number, default: null },
+    outputTokens: { type: Number, default: null },
+    thoughtsTokenCount: { type: Number, default: null },
+    totalTokens: { type: Number, default: null },
+    retryDelayMs: { type: Number, default: null },
+    retryExhausted: { type: Boolean, default: null }
+}, { _id: false });
+
 const aiUsageSchema = new mongoose.Schema({
     operationKey: { type: String, required: true, unique: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -37,6 +53,7 @@ const aiUsageSchema = new mongoose.Schema({
     providerErrorCategory: { type: String, default: null },
     attemptCount: { type: Number, default: null },
     retryExhausted: { type: Boolean, default: null },
+    attempts: { type: [aiAttemptSchema], default: [] },
     latencyMs: { type: Number, default: null },
     success: { type: Boolean, required: true },
     errorCode: { type: String, default: null }

@@ -4,7 +4,10 @@ const resultSchema = new mongoose.Schema({
     commentId: { type: String, required: true },
     status: { type: String, enum: ["replied", "skipped", "failed"], required: true },
     errorCode: String,
-    errorMessage: String
+    errorMessage: String,
+    aiLatencyMs: { type: Number, default: null },
+    youtubeInsertLatencyMs: { type: Number, default: null },
+    attemptCount: { type: Number, default: null }
 }, { _id: false, timestamps: true });
 
 const botRunSchema = new mongoose.Schema({

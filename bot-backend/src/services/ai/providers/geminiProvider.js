@@ -207,19 +207,23 @@ const buildGenerationConfig = ({
 };
 
 const normalizeRestErrorInfo = async (response) => {
+    const retryAfter = response.headers?.get?.("retry-after");
+    const retryAfterSeconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : null;
     try {
         const body = await response.json();
         const error = body?.error || {};
         return {
             status: response.status || null,
             code: error.status || error.code || response.status || null,
-            message: error.message || response.statusText || "Gemini request failed"
+            message: error.message || response.statusText || "Gemini request failed",
+            retryAfterMs: retryAfterSeconds === null ? null : retryAfterSeconds * 1000
         };
     } catch {
         return {
             status: response.status || null,
             code: response.status || null,
-            message: response.statusText || "Gemini request failed"
+            message: response.statusText || "Gemini request failed",
+            retryAfterMs: retryAfterSeconds === null ? null : retryAfterSeconds * 1000
         };
     }
 };
@@ -290,8 +294,36 @@ const attachFailureMetadata = (error, metadata) => {
     error.finishReason = metadata.finishReason || error.finishReason || null;
     error.latencyMs = metadata.latencyMs;
     error.usage = error.usage || metadata.usage || null;
+    error.attempts = metadata.attempts || error.attempts || [];
     return error;
 };
+
+const sumAttemptLatencies = (attempts) => attempts.reduce((total, attempt) => total + (attempt.latencyMs || 0), 0);
+
+const buildAttemptDiagnostic = ({
+    attempt,
+    startedAt,
+    endedAt = new Date(),
+    error = null,
+    finishReason = null,
+    usage = null,
+    retryDelayMs = null,
+    retryExhausted = null
+}) => ({
+    attempt,
+    startedAt,
+    endedAt,
+    latencyMs: endedAt.getTime() - startedAt.getTime(),
+    providerErrorCode: error ? normalizeGeminiError(error) : null,
+    providerStatus: error ? getProviderStatus(error) : null,
+    finishReason: finishReason || null,
+    promptTokens: usage?.promptTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    thoughtsTokenCount: usage?.thoughtsTokenCount ?? null,
+    totalTokens: usage?.totalTokens ?? null,
+    retryDelayMs,
+    retryExhausted
+});
 
 const createGeminiProvider = ({
     genAI = null,
@@ -341,14 +373,15 @@ const createGeminiProvider = ({
             const error = new Error(info.message);
             error.status = info.status;
             error.code = info.code;
+            error.retryAfterMs = info.retryAfterMs;
             throw error;
         }
 
         return toGenerateContentResult(await response.json());
     };
 
-    const generateReply = async ({ comment, prompt }, retries = retryCount, qualityRetries = 1, attempt = 1) => {
-        const startedAt = Date.now();
+    const generateReply = async ({ comment, prompt }, retries = retryCount, qualityRetries = 1, attempt = 1, attempts = []) => {
+        const startedAt = new Date();
         let finishReason = null;
         let usage = null;
 
@@ -361,6 +394,13 @@ const createGeminiProvider = ({
             usage = normalizeUsage(result.response.usageMetadata);
             validateFinishReason(finishReason, { usage });
             const text = validateGeneratedReply(await result.response.text(), { comment });
+            attempts.push(buildAttemptDiagnostic({
+                attempt,
+                startedAt,
+                finishReason,
+                usage,
+                retryExhausted: false
+            }));
 
             return {
                 text,
@@ -369,10 +409,30 @@ const createGeminiProvider = ({
                 usage,
                 finishReason,
                 attemptCount: attempt,
-                latencyMs: Date.now() - startedAt,
+                attempts,
+                latencyMs: sumAttemptLatencies(attempts),
                 success: true
             };
         } catch (error) {
+            const willQualityRetry = error.isOperational && [
+                "GEMINI_REPLY_GENERIC",
+                "GEMINI_REPLY_INCOMPLETE",
+                "GEMINI_REPLY_MALFORMED",
+                "GEMINI_INVALID_RESPONSE",
+                "GEMINI_UNSAFE_FINISH_REASON"
+            ].includes(error.code) && qualityRetries > 0;
+            const willProviderRetry = !willQualityRetry && isRetryableGeminiError(error) && retries > 0;
+            const nextRetryDelayMs = willProviderRetry ? error.retryAfterMs || retryDelayMs : null;
+            attempts.push(buildAttemptDiagnostic({
+                attempt,
+                startedAt,
+                error,
+                finishReason,
+                usage: error.usage || usage,
+                retryDelayMs: nextRetryDelayMs,
+                retryExhausted: isTransientGeminiError(error) ? !willProviderRetry : false
+            }));
+
             if (error.isOperational && [
                 "GEMINI_REPLY_GENERIC",
                 "GEMINI_REPLY_INCOMPLETE",
@@ -380,12 +440,12 @@ const createGeminiProvider = ({
                 "GEMINI_INVALID_RESPONSE",
                 "GEMINI_UNSAFE_FINISH_REASON"
             ].includes(error.code) && qualityRetries > 0) {
-                return generateReply({ comment, prompt }, retries, qualityRetries - 1, attempt + 1);
+                return generateReply({ comment, prompt }, retries, qualityRetries - 1, attempt + 1, attempts);
             }
 
             if (isRetryableGeminiError(error) && retries > 0) {
-                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-                return generateReply({ comment, prompt }, retries - 1, qualityRetries, attempt + 1);
+                await new Promise(resolve => setTimeout(resolve, nextRetryDelayMs));
+                return generateReply({ comment, prompt }, retries - 1, qualityRetries, attempt + 1, attempts);
             }
 
             if (error.isOperational) {
@@ -393,8 +453,9 @@ const createGeminiProvider = ({
                     attemptCount: attempt,
                     retryExhausted: isTransientGeminiError(error),
                     finishReason,
-                    latencyMs: Date.now() - startedAt,
-                    usage
+                    latencyMs: sumAttemptLatencies(attempts),
+                    usage,
+                    attempts
                 });
             }
 
@@ -404,8 +465,9 @@ const createGeminiProvider = ({
                 attemptCount: attempt,
                 retryExhausted: isTransientGeminiError(error),
                 finishReason,
-                latencyMs: Date.now() - startedAt,
-                usage
+                latencyMs: sumAttemptLatencies(attempts),
+                usage,
+                attempts
             });
         }
     };

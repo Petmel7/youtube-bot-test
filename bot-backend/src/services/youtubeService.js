@@ -143,15 +143,24 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                         prompt: userPrompt
                     });
                     const responseText = response.text;
+                    const insertStartedAt = Date.now();
                     await replyToComment(accessToken, commentId, responseText);
-                    await addRunResult(runId, { commentId, status: "replied" });
+                    await addRunResult(runId, {
+                        commentId,
+                        status: "replied",
+                        aiLatencyMs: response.latencyMs ?? null,
+                        youtubeInsertLatencyMs: Date.now() - insertStartedAt,
+                        attemptCount: response.attemptCount ?? null
+                    });
                 } catch (error) {
                     const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
                     await addRunResult(runId, {
                         commentId,
                         status: "failed",
                         errorCode,
-                        errorMessage: error.isOperational ? error.message : "Failed to process comment"
+                        errorMessage: error.isOperational ? error.message : "Failed to process comment",
+                        aiLatencyMs: error.latencyMs ?? null,
+                        attemptCount: error.attemptCount ?? null
                     });
                     if (shouldStopRunAfterAiError(errorCode)) {
                         stopForProviderLimit = true;

@@ -242,6 +242,7 @@ const createAiProvider = ({
                     finishReason: error.finishReason || null,
                     attemptCount: error.attemptCount || null,
                     retryExhausted: error.retryExhausted,
+                    attempts: error.attempts || [],
                     estimatedCredits: estimate.credits,
                     reservedCredits: estimate.credits,
                     actualCredits: 0,

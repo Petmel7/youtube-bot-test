@@ -17,6 +17,22 @@ const buildOperationKey = ({ userId, runId, commentId, provider, model }) => {
 
 const nullableNumber = (value) => Number.isFinite(value) ? value : null;
 
+const normalizeAttempt = (attempt = {}) => ({
+    attempt: attempt.attempt,
+    startedAt: attempt.startedAt || null,
+    endedAt: attempt.endedAt || null,
+    latencyMs: nullableNumber(attempt.latencyMs),
+    providerErrorCode: attempt.providerErrorCode || null,
+    providerStatus: nullableNumber(attempt.providerStatus),
+    finishReason: attempt.finishReason || null,
+    promptTokens: nullableNumber(attempt.promptTokens),
+    outputTokens: nullableNumber(attempt.outputTokens),
+    thoughtsTokenCount: nullableNumber(attempt.thoughtsTokenCount),
+    totalTokens: nullableNumber(attempt.totalTokens),
+    retryDelayMs: nullableNumber(attempt.retryDelayMs),
+    retryExhausted: attempt.retryExhausted === undefined ? null : Boolean(attempt.retryExhausted)
+});
+
 const recordAiUsage = async (operation, result, model = AiUsage) => {
     const operationKey = operation.operationKey || buildOperationKey(operation);
     const usage = result.usage || {};
@@ -45,6 +61,7 @@ const recordAiUsage = async (operation, result, model = AiUsage) => {
         providerErrorCategory: result.providerErrorCategory || null,
         attemptCount: nullableNumber(result.attemptCount),
         retryExhausted: result.retryExhausted === undefined ? null : Boolean(result.retryExhausted),
+        attempts: Array.isArray(result.attempts) ? result.attempts.map(normalizeAttempt) : [],
         latencyMs: nullableNumber(result.latencyMs),
         success: Boolean(result.success),
         errorCode: result.errorCode || null

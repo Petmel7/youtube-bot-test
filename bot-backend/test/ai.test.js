@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { geminiMaxOutputTokens } = require("../src/config/config");
+const { geminiMaxOutputTokens, geminiRetryCount, geminiTimeoutMs } = require("../src/config/config");
 const { createAiProvider } = require("../src/services/ai/aiProvider");
 const { buildOperationKey, recordAiUsage } = require("../src/services/ai/aiUsageService");
 const {
@@ -102,28 +102,30 @@ const createFakeWallet = (events = []) => ({
 });
 
 test("Gemini max output token default leaves room without an excessive ceiling", () => {
-    assert.equal(geminiMaxOutputTokens, 512);
+    assert.equal(geminiMaxOutputTokens, 384);
+    assert.equal(geminiTimeoutMs, 15000);
+    assert.equal(geminiRetryCount, 1);
 });
 
 test("Gemini generation config uses minimal thinking for Gemini 3 and budget zero for older thinking models", () => {
     assert.deepEqual(buildGenerationConfig({
         modelName: "gemini-3.6-flash",
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         thinkingBudget: 0,
         thinkingLevel: "minimal"
     }), {
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         temperature: 0.4,
         thinkingConfig: { thinkingLevel: "minimal" }
     });
 
     assert.deepEqual(buildGenerationConfig({
         modelName: "gemini-2.5-flash",
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         thinkingBudget: 0,
         thinkingLevel: "minimal"
     }), {
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         temperature: 0.4,
         thinkingConfig: { thinkingBudget: 0 }
     });
@@ -183,7 +185,7 @@ test("Gemini provider sends low-thinking REST generation config when SDK config 
             });
         },
         modelName: "gemini-3.6-flash",
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         thinkingBudget: 0,
         thinkingLevel: "minimal",
         timeoutMs: 1000,
@@ -200,12 +202,17 @@ test("Gemini provider sends low-thinking REST generation config when SDK config 
     assert.equal(requests[0].options.method, "POST");
     assert.equal(requests[0].options.headers["Content-Type"], "application/json");
     assert.deepEqual(requests[0].body.generationConfig, {
-        maxOutputTokens: 512,
+        maxOutputTokens: 384,
         temperature: 0.4,
         thinkingConfig: { thinkingLevel: "minimal" }
     });
     assert.equal(requests[0].body.contents[0].parts[0].text.includes("Great spice balance"), true);
     assert.equal(result.usage.thoughtsTokenCount, 0);
+    assert.equal(result.attempts.length, 1);
+    assert.equal(result.attempts[0].attempt, 1);
+    assert.equal(result.attempts[0].thoughtsTokenCount, 0);
+    assert.equal(result.attempts[0].finishReason, "STOP");
+    assert.equal(result.attempts[0].providerErrorCode, null);
 });
 
 test("Gemini provider does not fabricate missing token usage", async () => {
@@ -303,6 +310,10 @@ test("Gemini provider does not retry rate-limit-like SDK errors", async () => {
     }), (error) => {
         assert.equal(error.providerErrorCode, "GEMINI_RATE_LIMIT");
         assert.equal(error.attemptCount, 1);
+        assert.equal(error.attempts.length, 1);
+        assert.equal(error.attempts[0].providerErrorCode, "GEMINI_RATE_LIMIT");
+        assert.equal(error.attempts[0].retryDelayMs, null);
+        assert.equal(error.attempts[0].retryExhausted, true);
         return true;
     });
 
@@ -415,6 +426,9 @@ test("Gemini provider preserves usage metadata on final MAX_TOKENS failure", asy
                 thoughtsTokenCount: 120,
                 totalTokens: 139
             });
+            assert.equal(error.attempts.length, 2);
+            assert.deepEqual(error.attempts.map(entry => entry.finishReason), ["MAX_TOKENS", "MAX_TOKENS"]);
+            assert.deepEqual(error.attempts.map(entry => entry.thoughtsTokenCount), [100, 120]);
             return true;
         }
     );
@@ -651,6 +665,8 @@ test("AiProvider records usage metadata and releases reservation on MAX_TOKENS f
         thoughtsTokenCount: 95,
         totalTokens: 111
     });
+    assert.equal(records[0].result.attempts.length, 2);
+    assert.equal(records[0].result.attempts[1].thoughtsTokenCount, 95);
 });
 
 test("AiProvider retries Gemini timeout and releases reservation if all attempts fail", async () => {
@@ -689,6 +705,8 @@ test("AiProvider retries Gemini timeout and releases reservation if all attempts
     assert.equal(records[0].result.providerErrorCode, "GEMINI_TIMEOUT");
     assert.equal(records[0].result.attemptCount, 2);
     assert.equal(records[0].result.retryExhausted, true);
+    assert.equal(records[0].result.attempts.length, 2);
+    assert.equal(records[0].result.attempts[0].retryDelayMs, 1);
     assert.equal(typeof records[0].result.latencyMs, "number");
     assert.equal(records[0].result.billingStatus, "PROVIDER_FAILED");
     assert.equal(records[0].result.actualCredits, 0);
