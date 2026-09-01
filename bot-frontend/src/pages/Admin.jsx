@@ -29,8 +29,14 @@ const formatDate = (value) => {
 
 const shortText = (value) => {
     if (!value) return "-";
-    if (value.length <= 18) return value;
-    return `${value.slice(0, 8)}...${value.slice(-6)}`;
+    const text = String(value);
+    if (text.length <= 18) return text;
+    return `${text.slice(0, 8)}...${text.slice(-6)}`;
+};
+
+const titleText = (value) => {
+    if (!value) return undefined;
+    return String(value);
 };
 
 const formatUsdMinor = (value) => {
@@ -309,22 +315,22 @@ const Admin = () => {
                         <tbody>
                             {configProposals.map(proposal => (
                                 <tr key={proposal.id}>
-                                    <td><Badge tone={proposal.status === "ACTIVATED" ? "success" : "neutral"}>{proposal.status}</Badge></td>
-                                    <td>
+                                    <td data-label={t("admin.payments.status")}><Badge tone={proposal.status === "ACTIVATED" ? "success" : "neutral"}>{proposal.status}</Badge></td>
+                                    <td data-label={t("admin.payments.reason")}>
                                         <strong>{proposal.reason}</strong>
                                         <span>{formatDate(proposal.createdAt)}</span>
                                     </td>
-                                    <td>
+                                    <td data-label={t("admin.payments.configDiff")}>
                                         {(proposal.normalizedPreview?.diff || []).map(diff => (
-                                            <span key={diff.methodId}>{diff.methodId}: {Object.keys(diff.after || {}).join(", ")}</span>
+                                            <span key={diff.methodId} title={titleText(diff.methodId)}>{diff.methodId}: {Object.keys(diff.after || {}).join(", ")}</span>
                                         ))}
                                     </td>
-                                    <td>
+                                    <td data-label={t("admin.payments.confirmation")}>
                                         {proposal.status === "PENDING_CONFIRMATION" ? (
                                             <input value={proposalConfirmations[proposal.id] || ""} onChange={(event) => setProposalConfirmations(current => ({ ...current, [proposal.id]: event.target.value }))} placeholder={proposal.confirmationPhrase || "CONFIRM PAYMENT CONFIG CHANGE"} />
                                         ) : "-"}
                                     </td>
-                                    <td>
+                                    <td data-label={t("admin.payments.actions")}>
                                         <div className={styles.actions}>
                                             {proposal.status === "PENDING_CONFIRMATION" && (
                                                 <button className={styles.actionButton} type="button" onClick={() => runProposalAction(proposal, "confirm")} disabled={Boolean(actionLoading)}>
@@ -392,31 +398,31 @@ const Admin = () => {
                                 const intentId = intent.id;
                                 return (
                                     <tr key={intentId}>
-                                        <td><Badge tone="warning">{candidate.reason || t("admin.payments.review")}</Badge></td>
-                                        <td>
+                                        <td data-label={t("admin.payments.reason")}><Badge tone="warning">{candidate.reason || t("admin.payments.review")}</Badge></td>
+                                        <td data-label={t("admin.payments.status")}>
                                             <Badge tone={intent.credited ? "success" : "neutral"}>{intent.status}</Badge>
                                             <span>{intent.failureCode || intent.failureReason || "-"}</span>
                                         </td>
-                                        <td>
-                                            <strong>{intent.paymentMethodId}</strong>
-                                            <span>{intent.caipNetworkId}</span>
+                                        <td data-label={t("admin.payments.method")}>
+                                            <strong title={titleText(intent.paymentMethodId)}>{intent.paymentMethodId}</strong>
+                                            <span title={titleText(intent.caipNetworkId)}>{intent.caipNetworkId}</span>
                                         </td>
-                                        <td>
+                                        <td data-label={t("admin.payments.amount")}>
                                             <strong>{formatUsdMinor(intent.expectedUsdAmountMinor)}</strong>
                                             <span>{intent.verifiedTokenAmountBaseUnits || "-"} / {intent.expectedTokenAmountBaseUnits} {intent.tokenSymbol}</span>
                                             <span>{intent.creditAmount} {t("admin.payments.credits")}</span>
                                         </td>
-                                        <td>{shortText(intent.userId)}</td>
-                                        <td>
-                                            <span>{shortText(intent.payerAddress)}</span>
-                                            <span>{shortText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}</span>
+                                        <td data-label={t("admin.payments.user")} title={titleText(intent.userId)}>{shortText(intent.userId)}</td>
+                                        <td data-label={t("admin.payments.transaction")}>
+                                            <span title={titleText(intent.payerAddress)}>{shortText(intent.payerAddress)}</span>
+                                            <span title={titleText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}>{shortText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}</span>
                                         </td>
-                                        <td>
+                                        <td data-label={t("admin.payments.review")}>
                                             <span>{candidate.reviewStatus || "-"}</span>
                                             <span>{candidate.latestAudit?.action || "-"}</span>
                                             <span>{candidate.latestAudit?.note || candidate.reviewNote || "-"}</span>
                                         </td>
-                                        <td>
+                                        <td data-label={t("admin.payments.actions")}>
                                             <div className={styles.actions}>
                                                 <button
                                                     className={styles.actionButton}
@@ -469,16 +475,16 @@ const Admin = () => {
                         <tbody>
                             {methods.map(method => (
                                 <tr key={method.id}>
-                                    <td>
+                                    <td data-label={t("admin.payments.method")}>
                                         <strong>{method.name}</strong>
-                                        <span>{method.id}</span>
+                                        <span title={titleText(method.id)}>{method.id}</span>
                                     </td>
-                                    <td>{method.token?.symbol} · {method.token?.decimals}</td>
-                                    <td>
+                                    <td data-label={t("admin.payments.token")}>{method.token?.symbol} · {method.token?.decimals}</td>
+                                    <td data-label={t("admin.payments.network")}>
                                         <strong>{method.network}</strong>
-                                        <span>{method.caipNetworkId}</span>
+                                        <span title={titleText(method.caipNetworkId)}>{method.caipNetworkId}</span>
                                     </td>
-                                    <td className={styles.badges}>
+                                    <td data-label={t("admin.payments.flags")} className={styles.badges}>
                                         <Badge tone={method.enabled ? "success" : "muted"}>
                                             {method.enabled ? t("admin.payments.enabled") : t("admin.payments.disabled")}
                                         </Badge>
@@ -487,12 +493,12 @@ const Admin = () => {
                                         </Badge>
                                         {method.smoke && <Badge tone="warning">{t("admin.payments.smoke")}</Badge>}
                                     </td>
-                                    <td>
-                                        <button className={styles.copyButton} type="button" onClick={() => copyValue(method.treasuryAddress)}>
+                                    <td data-label={t("admin.payments.treasury")}>
+                                        <button className={styles.copyButton} type="button" onClick={() => copyValue(method.treasuryAddress)} title={titleText(method.treasuryAddress)}>
                                             {shortText(method.treasuryAddress)}
                                         </button>
                                     </td>
-                                    <td>{method.confirmations}</td>
+                                    <td data-label={t("admin.payments.confirmations")}>{method.confirmations}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -531,25 +537,25 @@ const Admin = () => {
                         <tbody>
                             {intents.map(intent => (
                                 <tr key={intent.id}>
-                                    <td><Badge tone={intent.credited ? "success" : "neutral"}>{intent.status}</Badge></td>
-                                    <td>
-                                        <strong>{intent.paymentMethodId}</strong>
-                                        <span>{intent.caipNetworkId}</span>
+                                    <td data-label={t("admin.payments.status")}><Badge tone={intent.credited ? "success" : "neutral"}>{intent.status}</Badge></td>
+                                    <td data-label={t("admin.payments.method")}>
+                                        <strong title={titleText(intent.paymentMethodId)}>{intent.paymentMethodId}</strong>
+                                        <span title={titleText(intent.caipNetworkId)}>{intent.caipNetworkId}</span>
                                     </td>
-                                    <td>
+                                    <td data-label={t("admin.payments.amount")}>
                                         <strong>{formatUsdMinor(intent.expectedUsdAmountMinor)}</strong>
                                         <span>{intent.creditAmount} {t("admin.payments.credits")}</span>
                                         <span>{intent.expectedTokenAmountBaseUnits} {intent.tokenSymbol}</span>
                                     </td>
-                                    <td>{shortText(intent.userId)}</td>
-                                    <td>{shortText(intent.payerAddress)}</td>
-                                    <td>{shortText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}</td>
-                                    <td>
+                                    <td data-label={t("admin.payments.user")} title={titleText(intent.userId)}>{shortText(intent.userId)}</td>
+                                    <td data-label={t("admin.payments.payer")} title={titleText(intent.payerAddress)}>{shortText(intent.payerAddress)}</td>
+                                    <td data-label={t("admin.payments.transaction")} title={titleText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}>{shortText(intent.txHash || intent.transactionSignature || intent.candidateTxHash)}</td>
+                                    <td data-label={t("admin.payments.dates")}>
                                         <span>{t("admin.payments.created")}: {formatDate(intent.createdAt)}</span>
                                         <span>{t("admin.payments.expires")}: {formatDate(intent.expiresAt)}</span>
                                         <span>{t("admin.payments.confirmed")}: {formatDate(intent.confirmedAt)}</span>
                                     </td>
-                                    <td>{intent.failureCode || intent.failureReason || "-"}</td>
+                                    <td data-label={t("admin.payments.failure")}>{intent.failureCode || intent.failureReason || "-"}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -576,15 +582,15 @@ const Admin = () => {
                         <tbody>
                             {ledger.map(entry => (
                                 <tr key={entry.id}>
-                                    <td>{shortText(entry.txHash)}</td>
-                                    <td>{shortText(entry.userId)}</td>
-                                    <td>
-                                        <strong>{entry.paymentMethodId || "-"}</strong>
-                                        <span>{entry.networkId || entry.chainId || "-"}</span>
+                                    <td data-label={t("admin.payments.transaction")} title={titleText(entry.txHash)}>{shortText(entry.txHash)}</td>
+                                    <td data-label={t("admin.payments.user")} title={titleText(entry.userId)}>{shortText(entry.userId)}</td>
+                                    <td data-label={t("admin.payments.method")}>
+                                        <strong title={titleText(entry.paymentMethodId)}>{entry.paymentMethodId || "-"}</strong>
+                                        <span title={titleText(entry.networkId || entry.chainId)}>{entry.networkId || entry.chainId || "-"}</span>
                                     </td>
-                                    <td>{entry.amount} {entry.unit}</td>
-                                    <td>{entry.balanceBefore ?? "-"} -&gt; {entry.balanceAfter ?? "-"}</td>
-                                    <td>{formatDate(entry.createdAt)}</td>
+                                    <td data-label={t("admin.payments.amount")}>{entry.amount} {entry.unit}</td>
+                                    <td data-label={t("admin.payments.balance")}>{entry.balanceBefore ?? "-"} -&gt; {entry.balanceAfter ?? "-"}</td>
+                                    <td data-label={t("admin.payments.created")}>{formatDate(entry.createdAt)}</td>
                                 </tr>
                             ))}
                         </tbody>

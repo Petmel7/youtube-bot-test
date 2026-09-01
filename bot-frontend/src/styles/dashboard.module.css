@@ -15,8 +15,7 @@
     width: 100%;
     display: grid;
     grid-template-columns: 1fr;
-    flex-wrap: wrap;
-    gap: 20px;
+    gap: 14px;
     margin-bottom: 20px;
 }
 
@@ -43,28 +42,37 @@
     text-align: center;
 }
 
-.genderDisplay {
-    margin-bottom: 20px;
-}
-
 .genderDisplay,
 .themeDisplay {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
+    gap: 8px 16px;
+    min-width: 0;
+    width: 100%;
 }
 
 .genderAndThemeInfo {
+    flex: 1 1 220px;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .genderAndThemeInfoBlock {
-    display: flex;
-    align-items: center;
-    gap: 5px;
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.genderAndThemeInfoBlock p {
+    margin: 0;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
 }
 
 .genderAndThemeIcon {
@@ -77,10 +85,22 @@
 }
 
 .editButton {
-    width: 100%;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 150px;
+    min-height: 36px;
+    max-width: 100%;
+    margin-left: auto;
+    padding: 8px 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    font-weight: 700;
 }
 
-.editButton,
 .saveButton,
 .cancelButton {
     padding: 10px 16px;
@@ -106,6 +126,11 @@
     color: #fff;
     border: none;
     cursor: pointer;
+}
+
+.editButton:hover {
+    border-color: #1e90ff;
+    color: #1e90ff;
 }
 
 .genderSelection {
@@ -320,7 +345,7 @@
     }
 
     .themeConteaner {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
     }
 }
 
@@ -335,10 +360,6 @@
     .dashboardConteaner {
         width: min(100% - 24px, 1280px);
         padding-top: 16px;
-    }
-
-    .genderAndThemeInfoBlock {
-        flex-direction: column;
     }
 
     .dashboardTitle {
@@ -365,9 +386,9 @@
         height: 40px;
     }
 
-    .editButton,
     .saveButton,
     .cancelButton,
+    .editButton,
     .button {
         width: 100%;
         max-width: 100%;
@@ -377,6 +398,17 @@
 :global(body.dark-mode) .videoDetailPanel {
     border-color: #3d3d3d;
     background: #1f1f1f;
+}
+
+:global(body.dark-mode) .editButton {
+    border-color: #3d3d3d;
+    background: #272727;
+    color: #fff;
+}
+
+:global(body.dark-mode) .editButton:hover {
+    border-color: #1e90ff;
+    color: #1e90ff;
 }
 
 :global(body.dark-mode) .videoDetailInfo > p,

@@ -8,7 +8,12 @@ import "./index.css";
 
 function App() {
     const location = useLocation();
-    const containerClassName = location.pathname === "/dashboard" ? "container dashboard-route-container" : "container";
+    const routeContainerClass = location.pathname === "/dashboard"
+        ? "dashboard-route-container"
+        : location.pathname === "/admin"
+            ? "admin-route-container"
+            : "";
+    const containerClassName = `container ${routeContainerClass}`.trim();
 
     return (
         <div className={containerClassName}>

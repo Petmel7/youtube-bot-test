@@ -165,13 +165,19 @@
 .methodBadge {
     display: inline-flex;
     align-items: center;
-    min-height: 22px;
-    padding: 2px 8px;
+    justify-content: center;
+    min-height: 24px;
+    max-width: 100%;
+    padding: 0 9px;
     border-radius: 999px;
     background: #f1f1f1;
     color: #444;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
 }
 
 .methodButton .methodBadges,
@@ -403,13 +409,21 @@
 
 .statusBadge {
     flex: 0 0 auto;
-    padding: 5px 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    max-width: 100%;
+    padding: 0 9px;
     border-radius: 999px;
     background: #f1f1f1;
     color: #444;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1;
     text-align: center;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
 }
 
 .success {

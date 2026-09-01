@@ -96,6 +96,11 @@ body.dark-mode .theme-toggle:hover {
     padding: 0;
 }
 
+.admin-route-container {
+    max-width: none;
+    padding: 0;
+}
+
 .editAndSaveButton {
     cursor: pointer;
     border: none;
