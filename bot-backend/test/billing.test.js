@@ -130,20 +130,20 @@ const createTestWalletService = () => {
 test("cost estimator charges a flat default reply cost while preserving token metadata", () => {
     assert.equal(estimateInputTokens({ comment: "abcd", prompt: "efgh" }), 2);
     assert.equal(calculateCredits({ promptTokens: 2, outputTokens: 3 }), 0);
-    assert.equal(estimateAiOperationCost({ comment: "abcd", prompt: "efgh" }).credits, 10);
+    assert.equal(estimateAiOperationCost({ comment: "abcd", prompt: "efgh" }).credits, 1);
     assert.deepEqual(calculateActualAiCost({
         usage: { promptTokens: 2, outputTokens: 3, totalTokens: 5 }
     }), {
         promptTokens: 2,
         outputTokens: 3,
         totalTokens: 5,
-        credits: 10
+        credits: 1
     });
     assert.deepEqual(calculateActualAiCost({ usage: { promptTokens: null, outputTokens: 3 } }), {
         promptTokens: null,
         outputTokens: 3,
         totalTokens: null,
-        credits: 10
+        credits: 1
     });
 });
 

@@ -430,11 +430,11 @@ test("AiProvider debits the flat reply credit cost and keeps token usage as meta
         prompt: "Be friendly"
     });
 
-    assert.equal(walletEvents[0].input.amount, 10);
-    assert.equal(walletEvents[1].input.reservedAmount, 10);
-    assert.equal(walletEvents[1].input.actualAmount, 10);
+    assert.equal(walletEvents[0].input.amount, 1);
+    assert.equal(walletEvents[1].input.reservedAmount, 1);
+    assert.equal(walletEvents[1].input.actualAmount, 1);
     assert.equal(records[0].result.usage.totalTokens, 430);
-    assert.equal(records[0].result.actualCredits, 10);
+    assert.equal(records[0].result.actualCredits, 1);
 });
 
 test("AiProvider reserves once and finalizes once when Gemini repairs an invalid reply", async () => {
@@ -470,7 +470,7 @@ test("AiProvider reserves once and finalizes once when Gemini repairs an invalid
 
     assert.equal(result.text, "Так, ідея з лимоном справді робить смак свіжішим.");
     assert.deepEqual(walletEvents.map(event => event.type), ["reserve", "finalize"]);
-    assert.equal(records[0].result.actualCredits, 10);
+    assert.equal(records[0].result.actualCredits, 1);
 });
 
 test("AiProvider releases reservation when Gemini cannot produce a valid reply", async () => {

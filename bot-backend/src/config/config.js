@@ -28,7 +28,7 @@ module.exports = {
     botMaxPagesPerRun: Number(process.env.BOT_MAX_PAGES_PER_RUN || 2),
     botReplyMaxLength: Number(process.env.BOT_REPLY_MAX_LENGTH || 500),
     aiCreditUnit: process.env.AI_CREDIT_UNIT || "AI_CREDIT",
-    aiReplyCreditCost: Number(process.env.AI_REPLY_CREDIT_COST || 10),
+    aiReplyCreditCost: Number(process.env.AI_REPLY_CREDIT_COST || 1),
     aiPromptTokenCreditRate: Number(process.env.AI_PROMPT_TOKEN_CREDIT_RATE || 0),
     aiOutputTokenCreditRate: Number(process.env.AI_OUTPUT_TOKEN_CREDIT_RATE || 0),
     aiEstimatedInputCharsPerToken: Number(process.env.AI_ESTIMATED_INPUT_CHARS_PER_TOKEN || 4),

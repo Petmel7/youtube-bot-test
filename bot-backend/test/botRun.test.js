@@ -109,7 +109,7 @@ test("createBotRun rejects insufficient credits before creating BotRun", async (
     assert.equal(thrown.code, "INSUFFICIENT_CREDITS");
     assert.equal(thrown.status, 402);
     assert.equal(thrown.details.availableCredits, 0);
-    assert.equal(thrown.details.requiredCredits, 10);
+    assert.equal(thrown.details.requiredCredits, 1);
     assert.equal(thrown.details.requiredCredits, thrown.details.estimate.credits);
     assert.equal(thrown.details.missingCredits, thrown.details.requiredCredits);
     assert.equal(Number.isInteger(thrown.details.estimate.promptTokens), true);
@@ -124,7 +124,7 @@ test("getBotRunCreditEstimate returns safe required and available details", asyn
     const result = await getBotRunCreditEstimate({ user, prompt: "Reply politely" });
 
     assert.equal(result.availableCredits, 200);
-    assert.equal(result.requiredCredits, 10);
+    assert.equal(result.requiredCredits, 1);
     assert.equal(result.requiredCredits, result.estimate.credits);
     assert.equal(result.missingCredits, 0);
     assert.deepEqual(Object.keys(result.estimate).sort(), ["credits", "outputTokens", "promptTokens"]);
@@ -161,7 +161,7 @@ test("createBotRun starts as before when available credits pass preflight", asyn
         assert.equal(doc.videoId, "abcDEF12345");
         return run;
     });
-    t.mock.method(walletService, "getAvailableCredits", async () => 10);
+    t.mock.method(walletService, "getAvailableCredits", async () => 1);
     t.mock.method(global, "setImmediate", () => {
         scheduled = true;
     });
@@ -186,7 +186,7 @@ test("POST /bot/start returns 402 details and does not create BotRun when credit
         createCalled = true;
         throw new Error("BotRun.create should not be called");
     });
-    t.mock.method(walletService, "getAvailableCredits", async () => 9);
+    t.mock.method(walletService, "getAvailableCredits", async () => 0);
 
     const response = await request(createApp(), {
         method: "POST",
@@ -203,8 +203,8 @@ test("POST /bot/start returns 402 details and does not create BotRun when credit
     assert.equal(response.status, 402);
     assert.equal(response.body.success, false);
     assert.equal(response.body.error.code, "INSUFFICIENT_CREDITS");
-    assert.equal(response.body.error.details.availableCredits, 9);
-    assert.equal(response.body.error.details.requiredCredits, 10);
+    assert.equal(response.body.error.details.availableCredits, 0);
+    assert.equal(response.body.error.details.requiredCredits, 1);
     assert.equal(response.body.error.details.requiredCredits, response.body.error.details.estimate.credits);
     assert.equal(createCalled, false);
 });
@@ -223,7 +223,7 @@ test("POST /bot/cost-estimate returns backend-owned cost metadata", async (t) =>
     assert.equal(response.status, 200);
     assert.equal(response.body.success, true);
     assert.equal(response.body.cost.availableCredits, 200);
-    assert.equal(response.body.cost.requiredCredits, 10);
+    assert.equal(response.body.cost.requiredCredits, 1);
     assert.equal(response.body.cost.requiredCredits, response.body.cost.estimate.credits);
     assert.equal(response.body.cost.estimate.outputTokens > 0, true);
 });
