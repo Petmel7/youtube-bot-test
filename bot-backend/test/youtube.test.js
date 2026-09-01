@@ -488,6 +488,100 @@ test("executeBotRun stores provider-specific AI error codes in comment results",
     assert.equal(finalUpdate.update.errorCode, "BOT_RUN_NO_REPLIES");
 });
 
+test("executeBotRun stops early after Gemini rate limit to avoid burning quota", async (t) => {
+    const updates = [];
+    let findByIdCalls = 0;
+    let aiCalls = 0;
+
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-1",
+                                        snippet: { textOriginal: "Great recipe!" }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-2",
+                                        snippet: { textOriginal: "Can I add paprika?" }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert() {
+                throw new Error("comments.insert should not be called after AI failure");
+            }
+        }
+    }));
+    t.mock.method(BotRun, "exists", async () => false);
+    t.mock.method(BotRun, "findById", async () => {
+        findByIdCalls += 1;
+        if (findByIdCalls === 1) {
+            return { _id: "66b000000000000000000001", status: "queued" };
+        }
+
+        return {
+            _id: "66b000000000000000000001",
+            successCount: 0,
+            failureCount: 1,
+            skippedCount: 0
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        aiCalls += 1;
+        const error = new Error("Gemini generation failed");
+        error.code = "GEMINI_PROVIDER_ERROR";
+        error.providerErrorCode = "GEMINI_RATE_LIMIT";
+        error.isOperational = true;
+        throw error;
+    });
+
+    await executeBotRun("66b000000000000000000001", user, "abcDEF12345", "Reply politely");
+
+    const resultUpdates = updates.filter(entry => entry.update.$push?.results);
+    assert.equal(aiCalls, 1);
+    assert.equal(resultUpdates.length, 1);
+    assert.equal(resultUpdates[0].update.$push.results.commentId, "comment-1");
+    assert.equal(resultUpdates[0].update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
+});
+
 test("POST /youtube/my-videos/refresh requires auth and write header", async (t) => {
     const app = createApp();
 

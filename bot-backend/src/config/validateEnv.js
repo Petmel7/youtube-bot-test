@@ -3,6 +3,7 @@ const {
     geminiModel,
     geminiMaxOutputTokens,
     geminiThinkingBudget,
+    geminiThinkingLevel,
     geminiTimeoutMs,
     geminiRetryCount,
     botMaxCommentsPerRun,
@@ -46,6 +47,10 @@ const validateEnv = () => {
 
     if (!geminiModel || !/^gemini-[A-Za-z0-9._-]+$/.test(geminiModel)) {
         throw new Error("Invalid GEMINI_MODEL configuration");
+    }
+
+    if (!["minimal", "low", "medium", "high"].includes(geminiThinkingLevel)) {
+        throw new Error("Invalid GEMINI_THINKING_LEVEL configuration");
     }
 
     const numericSettings = {

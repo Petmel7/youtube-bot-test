@@ -5,6 +5,7 @@ const { geminiMaxOutputTokens } = require("../src/config/config");
 const { createAiProvider } = require("../src/services/ai/aiProvider");
 const { buildOperationKey, recordAiUsage } = require("../src/services/ai/aiUsageService");
 const {
+    buildGenerationConfig,
     buildGeminiPrompt,
     createGeminiProvider,
     normalizeGeminiError,
@@ -39,6 +40,13 @@ const createFakeGenAI = ({ text = " Thanks! ", usageMetadata, error, finishReaso
         }
     };
 };
+
+const createJsonResponse = (body, { ok = true, status = ok ? 200 : 500, statusText = "" } = {}) => ({
+    ok,
+    status,
+    statusText,
+    json: async () => body
+});
 
 test("buildGeminiPrompt includes language, specificity, completeness, and formatting rules", () => {
     const prompt = buildGeminiPrompt("Дуже сподобалась подача страви", "Cooking channel");
@@ -93,8 +101,32 @@ const createFakeWallet = (events = []) => ({
     }
 });
 
-test("Gemini max output token default gives thinking models enough response budget", () => {
-    assert.equal(geminiMaxOutputTokens, 1024);
+test("Gemini max output token default leaves room without an excessive ceiling", () => {
+    assert.equal(geminiMaxOutputTokens, 512);
+});
+
+test("Gemini generation config uses minimal thinking for Gemini 3 and budget zero for older thinking models", () => {
+    assert.deepEqual(buildGenerationConfig({
+        modelName: "gemini-3.6-flash",
+        maxOutputTokens: 512,
+        thinkingBudget: 0,
+        thinkingLevel: "minimal"
+    }), {
+        maxOutputTokens: 512,
+        temperature: 0.4,
+        thinkingConfig: { thinkingLevel: "minimal" }
+    });
+
+    assert.deepEqual(buildGenerationConfig({
+        modelName: "gemini-2.5-flash",
+        maxOutputTokens: 512,
+        thinkingBudget: 0,
+        thinkingLevel: "minimal"
+    }), {
+        maxOutputTokens: 512,
+        temperature: 0.4,
+        thinkingConfig: { thinkingBudget: 0 }
+    });
 });
 
 test("Gemini provider returns text and normalized model/provider usage", async () => {
@@ -128,6 +160,52 @@ test("Gemini provider returns text and normalized model/provider usage", async (
     });
     assert.equal(result.success, true);
     assert.equal(typeof result.latencyMs, "number");
+});
+
+test("Gemini provider sends low-thinking REST generation config when SDK config cannot", async () => {
+    const requests = [];
+    const provider = createGeminiProvider({
+        fetchImpl: async (url, options) => {
+            requests.push({ url, options, body: JSON.parse(options.body) });
+            return createJsonResponse({
+                candidates: [{
+                    finishReason: "STOP",
+                    content: {
+                        parts: [{ text: "Thanks for pointing out the spice balance in that recipe." }]
+                    }
+                }],
+                usageMetadata: {
+                    promptTokenCount: 20,
+                    candidatesTokenCount: 10,
+                    thoughtsTokenCount: 0,
+                    totalTokenCount: 30
+                }
+            });
+        },
+        modelName: "gemini-3.6-flash",
+        maxOutputTokens: 512,
+        thinkingBudget: 0,
+        thinkingLevel: "minimal",
+        timeoutMs: 1000,
+        retryCount: 0
+    });
+
+    const result = await provider.generateReply({
+        comment: "Great spice balance",
+        prompt: "Cooking channel"
+    });
+
+    assert.equal(result.text, "Thanks for pointing out the spice balance in that recipe.");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].options.method, "POST");
+    assert.equal(requests[0].options.headers["Content-Type"], "application/json");
+    assert.deepEqual(requests[0].body.generationConfig, {
+        maxOutputTokens: 512,
+        temperature: 0.4,
+        thinkingConfig: { thinkingLevel: "minimal" }
+    });
+    assert.equal(requests[0].body.contents[0].parts[0].text.includes("Great spice balance"), true);
+    assert.equal(result.usage.thoughtsTokenCount, 0);
 });
 
 test("Gemini provider does not fabricate missing token usage", async () => {
@@ -199,31 +277,36 @@ test("Gemini provider classifies provider SDK error shapes safely", () => {
     assert.equal(normalizeGeminiError({ message: "response blocked for safety" }), "GEMINI_BLOCKED");
 });
 
-test("Gemini provider retries rate-limit-like SDK errors without status", async () => {
+test("Gemini provider does not retry rate-limit-like SDK errors", async () => {
     const rateLimit = new Error("quota exceeded");
+    let calls = 0;
     const provider = createGeminiProvider({
-        genAI: createFakeGenAI({
-            responses: [
-                { error: rateLimit },
-                {
-                    text: "Yes, that paprika tip is a good way to deepen the flavor.",
-                    finishReason: "STOP"
-                }
-            ]
-        }),
+        genAI: {
+            getGenerativeModel() {
+                return {
+                    async generateContent() {
+                        calls += 1;
+                        throw rateLimit;
+                    }
+                };
+            }
+        },
         modelName: "gemini-test",
         timeoutMs: 1000,
-        retryCount: 1,
+        retryCount: 2,
         retryDelayMs: 1
     });
 
-    const result = await provider.generateReply({
+    await assert.rejects(() => provider.generateReply({
         comment: "The paprika tip improved the flavor",
         prompt: "Cooking channel"
+    }), (error) => {
+        assert.equal(error.providerErrorCode, "GEMINI_RATE_LIMIT");
+        assert.equal(error.attemptCount, 1);
+        return true;
     });
 
-    assert.equal(result.text, "Yes, that paprika tip is a good way to deepen the flavor.");
-    assert.equal(result.attemptCount, 2);
+    assert.equal(calls, 1);
 });
 
 test("Gemini provider retries once on invalid output and returns the repaired reply", async () => {

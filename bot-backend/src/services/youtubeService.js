@@ -47,6 +47,12 @@ const addRunResult = async (runId, result) => {
     await BotRun.findByIdAndUpdate(runId, update);
 };
 
+const shouldStopRunAfterAiError = (errorCode) => [
+    "GEMINI_RATE_LIMIT",
+    "GEMINI_AUTH_FAILED",
+    "GEMINI_INVALID_MODEL"
+].includes(errorCode);
+
 const hasPreviouslyReplied = async (userId, videoId, commentId) => {
     return BotRun.exists({
         userId,
@@ -93,6 +99,7 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
         let nextPageToken = null;
         let pageCount = 0;
         let processed = 0;
+        let stopForProviderLimit = false;
 
         do {
             pageCount++;
@@ -146,13 +153,19 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                         errorCode,
                         errorMessage: error.isOperational ? error.message : "Failed to process comment"
                     });
+                    if (shouldStopRunAfterAiError(errorCode)) {
+                        stopForProviderLimit = true;
+                    }
                 }
 
                 processed++;
+                if (stopForProviderLimit) break;
             }
 
-            nextPageToken = processed < botMaxCommentsPerRun ? response.data.nextPageToken || null : null;
-        } while (nextPageToken && pageCount < botMaxPagesPerRun);
+            nextPageToken = !stopForProviderLimit && processed < botMaxCommentsPerRun
+                ? response.data.nextPageToken || null
+                : null;
+        } while (!stopForProviderLimit && nextPageToken && pageCount < botMaxPagesPerRun);
 
         const completedRun = await BotRun.findById(runId);
         const status = completedRun.failureCount > 0
