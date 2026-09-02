@@ -397,7 +397,11 @@ const isTransientGeminiError = (error) => {
 
 const isRetryableGeminiError = (error) => {
     const code = normalizeGeminiError(error);
-    return ["GEMINI_TIMEOUT", "GEMINI_PROVIDER_UNAVAILABLE"].includes(code);
+    if (["GEMINI_TIMEOUT", "GEMINI_PROVIDER_UNAVAILABLE"].includes(code)) {
+        return true;
+    }
+
+    return code === "GEMINI_RATE_LIMIT" && Number.isFinite(error.retryAfterMs);
 };
 
 const attachFailureMetadata = (error, metadata) => {
@@ -536,7 +540,7 @@ const createGeminiProvider = ({
                 "GEMINI_INVALID_RESPONSE"
             ].includes(error.code) && qualityRetries > 0;
             const willProviderRetry = !willQualityRetry && isRetryableGeminiError(error) && retries > 0;
-            const nextRetryDelayMs = willProviderRetry ? error.retryAfterMs || retryDelayMs : null;
+            const nextRetryDelayMs = willProviderRetry ? error.retryAfterMs ?? retryDelayMs : null;
             attempts.push(buildAttemptDiagnostic({
                 attempt,
                 startedAt,

@@ -6,6 +6,7 @@ const {
     geminiThinkingLevel,
     geminiTimeoutMs,
     geminiRetryCount,
+    geminiRequestSpacingMs,
     botMaxCommentsPerRun,
     botMaxPagesPerRun,
     botReplyMaxLength,
@@ -58,6 +59,7 @@ const validateEnv = () => {
         ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
         GEMINI_TIMEOUT_MS: geminiTimeoutMs,
         GEMINI_RETRY_COUNT: geminiRetryCount,
+        GEMINI_REQUEST_SPACING_MS: geminiRequestSpacingMs,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
@@ -75,6 +77,7 @@ const validateEnv = () => {
 
     const nonNegativeIntegerSettings = {
         GEMINI_RETRY_COUNT: geminiRetryCount,
+        GEMINI_REQUEST_SPACING_MS: geminiRequestSpacingMs,
         ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
         AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
         AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate

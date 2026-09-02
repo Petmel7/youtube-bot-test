@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
     geminiMaxOutputTokens,
+    geminiRequestSpacingMs,
     geminiRetryCount,
     geminiThinkingBudget,
     geminiTimeoutMs
@@ -171,6 +172,7 @@ test("Gemini max output token default leaves room without an excessive ceiling",
     assert.equal(geminiMaxOutputTokens, 384);
     assert.equal(geminiTimeoutMs, 15000);
     assert.equal(geminiRetryCount, 1);
+    assert.equal(geminiRequestSpacingMs, 1500);
     assert.equal(geminiThinkingBudget, 0);
 });
 
@@ -385,6 +387,49 @@ test("Gemini provider does not retry rate-limit-like SDK errors", async () => {
     });
 
     assert.equal(calls, 1);
+});
+
+test("Gemini provider honors Retry-After once for REST rate limits", async () => {
+    const requests = [];
+
+    const provider = createGeminiProvider({
+        fetchImpl: async (url, options) => {
+            requests.push({ url, options });
+            if (requests.length === 1) {
+                return {
+                    ok: false,
+                    status: 429,
+                    statusText: "Too Many Requests",
+                    headers: { get: (name) => name.toLowerCase() === "retry-after" ? "0" : null },
+                    json: async () => ({ error: { status: "RESOURCE_EXHAUSTED", message: "Rate limited" } })
+                };
+            }
+
+            return createJsonResponse({
+                candidates: [{
+                    finishReason: "STOP",
+                    content: {
+                        parts: [{ text: "Thanks for noticing that detail in the recipe." }]
+                    }
+                }],
+                usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 8, totalTokenCount: 20 }
+            });
+        },
+        modelName: "gemini-3.6-flash",
+        timeoutMs: 1000,
+        retryCount: 1
+    });
+
+    const result = await provider.generateReply({
+        comment: "Great detail in the recipe",
+        prompt: "Cooking channel"
+    });
+
+    assert.equal(result.text, "Thanks for noticing that detail in the recipe.");
+    assert.equal(requests.length, 2);
+    assert.equal(result.attemptCount, 2);
+    assert.equal(result.attempts[0].providerErrorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(result.attempts[0].retryDelayMs, 0);
 });
 
 test("Gemini provider retries once on invalid output and returns the repaired reply", async () => {

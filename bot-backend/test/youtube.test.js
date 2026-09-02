@@ -464,7 +464,7 @@ test("executeBotRun stores provider-specific AI error codes in comment results",
             _id: "66b000000000000000000001",
             successCount: 0,
             failureCount: 1,
-            skippedCount: 0
+            skippedCount: 1
         };
     });
     t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
@@ -487,8 +487,9 @@ test("executeBotRun stores provider-specific AI error codes in comment results",
     assert.equal(resultUpdate.update.$push.results.commentTextSnapshot, "Great recipe!");
     assert.equal(resultUpdate.update.$push.results.replyTextSnapshot, undefined);
 
-    const finalUpdate = updates.find(entry => entry.update.status === "failed");
-    assert.equal(finalUpdate.update.errorCode, "BOT_RUN_NO_REPLIES");
+    const finalUpdate = updates.find(entry => entry.update.status === "partial" || entry.update.status === "failed");
+    assert.equal(finalUpdate.update.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(finalUpdate.update.errorMessage, "AI provider rate limit reached");
 });
 
 test("executeBotRun stops early after Gemini rate limit to avoid burning quota", async (t) => {
@@ -580,9 +581,18 @@ test("executeBotRun stops early after Gemini rate limit to avoid burning quota",
 
     const resultUpdates = updates.filter(entry => entry.update.$push?.results);
     assert.equal(aiCalls, 1);
-    assert.equal(resultUpdates.length, 1);
+    assert.equal(resultUpdates.length, 2);
     assert.equal(resultUpdates[0].update.$push.results.commentId, "comment-1");
+    assert.equal(resultUpdates[0].update.$push.results.status, "failed");
     assert.equal(resultUpdates[0].update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(resultUpdates[1].update.$push.results.commentId, "comment-2");
+    assert.equal(resultUpdates[1].update.$push.results.status, "skipped");
+    assert.equal(resultUpdates[1].update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(resultUpdates[1].update.$push.results.errorMessage, "AI provider rate limit reached");
+
+    const finalUpdate = updates.find(entry => entry.update.status === "partial" || entry.update.status === "failed");
+    assert.equal(finalUpdate.update.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(finalUpdate.update.errorMessage, "AI provider rate limit reached");
 });
 
 test("executeBotRun records separate AI and YouTube insert latency diagnostics", async (t) => {
@@ -665,6 +675,108 @@ test("executeBotRun records separate AI and YouTube insert latency diagnostics",
     assert.equal(resultUpdate.update.$push.results.aiLatencyMs, 1234);
     assert.equal(Number.isInteger(resultUpdate.update.$push.results.youtubeInsertLatencyMs), true);
     assert.equal(resultUpdate.update.$push.results.attemptCount, 1);
+});
+
+test("executeBotRun spaces Gemini requests between comments without delaying the first", async (t) => {
+    const updates = [];
+    const sleeps = [];
+    let findByIdCalls = 0;
+    let aiCalls = 0;
+    let insertCalls = 0;
+
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-1",
+                                        snippet: { textOriginal: "Great sauce balance." }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-2",
+                                        snippet: { textOriginal: "Can I add paprika?" }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert() {
+                insertCalls++;
+                return {};
+            }
+        }
+    }));
+    t.mock.method(BotRun, "exists", async () => false);
+    t.mock.method(BotRun, "findById", async () => {
+        findByIdCalls += 1;
+        if (findByIdCalls === 1) {
+            return { _id: "66b000000000000000000001", status: "queued" };
+        }
+
+        return {
+            _id: "66b000000000000000000001",
+            successCount: 2,
+            failureCount: 0,
+            skippedCount: 0
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        aiCalls++;
+        assert.equal(sleeps.length, aiCalls === 1 ? 0 : 1);
+        return {
+            text: `Reply ${aiCalls} with a concrete helpful detail.`,
+            latencyMs: 100 + aiCalls,
+            attemptCount: 1
+        };
+    });
+
+    await executeBotRun("66b000000000000000000001", user, "abcDEF12345", "Reply politely", {
+        requestSpacingMs: 25,
+        sleepFn: async (ms) => {
+            sleeps.push(ms);
+        }
+    });
+
+    assert.equal(aiCalls, 2);
+    assert.equal(insertCalls, 2);
+    assert.deepEqual(sleeps, [25]);
+    assert.equal(updates.filter(entry => entry.update.$push?.results).length, 2);
 });
 
 test("createTextSnapshot normalizes whitespace and limits stored text length", () => {

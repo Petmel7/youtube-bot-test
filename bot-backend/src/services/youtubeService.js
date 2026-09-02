@@ -9,7 +9,8 @@ const {
     googleRedirectUri,
     youtubeApiBase,
     botMaxCommentsPerRun,
-    botMaxPagesPerRun
+    botMaxPagesPerRun,
+    geminiRequestSpacingMs
 } = require("../config/config");
 const { forbidden, notFound, unprocessable, upstream } = require("../utils/errors");
 
@@ -27,6 +28,13 @@ const createTextSnapshot = (value) => {
         ? normalized.slice(0, BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH)
         : normalized;
 };
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const getTopLevelComment = (item) => ({
+    commentId: item?.snippet?.topLevelComment?.id,
+    commentText: item?.snippet?.topLevelComment?.snippet?.textOriginal
+});
 
 const createYoutubeClient = async (user) => {
     const accessToken = await getValidAccessToken(user);
@@ -65,6 +73,38 @@ const shouldStopRunAfterAiError = (errorCode) => [
     "GEMINI_INVALID_MODEL"
 ].includes(errorCode);
 
+const getProviderLimitMessage = (errorCode) => {
+    if (errorCode === "GEMINI_RATE_LIMIT") {
+        return "AI provider rate limit reached";
+    }
+
+    if (errorCode === "GEMINI_AUTH_FAILED" || errorCode === "GEMINI_INVALID_MODEL") {
+        return "AI provider configuration prevents this run from continuing";
+    }
+
+    return "AI provider limit reached";
+};
+
+const skipRemainingForProviderLimit = async ({ runId, items, startIndex, maxResults, processed, errorCode }) => {
+    let skipped = 0;
+    const errorMessage = getProviderLimitMessage(errorCode);
+
+    for (let index = startIndex; index < items.length && processed + skipped < maxResults; index++) {
+        const { commentId, commentText } = getTopLevelComment(items[index]);
+
+        await addRunResult(runId, {
+            commentId: commentId || "unknown",
+            status: "skipped",
+            errorCode,
+            errorMessage,
+            commentTextSnapshot: createTextSnapshot(commentText)
+        });
+        skipped++;
+    }
+
+    return skipped;
+};
+
 const hasPreviouslyReplied = async (userId, videoId, commentId) => {
     return BotRun.exists({
         userId,
@@ -96,7 +136,10 @@ const verifyVideoOwnership = async (user, videoId) => {
     }
 };
 
-async function executeBotRun(runId, user, videoId, userPrompt) {
+async function executeBotRun(runId, user, videoId, userPrompt, {
+    requestSpacingMs = geminiRequestSpacingMs,
+    sleepFn = sleep
+} = {}) {
     const run = await BotRun.findById(runId);
     if (!run || run.status !== "queued") {
         return;
@@ -112,6 +155,8 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
         let pageCount = 0;
         let processed = 0;
         let stopForProviderLimit = false;
+        let providerLimitErrorCode = null;
+        let geminiRequestCount = 0;
 
         do {
             pageCount++;
@@ -123,11 +168,11 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
             });
 
             const items = response.data.items || [];
-            for (const item of items) {
+            for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+                const item = items[itemIndex];
                 if (processed >= botMaxCommentsPerRun) break;
 
-                const commentId = item.snippet?.topLevelComment?.id;
-                const commentText = item.snippet?.topLevelComment?.snippet?.textOriginal;
+                const { commentId, commentText } = getTopLevelComment(item);
                 if (!commentId || !commentText) {
                     await addRunResult(runId, {
                         commentId: commentId || "unknown",
@@ -151,6 +196,10 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                 }
 
                 try {
+                    if (geminiRequestCount > 0 && requestSpacingMs > 0) {
+                        await sleepFn(requestSpacingMs);
+                    }
+                    geminiRequestCount++;
                     const response = await aiProvider.generateReply({
                         userId: user._id,
                         runId,
@@ -184,6 +233,15 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                     });
                     if (shouldStopRunAfterAiError(errorCode)) {
                         stopForProviderLimit = true;
+                        providerLimitErrorCode = errorCode;
+                        processed += await skipRemainingForProviderLimit({
+                            runId,
+                            items,
+                            startIndex: itemIndex + 1,
+                            maxResults: botMaxCommentsPerRun,
+                            processed: processed + 1,
+                            errorCode
+                        });
                     }
                 }
 
@@ -204,8 +262,10 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
         await BotRun.findByIdAndUpdate(runId, {
             status,
             completedAt: new Date(),
-            errorCode: status === "failed" ? "BOT_RUN_NO_REPLIES" : undefined,
-            errorMessage: status === "failed" ? "Bot run did not create any replies" : undefined
+            errorCode: providerLimitErrorCode || (status === "failed" ? "BOT_RUN_NO_REPLIES" : undefined),
+            errorMessage: providerLimitErrorCode
+                ? getProviderLimitMessage(providerLimitErrorCode)
+                : (status === "failed" ? "Bot run did not create any replies" : undefined)
         });
     } catch (error) {
         await markRunFailed(runId, error);
@@ -614,5 +674,6 @@ module.exports = {
     getCatalogVideos,
     listCatalogVideos,
     createTextSnapshot,
+    sleep,
     verifyVideoOwnership
 };
