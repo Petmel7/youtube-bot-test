@@ -57,8 +57,8 @@ const createJsonResponse = (body, { ok = true, status = ok ? 200 : 500, statusTe
 test("buildGeminiPrompt includes language, specificity, completeness, and formatting rules", () => {
     const prompt = buildGeminiPrompt("Дуже сподобалась подача страви", "Cooking channel");
 
-    assert.match(prompt, /Language is mandatory/i);
-    assert.match(prompt, /reply in Ukrainian/i);
+    assert.match(prompt, /Detected language: Ukrainian/i);
+    assert.match(prompt, /Reply in Ukrainian/i);
     assert.match(prompt, /Channel guidance language must not override/i);
     assert.match(prompt, /dominant language/i);
     assert.match(prompt, /channel owner/i);
@@ -91,6 +91,17 @@ test("buildGeminiPrompt includes explicit Ukrainian and English language hints",
     assert.match(englishPrompt, /reply in English/);
 });
 
+test("detectViewerCommentLanguage does not force non-English Latin comments to English", () => {
+    const frenchComment = "Miam-miam mais un peu plus cuit😁😊💋";
+    const prompt = buildGeminiPrompt(frenchComment, "Кулінарний канал");
+
+    assert.equal(detectViewerCommentLanguage(frenchComment), "Unknown");
+    assert.doesNotMatch(prompt, /reply in English/i);
+    assert.match(prompt, /Detected language is unclear/);
+    assert.match(prompt, /Infer the viewer comment language directly from <viewer_comment>/);
+    assert.match(prompt, /Channel guidance language must not override/);
+});
+
 test("validateGeneratedReply rejects malformed, leaked, generic, and incomplete replies", () => {
     const comment = "А які спеції найкраще додати до цієї страви?";
 
@@ -117,6 +128,13 @@ test("validateGeneratedReply rejects obvious viewer-comment language mismatches"
         "Так, текстура соусу вийшла справді вдалою.",
         { comment: "The sauce texture worked really well" }
     ), { code: "GEMINI_REPLY_LANGUAGE_MISMATCH" });
+
+    assert.equal(
+        validateGeneratedReply("Thanks for that note, I’ll keep the cooking time in mind.", {
+            comment: "Miam-miam mais un peu plus cuit😁😊💋"
+        }),
+        "Thanks for that note, I’ll keep the cooking time in mind."
+    );
 });
 
 test("validateGeneratedReply accepts complete natural Ukrainian and English replies", () => {
