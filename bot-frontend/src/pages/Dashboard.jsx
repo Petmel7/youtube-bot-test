@@ -12,6 +12,7 @@ import BotStarter from "../components/BotStarter";
 import Header from "../components/Header";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import Loading from "../components/Loading";
+import BotRunActivity from "../components/BotRunActivity";
 import MyVideos from "../components/MyVideos";
 import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
@@ -273,22 +274,11 @@ const Dashboard = () => {
                             estimateLoading
                         }} />
                         {botRun && (
-                            <>
-                                <p className={styles.botRunStatus}>
-                                    {t("bot.run.status", {
-                                        title: selectedVideo?.title || botRun.videoId,
-                                        status: botRun.status,
-                                        replies: botRun.successCount,
-                                        failed: botRun.failureCount,
-                                        skipped: botRun.skippedCount
-                                    })}
-                                </p>
-                                {(botRun.errorCode || botRun.topErrorCode) && (
-                                    <p className={styles.error}>
-                                        {getBotRunErrorMessage(botRun)}
-                                    </p>
-                                )}
-                            </>
+                            <BotRunActivity
+                                run={botRun}
+                                videoTitle={selectedVideo?.title}
+                                getErrorMessage={getBotRunErrorMessage}
+                            />
                         )}
                     </div>
                 </main>

@@ -14,6 +14,7 @@ const aiProvider = require("../src/services/ai/aiProvider");
 const { validateYoutubeVideosQuery } = require("../src/utils/validators");
 const {
     executeBotRun,
+    createTextSnapshot,
     getUserChannelInfo,
     getChannelVideos,
     listCatalogVideos,
@@ -483,6 +484,8 @@ test("executeBotRun stores provider-specific AI error codes in comment results",
     const resultUpdate = updates.find(entry => entry.update.$push?.results);
     assert.equal(resultUpdate.update.$push.results.errorCode, "GEMINI_RATE_LIMIT");
     assert.equal(resultUpdate.update.$push.results.errorMessage, "Gemini generation failed");
+    assert.equal(resultUpdate.update.$push.results.commentTextSnapshot, "Great recipe!");
+    assert.equal(resultUpdate.update.$push.results.replyTextSnapshot, undefined);
 
     const finalUpdate = updates.find(entry => entry.update.status === "failed");
     assert.equal(finalUpdate.update.errorCode, "BOT_RUN_NO_REPLIES");
@@ -657,9 +660,95 @@ test("executeBotRun records separate AI and YouTube insert latency diagnostics",
 
     const resultUpdate = updates.find(entry => entry.update.$push?.results);
     assert.equal(resultUpdate.update.$push.results.status, "replied");
+    assert.equal(resultUpdate.update.$push.results.commentTextSnapshot, "Great recipe!");
+    assert.equal(resultUpdate.update.$push.results.replyTextSnapshot, "Thanks for noticing the sauce balance in this recipe.");
     assert.equal(resultUpdate.update.$push.results.aiLatencyMs, 1234);
     assert.equal(Number.isInteger(resultUpdate.update.$push.results.youtubeInsertLatencyMs), true);
     assert.equal(resultUpdate.update.$push.results.attemptCount, 1);
+});
+
+test("createTextSnapshot normalizes whitespace and limits stored text length", () => {
+    assert.equal(createTextSnapshot("  A viewer\n\ncomment\twith spacing.  "), "A viewer comment with spacing.");
+    assert.equal(createTextSnapshot(""), null);
+    assert.equal(createTextSnapshot(null), null);
+    assert.equal(createTextSnapshot("x".repeat(1200)).length, 1000);
+});
+
+test("executeBotRun stores comment snapshots for skipped previously replied comments", async (t) => {
+    const updates = [];
+    let findByIdCalls = 0;
+
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+
+        if (parsed.pathname.endsWith("/channels")) {
+            return jsonResponse({
+                items: [{
+                    id: "channel-1",
+                    contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                }]
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                topLevelComment: {
+                                    id: "comment-1",
+                                    snippet: { textOriginal: "  I already got a reply.\nThanks!  " }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert() {
+                throw new Error("comments.insert should not be called for skipped comments");
+            }
+        }
+    }));
+    t.mock.method(BotRun, "exists", async () => true);
+    t.mock.method(BotRun, "findById", async () => {
+        findByIdCalls += 1;
+        if (findByIdCalls === 1) {
+            return { _id: "66b000000000000000000001", status: "queued" };
+        }
+
+        return {
+            _id: "66b000000000000000000001",
+            successCount: 0,
+            failureCount: 0,
+            skippedCount: 1
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        throw new Error("generateReply should not be called for skipped comments");
+    });
+
+    await executeBotRun("66b000000000000000000001", user, "abcDEF12345", "Reply politely");
+
+    const resultUpdate = updates.find(entry => entry.update.$push?.results);
+    assert.equal(resultUpdate.update.$push.results.status, "skipped");
+    assert.equal(resultUpdate.update.$push.results.commentTextSnapshot, "I already got a reply. Thanks!");
+    assert.equal(resultUpdate.update.$push.results.replyTextSnapshot, undefined);
 });
 
 test("POST /youtube/my-videos/refresh requires auth and write header", async (t) => {

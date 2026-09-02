@@ -9,6 +9,7 @@ const errorHandler = require("../src/middleware/errorHandler");
 const walletService = require("../src/services/billing/walletService");
 const userPromptService = require("../src/services/userPromptService");
 const { createBotRun, getBotRunCreditEstimate, resolveBotRunPrompt } = require("../src/services/botRunService");
+const { toBotRunDto } = require("../src/utils/dto");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -276,4 +277,54 @@ test("GET /bot/runs/:runId disables cache and returns safe dominant comment erro
     assert.equal(response.body.run.topErrorCode, "GEMINI_RATE_LIMIT");
     assert.equal(response.body.run.topErrorMessage, "Gemini generation failed");
     assert.deepEqual(response.body.run.failedReasonCounts, { GEMINI_RATE_LIMIT: 2, GEMINI_PROVIDER_ERROR: 1 });
+    assert.deepEqual(response.body.run.results.map(result => result.status), ["failed", "failed", "failed"]);
+    assert.equal(response.body.run.results[0].commentTextSnapshot, null);
+    assert.equal(response.body.run.results[0].replyTextSnapshot, null);
+});
+
+test("toBotRunDto exposes safe result summaries and handles legacy runs without snapshots", () => {
+    const dto = toBotRunDto({
+        _id: "66b000000000000000000001",
+        videoId: "abcDEF12345",
+        status: "partial",
+        processedCount: 2,
+        successCount: 1,
+        failureCount: 1,
+        skippedCount: 0,
+        results: [
+            {
+                commentId: "comment-1",
+                status: "replied",
+                commentTextSnapshot: "Viewer asked about sauce.",
+                replyTextSnapshot: "Thanks, the sauce works best when stirred slowly.",
+                aiLatencyMs: 123,
+                youtubeInsertLatencyMs: 45,
+                attemptCount: 1
+            },
+            {
+                commentId: "comment-2",
+                status: "failed",
+                errorCode: "GEMINI_RATE_LIMIT",
+                errorMessage: "Gemini generation failed"
+            }
+        ]
+    });
+
+    assert.equal(dto.results.length, 2);
+    assert.deepEqual(dto.results[0], {
+        commentId: "comment-1",
+        status: "replied",
+        errorCode: null,
+        errorMessage: null,
+        commentTextSnapshot: "Viewer asked about sauce.",
+        replyTextSnapshot: "Thanks, the sauce works best when stirred slowly.",
+        aiLatencyMs: 123,
+        youtubeInsertLatencyMs: 45,
+        attemptCount: 1,
+        createdAt: null,
+        updatedAt: null
+    });
+    assert.equal(dto.results[1].commentTextSnapshot, null);
+    assert.equal(dto.results[1].replyTextSnapshot, null);
+    assert.equal(dto.topErrorCode, "GEMINI_RATE_LIMIT");
 });

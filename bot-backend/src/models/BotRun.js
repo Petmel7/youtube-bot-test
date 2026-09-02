@@ -5,6 +5,8 @@ const resultSchema = new mongoose.Schema({
     status: { type: String, enum: ["replied", "skipped", "failed"], required: true },
     errorCode: String,
     errorMessage: String,
+    commentTextSnapshot: { type: String, default: null },
+    replyTextSnapshot: { type: String, default: null },
     aiLatencyMs: { type: Number, default: null },
     youtubeInsertLatencyMs: { type: Number, default: null },
     attemptCount: { type: Number, default: null }

@@ -24,6 +24,24 @@ const toPromptDto = (prompt) => {
     };
 };
 
+const toBotRunResultDto = (result) => {
+    if (!result) return null;
+
+    return {
+        commentId: result.commentId,
+        status: result.status,
+        errorCode: result.errorCode || null,
+        errorMessage: result.errorMessage || null,
+        commentTextSnapshot: result.commentTextSnapshot || null,
+        replyTextSnapshot: result.replyTextSnapshot || null,
+        aiLatencyMs: result.aiLatencyMs ?? null,
+        youtubeInsertLatencyMs: result.youtubeInsertLatencyMs ?? null,
+        attemptCount: result.attemptCount ?? null,
+        createdAt: result.createdAt || null,
+        updatedAt: result.updatedAt || null
+    };
+};
+
 const toBotRunDto = (run) => {
     if (!run) return null;
     const failedResults = Array.isArray(run.results)
@@ -50,6 +68,9 @@ const toBotRunDto = (run) => {
         topErrorCode,
         topErrorMessage: topError?.errorMessage || null,
         failedReasonCounts,
+        results: Array.isArray(run.results)
+            ? run.results.map(toBotRunResultDto).filter(Boolean)
+            : [],
         startedAt: run.startedAt || null,
         completedAt: run.completedAt || null,
         createdAt: run.createdAt,

@@ -36,12 +36,6 @@
     width: 100%;
 }
 
-.botRunStatus {
-    margin-top: 14px;
-    overflow-wrap: anywhere;
-    text-align: center;
-}
-
 .genderDisplay,
 .themeDisplay {
     display: flex;
@@ -149,6 +143,197 @@
 
 .botContainer {
     text-align: center;
+}
+
+.botRunActivity {
+    display: grid;
+    gap: 14px;
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    background: #fff;
+    text-align: left;
+}
+
+.botRunHeader,
+.botRunResultHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.botRunTitleGroup {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.botRunEyebrow,
+.botRunCounters span,
+.botRunTextBlock span,
+.botRunCommentId,
+.botRunMuted {
+    color: #667085;
+    font-size: 13px;
+}
+
+.botRunTitleGroup h2,
+.botRunResults h3 {
+    margin: 0;
+    color: #101828;
+}
+
+.botRunTitleGroup h2 {
+    font-size: 20px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.botRunResults h3 {
+    font-size: 16px;
+}
+
+.botRunBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.botRunStatusActive {
+    background: #e7f0ff;
+    color: #175cd3;
+}
+
+.botRunStatusSuccess {
+    background: #dcfae6;
+    color: #067647;
+}
+
+.botRunStatusWarning {
+    background: #fef0c7;
+    color: #b54708;
+}
+
+.botRunStatusError {
+    background: #fee4e2;
+    color: #b42318;
+}
+
+.botRunStatusMuted {
+    background: #f2f4f7;
+    color: #475467;
+}
+
+.botRunLiveText,
+.botRunError,
+.botRunResultError,
+.botRunMuted {
+    margin: 0;
+}
+
+.botRunLiveText {
+    color: #175cd3;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.botRunProgressTrack {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #eef2f6;
+}
+
+.botRunProgressTrack span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #1e90ff;
+    transition: width 0.25s ease;
+}
+
+.botRunCounters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.botRunCounters div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #eaecf0;
+    border-radius: 6px;
+    background: #f9fafb;
+}
+
+.botRunCounters strong {
+    color: #101828;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.botRunError,
+.botRunResultError {
+    color: #b42318;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.botRunResults {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.botRunResultList {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.botRunResultItem {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 8px;
+    background: #fcfcfd;
+}
+
+.botRunCommentId {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.botRunTextBlock {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.botRunTextBlock p {
+    margin: 0;
+    color: #344054;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
 .videoDetailPanel {
@@ -400,6 +585,11 @@
     background: #1f1f1f;
 }
 
+:global(body.dark-mode) .botRunActivity {
+    border-color: #3d3d3d;
+    background: #1f1f1f;
+}
+
 :global(body.dark-mode) .editButton {
     border-color: #3d3d3d;
     background: #272727;
@@ -412,21 +602,59 @@
 }
 
 :global(body.dark-mode) .videoDetailInfo > p,
-:global(body.dark-mode) .selectVideoPrompt {
+:global(body.dark-mode) .selectVideoPrompt,
+:global(body.dark-mode) .botRunEyebrow,
+:global(body.dark-mode) .botRunCounters span,
+:global(body.dark-mode) .botRunTextBlock span,
+:global(body.dark-mode) .botRunCommentId,
+:global(body.dark-mode) .botRunMuted {
     color: #c8c8c8;
 }
 
-:global(body.dark-mode) .videoStats span {
+:global(body.dark-mode) .videoStats span,
+:global(body.dark-mode) .botRunCounters div,
+:global(body.dark-mode) .botRunResultItem {
+    border-color: #333;
     background: #333;
+}
+
+:global(body.dark-mode) .videoStats span {
     color: #f5f5f5;
 }
 
-:global(body.dark-mode) .videoDescription {
+:global(body.dark-mode) .videoDescription,
+:global(body.dark-mode) .botRunTextBlock p {
     color: #d8d8d8;
+}
+
+:global(body.dark-mode) .botRunTitleGroup h2,
+:global(body.dark-mode) .botRunResults h3,
+:global(body.dark-mode) .botRunCounters strong {
+    color: #fff;
+}
+
+:global(body.dark-mode) .botRunProgressTrack {
+    background: #333;
 }
 
 @media (max-width: 640px) {
     .videoDetailContent {
+        grid-template-columns: 1fr;
+    }
+
+    .botRunHeader,
+    .botRunResultHeader {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .botRunCounters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 400px) {
+    .botRunCounters {
         grid-template-columns: 1fr;
     }
 }

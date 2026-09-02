@@ -15,6 +15,18 @@ const { forbidden, notFound, unprocessable, upstream } = require("../utils/error
 
 const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
 const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
+const BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH = 1000;
+
+const createTextSnapshot = (value) => {
+    if (typeof value !== "string") return null;
+
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (!normalized) return null;
+
+    return normalized.length > BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH
+        ? normalized.slice(0, BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH)
+        : normalized;
+};
 
 const createYoutubeClient = async (user) => {
     const accessToken = await getValidAccessToken(user);
@@ -121,14 +133,19 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                         commentId: commentId || "unknown",
                         status: "skipped",
                         errorCode: "INVALID_COMMENT",
-                        errorMessage: "Comment data was incomplete"
+                        errorMessage: "Comment data was incomplete",
+                        commentTextSnapshot: createTextSnapshot(commentText)
                     });
                     processed++;
                     continue;
                 }
 
                 if (await hasPreviouslyReplied(user._id, videoId, commentId)) {
-                    await addRunResult(runId, { commentId, status: "skipped" });
+                    await addRunResult(runId, {
+                        commentId,
+                        status: "skipped",
+                        commentTextSnapshot: createTextSnapshot(commentText)
+                    });
                     processed++;
                     continue;
                 }
@@ -148,6 +165,8 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                     await addRunResult(runId, {
                         commentId,
                         status: "replied",
+                        commentTextSnapshot: createTextSnapshot(commentText),
+                        replyTextSnapshot: createTextSnapshot(responseText),
                         aiLatencyMs: response.latencyMs ?? null,
                         youtubeInsertLatencyMs: Date.now() - insertStartedAt,
                         attemptCount: response.attemptCount ?? null
@@ -159,6 +178,7 @@ async function executeBotRun(runId, user, videoId, userPrompt) {
                         status: "failed",
                         errorCode,
                         errorMessage: error.isOperational ? error.message : "Failed to process comment",
+                        commentTextSnapshot: createTextSnapshot(commentText),
                         aiLatencyMs: error.latencyMs ?? null,
                         attemptCount: error.attemptCount ?? null
                     });
@@ -593,5 +613,6 @@ module.exports = {
     syncVideoCatalog,
     getCatalogVideos,
     listCatalogVideos,
+    createTextSnapshot,
     verifyVideoOwnership
 };
