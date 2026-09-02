@@ -8,12 +8,13 @@ export const fetchStartBot = async (videoId, prompt, botGender, setIsBotRunning)
     }
 
     setIsBotRunning(true);
+    let savedPrompt = null;
 
     try {
-        let savedTheme = await fetchGetTheme();
-        if (!savedTheme) {
-            savedTheme = await fetchAddTheme(prompt.channelTheme, botGender);
-            if (!savedTheme) {
+        savedPrompt = await fetchGetTheme();
+        if (!savedPrompt) {
+            savedPrompt = await fetchAddTheme(prompt.channelTheme, botGender);
+            if (!savedPrompt) {
                 console.warn("❌ Не вдалося додати тематику каналу.");
                 setIsBotRunning(false);
                 return { success: false, message: "Failed to add channel theme!" };
@@ -24,18 +25,19 @@ export const fetchStartBot = async (videoId, prompt, botGender, setIsBotRunning)
             method: "POST",
             body: JSON.stringify({
                 videoId,
-                prompt: savedTheme?.generalPrompt || "",
+                prompt: savedPrompt?.generalPrompt || "",
                 idempotencyKey: createIdempotencyKey()
             })
         });
 
-        return { success: data.success, message: "Bot run started.", run: data.run };
+        return { success: data.success, message: "Bot run started.", run: data.run, prompt: savedPrompt };
     } catch (error) {
         setIsBotRunning(false);
         return {
             success: false,
             code: error.code,
             details: error.details,
+            prompt: savedPrompt,
             message: error.message || "Error starting bot!"
         };
     }

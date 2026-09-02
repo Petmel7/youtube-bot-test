@@ -204,8 +204,12 @@ const Dashboard = () => {
             setNotice(result.message);
         }
 
-        setSavedTheme(channelTheme);
-        setSavedGender(botGender);
+        if (result.prompt?.channelTheme) {
+            setSavedTheme(result.prompt.channelTheme);
+        }
+        if (result.prompt?.gender) {
+            setSavedGender(result.prompt.gender);
+        }
     };
 
     const getBotRunErrorMessage = (run) => {
