@@ -61,3 +61,20 @@ export const fetchBotRun = async (runId) => {
     return data.run;
 };
 
+export const fetchReplyToComment = async ({ videoId, commentId, prompt } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/reply`, {
+        method: "POST",
+        body: JSON.stringify({
+            videoId,
+            prompt: prompt || "",
+            idempotencyKey: createIdempotencyKey()
+        })
+    });
+
+    return {
+        success: data.success,
+        run: data.run || null,
+        result: data.result || null
+    };
+};
+

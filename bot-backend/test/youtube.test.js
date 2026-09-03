@@ -14,6 +14,7 @@ const aiProvider = require("../src/services/ai/aiProvider");
 const { validateYoutubeCommentsQuery, validateYoutubeVideosQuery } = require("../src/utils/validators");
 const {
     executeBotRun,
+    executeSingleCommentReply,
     createTextSnapshot,
     getUserChannelInfo,
     getChannelVideos,
@@ -894,6 +895,111 @@ test("executeBotRun records separate AI and YouTube insert latency diagnostics",
     assert.equal(resultUpdate.update.$push.results.aiLatencyMs, 1234);
     assert.equal(Number.isInteger(resultUpdate.update.$push.results.youtubeInsertLatencyMs), true);
     assert.equal(resultUpdate.update.$push.results.attemptCount, 1);
+});
+
+test("executeSingleCommentReply posts one reply, finalizes billing, and stores result", async (t) => {
+    const updates = [];
+    let finalized = false;
+    let released = false;
+
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async insert(args) {
+                assert.equal(args.resource.snippet.parentId, "comment-1");
+                assert.equal(args.resource.snippet.textOriginal, "Thanks for the kind note about the recipe.");
+                return {};
+            }
+        }
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {
+            _id: runId,
+            mode: "single-comment",
+            status: update.status || "running",
+            results: []
+        };
+    });
+    t.mock.method(aiProvider, "generateReply", async (args) => {
+        assert.equal(args.deferBilling, true);
+        assert.equal(args.commentId, "comment-1");
+        return {
+            text: "Thanks for the kind note about the recipe.",
+            latencyMs: 120,
+            attemptCount: 1,
+            finalizeBilling: async () => {
+                finalized = true;
+            },
+            releaseBilling: async () => {
+                released = true;
+            }
+        };
+    });
+
+    const result = await executeSingleCommentReply({
+        runId: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        comment: { commentId: "comment-1", text: "Great recipe!" },
+        accessToken: "access-token",
+        prompt: "Reply politely"
+    });
+
+    assert.equal(finalized, true);
+    assert.equal(released, false);
+    assert.equal(result.result.status, "replied");
+    assert.equal(result.result.commentTextSnapshot, "Great recipe!");
+    assert.equal(result.result.replyTextSnapshot, "Thanks for the kind note about the recipe.");
+    assert.equal(updates.find(entry => entry.update.$push?.results).update.$push.results.status, "replied");
+    assert.equal(updates.find(entry => entry.update.status === "completed").update.completedAt instanceof Date, true);
+});
+
+test("executeSingleCommentReply releases deferred billing when YouTube posting fails", async (t) => {
+    const updates = [];
+    let finalized = false;
+    let releasedReason = null;
+
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async insert() {
+                throw new Error("YouTube insert failed");
+            }
+        }
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => ({
+        text: "Thanks for the kind note about the recipe.",
+        latencyMs: 120,
+        attemptCount: 1,
+        finalizeBilling: async () => {
+            finalized = true;
+        },
+        releaseBilling: async (reason) => {
+            releasedReason = reason;
+        }
+    }));
+
+    await assert.rejects(
+        () => executeSingleCommentReply({
+            runId: "66b000000000000000000001",
+            userId: user._id,
+            videoId: "abcDEF12345",
+            comment: { commentId: "comment-1", text: "Great recipe!" },
+            accessToken: "access-token",
+            prompt: "Reply politely"
+        }),
+        { code: "YOUTUBE_REPLY_FAILED" }
+    );
+
+    assert.equal(finalized, false);
+    assert.equal(releasedReason, "youtube-reply-failed");
+    const resultUpdate = updates.find(entry => entry.update.$push?.results);
+    assert.equal(resultUpdate.update.$push.results.status, "failed");
+    assert.equal(resultUpdate.update.$push.results.errorCode, "YOUTUBE_REPLY_FAILED");
+    assert.equal(updates.find(entry => entry.update.status === "failed").update.errorCode, "YOUTUBE_REPLY_FAILED");
 });
 
 test("executeBotRun spaces Gemini requests between comments without delaying the first", async (t) => {

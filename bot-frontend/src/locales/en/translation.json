@@ -95,6 +95,9 @@
         "unknownAuthor": "Unknown author",
         "likes": "Likes",
         "latestReply": "Latest bot reply",
+        "reply": "Reply",
+        "retry": "Try again",
+        "replying": "Replying...",
         "error": "Error",
         "filters": {
             "all": "All",
@@ -112,7 +115,10 @@
         "errors": {
             "load": "Could not load comments. Try again later.",
             "forbidden": "This video does not belong to the connected channel.",
-            "notFound": "Video not found."
+            "notFound": "Video not found.",
+            "reply": "Could not reply to this comment. Try again later.",
+            "replyPostFailed": "Could not publish the YouTube reply. No credit was charged.",
+            "alreadyReplied": "This comment already has a bot reply."
         }
     },
     "wallet": {

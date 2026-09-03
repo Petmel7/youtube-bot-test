@@ -1,9 +1,10 @@
 
-const { createBotRun, getOwnedBotRun, getBotRunCreditEstimate } = require("../services/botRunService");
-const { toBotRunDto } = require("../utils/dto");
+const { createBotRun, createSingleCommentReply, getOwnedBotRun, getBotRunCreditEstimate } = require("../services/botRunService");
+const { toBotRunDto, toBotRunResultDto } = require("../utils/dto");
 const {
     assertObjectBody,
     validateVideoId,
+    validateYoutubeCommentId,
     validatePrompt,
     validateIdempotencyKey
 } = require("../utils/validators");
@@ -41,5 +42,31 @@ const getBotCostEstimateController = async (req, res) => {
     });
 };
 
-module.exports = { startBotController, getBotRunController, getBotCostEstimateController };
+const replyToSingleCommentController = async (req, res) => {
+    assertObjectBody(req.body);
 
+    const commentId = validateYoutubeCommentId(req.params.commentId);
+    const videoId = validateVideoId(req.body.videoId);
+    const prompt = validatePrompt(req.body.prompt);
+    const idempotencyKey = validateIdempotencyKey(req.body.idempotencyKey);
+    const { run, result, created } = await createSingleCommentReply({
+        user: req.user,
+        videoId,
+        commentId,
+        prompt,
+        idempotencyKey
+    });
+
+    res.status(created ? 201 : 200).json({
+        success: true,
+        run: toBotRunDto(run),
+        result: toBotRunResultDto(result)
+    });
+};
+
+module.exports = {
+    startBotController,
+    getBotRunController,
+    getBotCostEstimateController,
+    replyToSingleCommentController
+};

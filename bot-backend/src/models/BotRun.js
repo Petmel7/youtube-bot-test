@@ -15,6 +15,7 @@ const resultSchema = new mongoose.Schema({
 const botRunSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     videoId: { type: String, required: true, index: true },
+    mode: { type: String, enum: ["bulk", "single-comment"], default: "bulk", index: true },
     status: {
         type: String,
         enum: ["queued", "running", "completed", "partial", "failed", "cancelled"],

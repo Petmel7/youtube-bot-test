@@ -95,6 +95,9 @@
         "unknownAuthor": "Unbekannter Autor",
         "likes": "Likes",
         "latestReply": "Letzte Bot-Antwort",
+        "reply": "Antworten",
+        "retry": "Erneut versuchen",
+        "replying": "Antwortet...",
         "error": "Fehler",
         "filters": {
             "all": "Alle",
@@ -112,7 +115,10 @@
         "errors": {
             "load": "Kommentare konnten nicht geladen werden. Versuche es später erneut.",
             "forbidden": "Dieses Video gehört nicht zum verbundenen Kanal.",
-            "notFound": "Video nicht gefunden."
+            "notFound": "Video nicht gefunden.",
+            "reply": "Auf diesen Kommentar konnte nicht geantwortet werden. Versuche es später erneut.",
+            "replyPostFailed": "Die YouTube-Antwort konnte nicht veröffentlicht werden. Es wurde kein Credit berechnet.",
+            "alreadyReplied": "Dieser Kommentar hat bereits eine Bot-Antwort."
         }
     },
     "wallet": {

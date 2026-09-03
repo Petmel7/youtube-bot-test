@@ -275,7 +275,14 @@ const Dashboard = () => {
                         </div>
 
                         <MyVideos selectedVideo={selectedVideo} onSelectVideo={handleSelectVideo} />
-                        <VideoCommentsInbox selectedVideo={selectedVideo} />
+                        <VideoCommentsInbox
+                            selectedVideo={selectedVideo}
+                            botPrompt={botPrompt}
+                            onReplyComplete={(run) => {
+                                if (run) setBotRun(run);
+                                loadWalletSummary();
+                            }}
+                        />
 
                         <BotStarter {...{
                             error,

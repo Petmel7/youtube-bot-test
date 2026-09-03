@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaComments } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
+import { fetchReplyToComment } from "../services/botService";
 import { fetchVideoComments } from "../services/youtubeService";
 import styles from "../styles/videoCommentsInbox.module.css";
 
@@ -40,6 +41,37 @@ const getCommentsErrorMessage = (error, t) => {
     }
 };
 
+const getReplyErrorMessage = (error, t) => {
+    switch (error?.code) {
+        case "INSUFFICIENT_CREDITS":
+            return t("bot.insufficientCreditsDetailed", {
+                required: error.details?.requiredCredits ?? "-",
+                available: error.details?.availableCredits ?? "-"
+            });
+        case "COMMENT_ALREADY_REPLIED":
+            return t("comments.errors.alreadyReplied");
+        case "YOUTUBE_REPLY_FAILED":
+            return t("comments.errors.replyPostFailed");
+        case "GEMINI_TIMEOUT":
+            return t("bot.aiTimeout");
+        case "GEMINI_REPLY_INCOMPLETE":
+            return t("bot.aiIncomplete");
+        case "GEMINI_RATE_LIMIT":
+            return t("bot.aiRateLimited");
+        case "GEMINI_PROVIDER_UNAVAILABLE":
+            return t("bot.aiUnavailable");
+        case "GEMINI_PROVIDER_ERROR":
+            return t("bot.aiProviderError");
+        case "GEMINI_AUTH_FAILED":
+        case "GEMINI_INVALID_MODEL":
+            return t("bot.aiConfigError");
+        default:
+            return error?.message || t("comments.errors.reply");
+    }
+};
+
+const canReplyToStatus = (status) => ["unanswered", "failed", "skipped"].includes(status);
+
 const getStatusClassName = (status) => {
     switch (status) {
         case "replied":
@@ -59,7 +91,7 @@ const formatDate = (value, fallback) => {
     return Number.isNaN(date.getTime()) ? fallback : date.toLocaleString();
 };
 
-const VideoCommentsInbox = ({ selectedVideo }) => {
+const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
     const { t } = useTranslation();
     const [statusFilter, setStatusFilter] = useState("all");
     const [comments, setComments] = useState([]);
@@ -67,6 +99,8 @@ const VideoCommentsInbox = ({ selectedVideo }) => {
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+    const [replyingCommentIds, setReplyingCommentIds] = useState({});
+    const [commentErrors, setCommentErrors] = useState({});
     const requestIdRef = useRef(0);
     const pendingPageTokenRef = useRef(null);
 
@@ -137,6 +171,61 @@ const VideoCommentsInbox = ({ selectedVideo }) => {
         setStatusFilter(event.target.value);
     };
 
+    const updateCommentWithResult = (commentId, result) => {
+        setComments(current => current.map(comment => {
+            if (comment.commentId !== commentId) {
+                return comment;
+            }
+
+            return {
+                ...comment,
+                status: result?.status || comment.status,
+                latestResult: result ? {
+                    status: result.status,
+                    errorCode: result.errorCode || null,
+                    errorMessage: result.errorMessage || null,
+                    replyTextSnapshot: result.replyTextSnapshot || null,
+                    runId: result.runId || null,
+                    updatedAt: result.updatedAt || new Date().toISOString()
+                } : comment.latestResult
+            };
+        }));
+    };
+
+    const handleReplyToComment = async (comment) => {
+        if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId]) return;
+
+        setReplyingCommentIds(current => ({ ...current, [comment.commentId]: true }));
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchReplyToComment({
+                videoId,
+                commentId: comment.commentId,
+                prompt: botPrompt?.generalPrompt || ""
+            });
+
+            if (response.result) {
+                updateCommentWithResult(comment.commentId, response.result);
+            }
+            onReplyComplete?.(response.run || null);
+        } catch (error) {
+            if (error.details?.result) {
+                updateCommentWithResult(comment.commentId, error.details.result);
+            }
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setReplyingCommentIds(current => {
+                const next = { ...current };
+                delete next[comment.commentId];
+                return next;
+            });
+        }
+    };
+
     if (!selectedVideo) {
         return null;
     }
@@ -186,7 +275,11 @@ const VideoCommentsInbox = ({ selectedVideo }) => {
 
             {!loading && !errorMessage && comments.length > 0 && (
                 <ul className={styles.commentList}>
-                    {comments.map(comment => (
+                    {comments.map(comment => {
+                        const isReplying = Boolean(replyingCommentIds[comment.commentId]);
+                        const rowError = commentErrors[comment.commentId];
+
+                        return (
                         <li key={comment.commentId} className={styles.commentCard}>
                             <div className={styles.commentHeader}>
                                 <div className={styles.author}>
@@ -224,8 +317,28 @@ const VideoCommentsInbox = ({ selectedVideo }) => {
                                     {comment.latestResult.errorMessage || comment.latestResult.errorCode || t("comments.error")}
                                 </p>
                             )}
+
+                            {rowError && <p className={styles.resultError}>{rowError}</p>}
+
+                            {canReplyToStatus(comment.status) && (
+                                <div className={styles.actions}>
+                                    <button
+                                        type="button"
+                                        className={styles.replyButton}
+                                        onClick={() => handleReplyToComment(comment)}
+                                        disabled={isReplying}
+                                    >
+                                        {isReplying
+                                            ? t("comments.replying")
+                                            : comment.status === "failed"
+                                                ? t("comments.retry")
+                                                : t("comments.reply")}
+                                    </button>
+                                </div>
+                            )}
                         </li>
-                    ))}
+                        );
+                    })}
                 </ul>
             )}
 

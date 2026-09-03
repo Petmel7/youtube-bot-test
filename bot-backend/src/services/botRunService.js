@@ -5,7 +5,7 @@ const { estimateAiOperationCost } = require("./billing/costEstimator");
 const userPromptService = require("./userPromptService");
 const { generatePrompt } = require("../config/promptConfig");
 const { conflict, notFound, forbidden, paymentRequired } = require("../utils/errors");
-const { executeBotRun } = require("./youtubeService");
+const { executeBotRun, executeSingleCommentReply, getVideoCommentForReply } = require("./youtubeService");
 
 const resolveBotRunPrompt = async ({ user, fallbackPrompt = "" }) => {
     try {
@@ -101,6 +101,81 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
     return { run, created: true };
 };
 
+const findRepliedCommentRun = async ({ userId, videoId, commentId }) => {
+    return BotRun.findOne({
+        userId,
+        videoId,
+        results: {
+            $elemMatch: {
+                commentId,
+                status: "replied"
+            }
+        }
+    }).sort({ updatedAt: -1 });
+};
+
+const getLastRunResult = (run) => {
+    const results = Array.isArray(run?.results) ? run.results : [];
+    return results[results.length - 1] || null;
+};
+
+const createSingleCommentReply = async ({ user, videoId, commentId, prompt, idempotencyKey }) => {
+    const existing = await BotRun.findOne({ userId: user._id, idempotencyKey });
+    if (existing) {
+        return { run: existing, result: getLastRunResult(existing), created: false };
+    }
+
+    const existingReplyRun = await findRepliedCommentRun({ userId: user._id, videoId, commentId });
+    if (existingReplyRun) {
+        throw conflict("COMMENT_ALREADY_REPLIED", "This comment already has a bot reply");
+    }
+
+    const resolvedPrompt = await resolveBotRunPrompt({ user, fallbackPrompt: prompt });
+    const { accessToken, comment } = await getVideoCommentForReply(user, videoId, commentId);
+    const estimate = estimateAiOperationCost({ comment: comment.text, prompt: resolvedPrompt });
+    const availableCredits = await walletService.getAvailableCredits({ userId: user._id });
+    const creditEstimate = {
+        availableCredits,
+        requiredCredits: estimate.credits,
+        missingCredits: Math.max(estimate.credits - availableCredits, 0),
+        estimate
+    };
+    if (creditEstimate.availableCredits < creditEstimate.requiredCredits) {
+        throw paymentRequired("INSUFFICIENT_CREDITS", "Insufficient credits", creditEstimate);
+    }
+
+    let run;
+    try {
+        run = await BotRun.create({
+            userId: user._id,
+            videoId,
+            mode: "single-comment",
+            idempotencyKey,
+            status: "running",
+            startedAt: new Date()
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            const duplicate = await BotRun.findOne({ userId: user._id, idempotencyKey });
+            if (duplicate) {
+                return { run: duplicate, result: getLastRunResult(duplicate), created: false };
+            }
+        }
+        throw error;
+    }
+
+    const result = await executeSingleCommentReply({
+        runId: run._id,
+        userId: user._id,
+        videoId,
+        comment,
+        accessToken,
+        prompt: resolvedPrompt
+    });
+
+    return { ...result, created: true };
+};
+
 const getOwnedBotRun = async (userId, runId) => {
     const run = await BotRun.findById(runId);
     if (!run) {
@@ -114,4 +189,10 @@ const getOwnedBotRun = async (userId, runId) => {
     return run;
 };
 
-module.exports = { createBotRun, getOwnedBotRun, getBotRunCreditEstimate, resolveBotRunPrompt };
+module.exports = {
+    createBotRun,
+    createSingleCommentReply,
+    getOwnedBotRun,
+    getBotRunCreditEstimate,
+    resolveBotRunPrompt
+};

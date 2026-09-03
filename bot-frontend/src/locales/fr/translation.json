@@ -95,6 +95,9 @@
         "unknownAuthor": "Auteur inconnu",
         "likes": "J'aime",
         "latestReply": "Dernière réponse du bot",
+        "reply": "Répondre",
+        "retry": "Réessayer",
+        "replying": "Réponse...",
         "error": "Erreur",
         "filters": {
             "all": "Tous",
@@ -112,7 +115,10 @@
         "errors": {
             "load": "Impossible de charger les commentaires. Réessayez plus tard.",
             "forbidden": "Cette vidéo n'appartient pas à la chaîne connectée.",
-            "notFound": "Vidéo introuvable."
+            "notFound": "Vidéo introuvable.",
+            "reply": "Impossible de répondre à ce commentaire. Réessayez plus tard.",
+            "replyPostFailed": "Impossible de publier la réponse YouTube. Aucun crédit n'a été facturé.",
+            "alreadyReplied": "Ce commentaire a déjà une réponse du bot."
         }
     },
     "wallet": {

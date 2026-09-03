@@ -831,6 +831,105 @@ const listVideoComments = async (user, videoId, { limit = 20, pageToken, status 
     };
 };
 
+const getVideoCommentForReply = async (user, videoId, commentId) => {
+    await verifyVideoOwnership(user, videoId);
+
+    const { youtube, accessToken } = await createYoutubeClient(user);
+    let response;
+
+    try {
+        response = await youtube.commentThreads.list({
+            part: "snippet",
+            id: commentId
+        });
+    } catch (error) {
+        throwYoutubeClientError(error, "commentThreads", "YOUTUBE_COMMENTS_FAILED", "Failed to fetch video comment");
+    }
+
+    const item = response.data.items?.[0];
+    const comment = item ? toCommentInboxDto(item) : null;
+    if (!comment?.commentId) {
+        throw notFound("COMMENT_NOT_FOUND", "Comment not found");
+    }
+
+    if (item.snippet?.videoId !== videoId) {
+        throw forbidden("COMMENT_VIDEO_MISMATCH", "Comment does not belong to this video");
+    }
+
+    return { accessToken, comment };
+};
+
+const executeSingleCommentReply = async ({ runId, userId, videoId, comment, accessToken, prompt }) => {
+    let aiResult;
+
+    try {
+        aiResult = await aiProvider.generateReply({
+            userId,
+            runId,
+            videoId,
+            commentId: comment.commentId,
+            comment: comment.text,
+            prompt,
+            deferBilling: true
+        });
+
+        const insertStartedAt = Date.now();
+        await replyToComment(accessToken, comment.commentId, aiResult.text);
+        await aiResult.finalizeBilling();
+
+        const result = {
+            commentId: comment.commentId,
+            status: "replied",
+            runId: String(runId),
+            commentTextSnapshot: createTextSnapshot(comment.text),
+            replyTextSnapshot: createTextSnapshot(aiResult.text),
+            aiLatencyMs: aiResult.latencyMs ?? null,
+            youtubeInsertLatencyMs: Date.now() - insertStartedAt,
+            attemptCount: aiResult.attemptCount ?? null
+        };
+
+        await addRunResult(runId, result);
+        const run = await BotRun.findByIdAndUpdate(runId, {
+            status: "completed",
+            completedAt: new Date()
+        }, { new: true });
+
+        return { run, result };
+    } catch (error) {
+        if (aiResult?.releaseBilling && error.code === "YOUTUBE_REPLY_FAILED") {
+            await aiResult.releaseBilling("youtube-reply-failed");
+        }
+
+        const result = {
+            commentId: comment.commentId,
+            status: "failed",
+            runId: String(runId),
+            errorCode: error.providerErrorCode || error.code || "COMMENT_FAILED",
+            errorMessage: error.isOperational ? error.message : "Failed to process comment",
+            commentTextSnapshot: createTextSnapshot(comment.text),
+            aiLatencyMs: error.latencyMs ?? null,
+            attemptCount: error.attemptCount ?? null
+        };
+
+        await addRunResult(runId, result);
+        await BotRun.findByIdAndUpdate(runId, {
+            status: "failed",
+            errorCode: result.errorCode,
+            errorMessage: result.errorMessage,
+            completedAt: new Date()
+        }, { new: true });
+
+        if (error.isOperational) {
+            error.details = {
+                ...(error.details || {}),
+                result
+            };
+        }
+
+        throw error;
+    }
+};
+
 module.exports = {
     executeBotRun,
     replyToComment,
@@ -841,6 +940,8 @@ module.exports = {
     getCatalogVideos,
     listCatalogVideos,
     listVideoComments,
+    getVideoCommentForReply,
+    executeSingleCommentReply,
     createTextSnapshot,
     sleep,
     verifyVideoOwnership

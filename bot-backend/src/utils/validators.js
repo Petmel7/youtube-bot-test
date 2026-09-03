@@ -3,6 +3,7 @@ const { badRequest, unprocessable } = require("./errors");
 const MAX_PROMPT_LENGTH = 1200;
 const MAX_THEME_LENGTH = 120;
 const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_COMMENT_ID_RE = /^[A-Za-z0-9._-]{1,256}$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,80}$/;
 const PAYMENT_PACKAGE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const PAYMENT_METHOD_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -46,6 +47,14 @@ const validateVideoId = (videoId) => {
     const value = normalizeString(videoId, "videoId", 32);
     if (!YOUTUBE_VIDEO_ID_RE.test(value)) {
         throw unprocessable("INVALID_VIDEO_ID", "Invalid YouTube video ID");
+    }
+    return value;
+};
+
+const validateYoutubeCommentId = (commentId) => {
+    const value = normalizeString(commentId, "commentId", 256);
+    if (!YOUTUBE_COMMENT_ID_RE.test(value)) {
+        throw unprocessable("INVALID_COMMENT_ID", "Invalid YouTube comment ID");
     }
     return value;
 };
@@ -221,6 +230,7 @@ const validateYoutubeCommentsQuery = (query = {}) => {
 module.exports = {
     assertObjectBody,
     validateVideoId,
+    validateYoutubeCommentId,
     validatePrompt,
     validateChannelTheme,
     validateGender,

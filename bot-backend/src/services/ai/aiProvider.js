@@ -22,7 +22,7 @@ const createAiProvider = ({
     estimateCost = estimateAiOperationCost,
     calculateActualCost = calculateActualAiCost
 } = {}) => {
-    const generateReply = async ({ userId, runId, videoId, commentId, comment, prompt }) => {
+    const generateReply = async ({ userId, runId, videoId, commentId, comment, prompt, deferBilling = false }) => {
         const operation = {
             userId,
             runId,
@@ -193,7 +193,7 @@ const createAiProvider = ({
                 throw accountingError("ACCOUNTING_ERROR", "AI usage recording failed");
             }
 
-            try {
+            const finalizeBilling = async () => {
                 await wallet.finalizeCharge({
                     userId,
                     reservationKey,
@@ -212,6 +212,32 @@ const createAiProvider = ({
                     debitKey,
                     releaseKey
                 });
+            };
+
+            const releaseBilling = async (reason = "operation-not-finalized") => {
+                await wallet.releaseReservation({
+                    userId,
+                    reservationKey,
+                    amount: estimate.credits,
+                    idempotencyKey: releaseKey,
+                    referenceType,
+                    referenceId,
+                    metadata: { ...billingMetadata, reason }
+                });
+                await usageStatusUpdater(operationKey, {
+                    billingStatus: "RESERVATION_RELEASED",
+                    actualCredits: 0,
+                    reservationKey,
+                    releaseKey
+                });
+            };
+
+            if (deferBilling) {
+                return { ...result, operationKey, finalizeBilling, releaseBilling };
+            }
+
+            try {
+                await finalizeBilling();
             } catch (error) {
                 await usageStatusUpdater(operationKey, {
                     billingStatus: "ACCOUNTING_RECOVERY_REQUIRED",

@@ -8,7 +8,12 @@ const botRoutes = require("../src/routes/botRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
 const walletService = require("../src/services/billing/walletService");
 const userPromptService = require("../src/services/userPromptService");
-const { createBotRun, getBotRunCreditEstimate, resolveBotRunPrompt } = require("../src/services/botRunService");
+const {
+    createBotRun,
+    createSingleCommentReply,
+    getBotRunCreditEstimate,
+    resolveBotRunPrompt
+} = require("../src/services/botRunService");
 const { toBotRunDto } = require("../src/utils/dto");
 
 const user = {
@@ -179,6 +184,49 @@ test("createBotRun starts as before when available credits pass preflight", asyn
     assert.equal(scheduled, true);
 });
 
+test("createSingleCommentReply rejects already replied comments before creating a duplicate run", async (t) => {
+    let createCalled = false;
+    let findOneCalls = 0;
+
+    t.mock.method(BotRun, "findOne", (filter) => {
+        findOneCalls += 1;
+        if (filter.idempotencyKey) {
+            return Promise.resolve(null);
+        }
+
+        assert.equal(String(filter.userId), user._id);
+        assert.equal(filter.videoId, "abcDEF12345");
+        assert.equal(filter.results.$elemMatch.commentId, "comment-1");
+        assert.equal(filter.results.$elemMatch.status, "replied");
+        return {
+            sort: async () => ({
+                _id: "66b000000000000000000001",
+                userId: user._id,
+                videoId: "abcDEF12345",
+                results: [{ commentId: "comment-1", status: "replied" }]
+            })
+        };
+    });
+    t.mock.method(BotRun, "create", async () => {
+        createCalled = true;
+        throw new Error("BotRun.create should not be called");
+    });
+
+    await assert.rejects(
+        () => createSingleCommentReply({
+            user,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            prompt: "Reply politely",
+            idempotencyKey: "single-comment-key-123"
+        }),
+        { code: "COMMENT_ALREADY_REPLIED", status: 409 }
+    );
+
+    assert.equal(findOneCalls, 2);
+    assert.equal(createCalled, false);
+});
+
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {
     mockPromptNotFound(t);
     let createCalled = false;
@@ -227,6 +275,58 @@ test("POST /bot/cost-estimate returns backend-owned cost metadata", async (t) =>
     assert.equal(response.body.cost.requiredCredits, 1);
     assert.equal(response.body.cost.requiredCredits, response.body.cost.estimate.credits);
     assert.equal(response.body.cost.estimate.outputTokens > 0, true);
+});
+
+test("POST /bot/comments/:commentId/reply requires auth, write header, and valid identifiers", async () => {
+    const app = createApp();
+
+    const unauthenticated = await request(app, {
+        method: "POST",
+        path: "/bot/comments/comment-1/reply",
+        body: {
+            videoId: "abcDEF12345",
+            idempotencyKey: "single-comment-key-123"
+        }
+    });
+    assert.equal(unauthenticated.status, 401);
+
+    const missingHeader = await request(app, {
+        method: "POST",
+        path: "/bot/comments/comment-1/reply",
+        userId: user._id,
+        body: {
+            videoId: "abcDEF12345",
+            idempotencyKey: "single-comment-key-123"
+        }
+    });
+    assert.equal(missingHeader.status, 403);
+    assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+
+    const invalidComment = await request(app, {
+        method: "POST",
+        path: "/bot/comments/bad%20comment/reply",
+        userId: user._id,
+        headers: { "X-CSRF-Protection": "1" },
+        body: {
+            videoId: "abcDEF12345",
+            idempotencyKey: "single-comment-key-123"
+        }
+    });
+    assert.equal(invalidComment.status, 422);
+    assert.equal(invalidComment.body.error.code, "INVALID_COMMENT_ID");
+
+    const invalidVideo = await request(app, {
+        method: "POST",
+        path: "/bot/comments/comment-1/reply",
+        userId: user._id,
+        headers: { "X-CSRF-Protection": "1" },
+        body: {
+            videoId: "short",
+            idempotencyKey: "single-comment-key-123"
+        }
+    });
+    assert.equal(invalidVideo.status, 422);
+    assert.equal(invalidVideo.body.error.code, "INVALID_VIDEO_ID");
 });
 
 test("GET /bot/runs/:runId disables cache and returns safe dominant comment error", async (t) => {
@@ -314,6 +414,7 @@ test("toBotRunDto exposes safe result summaries and handles legacy runs without 
     assert.deepEqual(dto.results[0], {
         commentId: "comment-1",
         status: "replied",
+        runId: null,
         errorCode: null,
         errorMessage: null,
         commentTextSnapshot: "Viewer asked about sauce.",

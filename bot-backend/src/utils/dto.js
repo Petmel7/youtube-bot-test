@@ -30,6 +30,7 @@ const toBotRunResultDto = (result) => {
     return {
         commentId: result.commentId,
         status: result.status,
+        runId: result.runId || null,
         errorCode: result.errorCode || null,
         errorMessage: result.errorMessage || null,
         commentTextSnapshot: result.commentTextSnapshot || null,
@@ -58,6 +59,7 @@ const toBotRunDto = (run) => {
     return {
         id: String(run._id || run.id),
         videoId: run.videoId,
+        mode: run.mode || "bulk",
         status: run.status,
         processedCount: run.processedCount,
         successCount: run.successCount,
@@ -414,6 +416,7 @@ module.exports = {
     toSafeUser,
     toPromptDto,
     toBotRunDto,
+    toBotRunResultDto,
     toPaymentIntentDto,
     toPaymentPayerChallengeDto,
     toWalletDto,
