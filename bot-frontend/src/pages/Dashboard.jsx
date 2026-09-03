@@ -38,6 +38,7 @@ const Dashboard = () => {
     const [walletAvailable, setWalletAvailable] = useState(null);
     const [botCostEstimate, setBotCostEstimate] = useState(null);
     const [estimateLoading, setEstimateLoading] = useState(false);
+    const [showStillProcessingNotice, setShowStillProcessingNotice] = useState(false);
     const pollStartedAtRef = useRef(null);
     const { t } = useTranslation();
     const isConnected = useAuthStatus(null, "/");
@@ -73,6 +74,7 @@ const Dashboard = () => {
         if (!botRunId) return;
         if (TERMINAL_BOT_RUN_STATUSES.has(botRunStatus)) {
             setIsBotRunning(false);
+            setShowStillProcessingNotice(false);
             pollStartedAtRef.current = null;
             return;
         }
@@ -87,6 +89,7 @@ const Dashboard = () => {
             const elapsedMs = Date.now() - pollStartedAtRef.current;
             if (elapsedMs > BOT_RUN_MAX_POLLING_MS) {
                 setIsBotRunning(false);
+                setShowStillProcessingNotice(false);
                 setNotice(t("bot.pollingTimedOut"));
                 return;
             }
@@ -99,17 +102,19 @@ const Dashboard = () => {
                 consecutiveFailures = 0;
                 if (TERMINAL_BOT_RUN_STATUSES.has(run.status)) {
                     setIsBotRunning(false);
+                    setShowStillProcessingNotice(false);
                     pollStartedAtRef.current = null;
                     return;
                 }
                 if (elapsedMs > BOT_RUN_STILL_PROCESSING_MS) {
-                    setNotice(t("bot.stillProcessing"));
+                    setShowStillProcessingNotice(true);
                 }
             } catch (error) {
                 if (stopped) return;
                 consecutiveFailures += 1;
                 if (consecutiveFailures >= MAX_POLL_FAILURES) {
                     setIsBotRunning(false);
+                    setShowStillProcessingNotice(false);
                     setNotice(t("bot.pollingFailed"));
                     return;
                 }
@@ -139,6 +144,7 @@ const Dashboard = () => {
     const handleSelectVideo = (video) => {
         setSelectedVideo(video);
         setError(prev => ({ ...prev, selectedVideo: false }));
+        setShowStillProcessingNotice(false);
         setNotice("");
     };
 
@@ -187,6 +193,7 @@ const Dashboard = () => {
         if (!botPrompt) return;
 
         setNotice("");
+        setShowStillProcessingNotice(false);
         pollStartedAtRef.current = null;
         const result = await fetchStartBot(selectedVideo.videoId, botPrompt, botGender, setIsBotRunning);
         await loadWalletSummary();
@@ -233,6 +240,8 @@ const Dashboard = () => {
         return <Loading />;
     }
 
+    const botNotice = showStillProcessingNotice ? t("bot.stillProcessing") : notice;
+
     return (
         <div className={styles.dashboardConteaner}>
             <LanguageSwitcher />
@@ -271,7 +280,7 @@ const Dashboard = () => {
                             selectedVideo,
                             startBot,
                             isBotRunning,
-                            notice,
+                            notice: botNotice,
                             canStartBot,
                             walletAvailable,
                             botCostEstimate,

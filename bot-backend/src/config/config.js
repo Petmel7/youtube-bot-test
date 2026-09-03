@@ -17,7 +17,7 @@ module.exports = {
     sessionSecret: process.env.SESSION_SECRET,
     mongoUri: process.env.MONGO_URI,
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+    geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
     geminiMaxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 384),
     geminiThinkingBudget: process.env.GEMINI_THINKING_BUDGET === undefined
         ? 0
