@@ -17,6 +17,11 @@ const { forbidden, notFound, unprocessable, upstream } = require("../utils/error
 const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
 const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
 const BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH = 1000;
+const COMMENT_RESULT_STATUS_PRIORITY = {
+    replied: 3,
+    failed: 2,
+    skipped: 1
+};
 
 const createTextSnapshot = (value) => {
     if (typeof value !== "string") return null;
@@ -457,6 +462,37 @@ const throwYoutubeUpstream = async (res, endpointKind, code, message) => {
     throw upstream(code, message);
 };
 
+const readYoutubeClientErrorInfo = (error) => {
+    const providerError = error?.errors?.[0] || error?.response?.data?.error?.errors?.[0] || {};
+    const responseError = error?.response?.data?.error || {};
+
+    return {
+        status: error?.code || error?.status || error?.response?.status || null,
+        providerCode: responseError.code || error?.code || error?.status || null,
+        reason: providerError.reason || responseError.status || null
+    };
+};
+
+const throwYoutubeClientError = (error, endpointKind, code, message) => {
+    const info = readYoutubeClientErrorInfo(error);
+    console.warn("YouTube upstream request failed", {
+        endpointKind,
+        status: info.status,
+        providerCode: info.providerCode,
+        reason: info.reason
+    });
+
+    if (isYoutubeAuthFailure(info)) {
+        throw upstream("YOUTUBE_AUTH_FAILED", "Reconnect YouTube and try again");
+    }
+
+    if (isYoutubeQuotaFailure(info)) {
+        throw upstream("YOUTUBE_QUOTA_EXCEEDED", "YouTube API quota exceeded. Try again later.");
+    }
+
+    throw upstream(code, message);
+};
+
 const fetchVideoDetails = async (accessToken, orderedVideoIds) => {
     if (orderedVideoIds.length === 0) {
         return [];
@@ -664,6 +700,137 @@ const getCatalogVideos = async (user, { maxResults = 12, pageToken, searchQuery 
     return listCatalogVideos(user._id, { maxResults, pageToken, searchQuery });
 };
 
+const getCommentSnippet = (item) => item?.snippet?.topLevelComment?.snippet || {};
+
+const toCommentInboxDto = (item) => {
+    const snippet = getCommentSnippet(item);
+
+    return {
+        commentId: item?.snippet?.topLevelComment?.id || null,
+        authorDisplayName: snippet.authorDisplayName || null,
+        authorProfileImageUrl: snippet.authorProfileImageUrl || null,
+        text: snippet.textOriginal || snippet.textDisplay || "",
+        publishedAt: snippet.publishedAt || null,
+        updatedAt: snippet.updatedAt || null,
+        likeCount: snippet.likeCount ?? null,
+        status: "unanswered",
+        latestResult: null
+    };
+};
+
+const getResultTimestamp = (run, result) => {
+    const value = result?.updatedAt || result?.createdAt || run?.updatedAt || run?.createdAt;
+    const date = value ? new Date(value) : new Date(0);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+};
+
+const toLatestResultDto = (run, result) => ({
+    status: result.status,
+    errorCode: result.errorCode || null,
+    errorMessage: result.errorMessage || null,
+    replyTextSnapshot: result.replyTextSnapshot || null,
+    runId: String(run._id || run.id),
+    updatedAt: result.updatedAt || result.createdAt || run.updatedAt || run.createdAt || null
+});
+
+const isBetterCommentResult = (candidate, current) => {
+    if (!current) return true;
+
+    const candidatePriority = COMMENT_RESULT_STATUS_PRIORITY[candidate.result.status] || 0;
+    const currentPriority = COMMENT_RESULT_STATUS_PRIORITY[current.result.status] || 0;
+    if (candidatePriority !== currentPriority) {
+        return candidatePriority > currentPriority;
+    }
+
+    return candidate.timestamp > current.timestamp;
+};
+
+const deriveCommentResultMap = async ({ userId, videoId, commentIds }) => {
+    if (commentIds.length === 0) {
+        return new Map();
+    }
+
+    const runs = await BotRun.find({
+        userId,
+        videoId,
+        "results.commentId": { $in: commentIds }
+    })
+        .sort({ createdAt: -1 })
+        .lean();
+
+    const resultByCommentId = new Map();
+    const wantedCommentIds = new Set(commentIds);
+
+    for (const run of runs) {
+        for (const result of run.results || []) {
+            if (!wantedCommentIds.has(result.commentId) || !COMMENT_RESULT_STATUS_PRIORITY[result.status]) {
+                continue;
+            }
+
+            const candidate = {
+                run,
+                result,
+                timestamp: getResultTimestamp(run, result)
+            };
+
+            if (isBetterCommentResult(candidate, resultByCommentId.get(result.commentId))) {
+                resultByCommentId.set(result.commentId, candidate);
+            }
+        }
+    }
+
+    return new Map([...resultByCommentId.entries()].map(([commentId, candidate]) => [
+        commentId,
+        toLatestResultDto(candidate.run, candidate.result)
+    ]));
+};
+
+const listVideoComments = async (user, videoId, { limit = 20, pageToken, status = "all" } = {}) => {
+    await verifyVideoOwnership(user, videoId);
+
+    const { youtube } = await createYoutubeClient(user);
+    let response;
+
+    try {
+        response = await youtube.commentThreads.list({
+            part: "snippet",
+            videoId,
+            maxResults: limit,
+            pageToken: pageToken || undefined,
+            order: "time"
+        });
+    } catch (error) {
+        throwYoutubeClientError(error, "commentThreads", "YOUTUBE_COMMENTS_FAILED", "Failed to fetch video comments");
+    }
+
+    const pageComments = (response.data.items || [])
+        .map(toCommentInboxDto)
+        .filter(comment => comment.commentId);
+    const resultByCommentId = await deriveCommentResultMap({
+        userId: user._id,
+        videoId,
+        commentIds: pageComments.map(comment => comment.commentId)
+    });
+
+    const comments = pageComments
+        .map(comment => {
+            const latestResult = resultByCommentId.get(comment.commentId) || null;
+            return {
+                ...comment,
+                status: latestResult?.status || "unanswered",
+                latestResult
+            };
+        })
+        .filter(comment => status === "all" || comment.status === status);
+
+    return {
+        comments,
+        nextPageToken: response.data.nextPageToken || null,
+        prevPageToken: response.data.prevPageToken || null,
+        pageInfo: response.data.pageInfo || {}
+    };
+};
+
 module.exports = {
     executeBotRun,
     replyToComment,
@@ -673,6 +840,7 @@ module.exports = {
     syncVideoCatalog,
     getCatalogVideos,
     listCatalogVideos,
+    listVideoComments,
     createTextSnapshot,
     sleep,
     verifyVideoOwnership

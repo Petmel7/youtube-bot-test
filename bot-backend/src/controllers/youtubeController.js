@@ -1,6 +1,6 @@
 
-const { getCatalogVideos, syncVideoCatalog } = require("../services/youtubeService");
-const { validateYoutubeVideosQuery } = require("../utils/validators");
+const { getCatalogVideos, listVideoComments, syncVideoCatalog } = require("../services/youtubeService");
+const { validateVideoId, validateYoutubeCommentsQuery, validateYoutubeVideosQuery } = require("../utils/validators");
 
 const fetchUserVideos = async (req, res) => {
     const user = req.user;
@@ -24,4 +24,12 @@ const refreshUserVideos = async (req, res) => {
     });
 };
 
-module.exports = { fetchUserVideos, refreshUserVideos };
+const fetchVideoComments = async (req, res) => {
+    const videoId = validateVideoId(req.params.videoId);
+    const query = validateYoutubeCommentsQuery(req.query);
+    const result = await listVideoComments(req.user, videoId, query);
+
+    res.json({ success: true, ...result });
+};
+
+module.exports = { fetchUserVideos, refreshUserVideos, fetchVideoComments };

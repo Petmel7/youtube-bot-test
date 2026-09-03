@@ -86,6 +86,35 @@
         "refreshing": "Actualisation...",
         "catalogSearch": "La recherche utilise votre catalogue vidéo mis en cache. Actualisez pour synchroniser les mises en ligne récentes."
     },
+    "comments": {
+        "title": "Commentaires",
+        "filter": "Filtre",
+        "refresh": "Actualiser les commentaires",
+        "loading": "Chargement des commentaires...",
+        "empty": "Aucun commentaire trouvé pour ce filtre.",
+        "unknownAuthor": "Auteur inconnu",
+        "likes": "J'aime",
+        "latestReply": "Dernière réponse du bot",
+        "error": "Erreur",
+        "filters": {
+            "all": "Tous",
+            "replied": "Répondus",
+            "failed": "Échecs",
+            "skipped": "Ignorés",
+            "unanswered": "Sans réponse"
+        },
+        "statuses": {
+            "replied": "Répondu",
+            "failed": "Échec",
+            "skipped": "Ignoré",
+            "unanswered": "Sans réponse"
+        },
+        "errors": {
+            "load": "Impossible de charger les commentaires. Réessayez plus tard.",
+            "forbidden": "Cette vidéo n'appartient pas à la chaîne connectée.",
+            "notFound": "Vidéo introuvable."
+        }
+    },
     "wallet": {
         "title": "Portefeuille",
         "subtitle": "Crédits disponibles pour les lancements du bot.",

@@ -15,6 +15,9 @@ const YOUTUBE_PAGE_TOKEN_RE = /^[A-Za-z0-9._~-]{1,256}$/;
 const YOUTUBE_DEFAULT_PAGE_SIZE = 12;
 const YOUTUBE_MAX_PAGE_SIZE = 25;
 const YOUTUBE_MAX_SEARCH_QUERY_LENGTH = 100;
+const YOUTUBE_COMMENT_DEFAULT_PAGE_SIZE = 20;
+const YOUTUBE_COMMENT_MAX_PAGE_SIZE = 50;
+const YOUTUBE_COMMENT_STATUSES = new Set(["all", "replied", "failed", "skipped", "unanswered"]);
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -181,6 +184,40 @@ const validateYoutubeVideosQuery = (query = {}) => {
     return result;
 };
 
+const validateYoutubeCommentsQuery = (query = {}) => {
+    const result = {
+        limit: YOUTUBE_COMMENT_DEFAULT_PAGE_SIZE,
+        pageToken: undefined,
+        status: "all"
+    };
+
+    if (query.limit !== undefined && query.limit !== null && query.limit !== "") {
+        const limit = Number(query.limit);
+        if (!Number.isInteger(limit) || limit < 1 || limit > YOUTUBE_COMMENT_MAX_PAGE_SIZE) {
+            throw unprocessable("INVALID_LIMIT", `limit must be an integer between 1 and ${YOUTUBE_COMMENT_MAX_PAGE_SIZE}`);
+        }
+        result.limit = limit;
+    }
+
+    if (query.pageToken !== undefined && query.pageToken !== null && query.pageToken !== "") {
+        const pageToken = normalizeString(query.pageToken, "pageToken", 256);
+        if (!YOUTUBE_PAGE_TOKEN_RE.test(pageToken)) {
+            throw unprocessable("INVALID_PAGE_TOKEN", "Invalid page token");
+        }
+        result.pageToken = pageToken;
+    }
+
+    if (query.status !== undefined && query.status !== null && query.status !== "") {
+        const status = normalizeString(query.status, "status", 24);
+        if (!YOUTUBE_COMMENT_STATUSES.has(status)) {
+            throw unprocessable("INVALID_COMMENT_STATUS", "Invalid comment status filter");
+        }
+        result.status = status;
+    }
+
+    return result;
+};
+
 module.exports = {
     assertObjectBody,
     validateVideoId,
@@ -198,5 +235,6 @@ module.exports = {
     validatePaymentPayerChallengeId,
     validatePaymentSignature,
     validateYoutubeVideosQuery,
+    validateYoutubeCommentsQuery,
     MAX_PROMPT_LENGTH
 };

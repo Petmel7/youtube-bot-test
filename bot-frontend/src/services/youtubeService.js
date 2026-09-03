@@ -33,3 +33,32 @@ export const refreshMyVideos = async () => {
         return { success: false, error: err };
     }
 };
+
+export const fetchVideoComments = async ({ videoId, pageToken, limit, status } = {}) => {
+    if (!videoId) {
+        return { success: false, comments: [], nextPageToken: null, prevPageToken: null, pageInfo: {} };
+    }
+
+    try {
+        const params = new URLSearchParams();
+        if (pageToken) params.set("pageToken", pageToken);
+        if (limit) params.set("limit", String(limit));
+        if (status) params.set("status", status);
+
+        const queryString = params.toString();
+        const data = await apiRequest(`/youtube/videos/${encodeURIComponent(videoId)}/comments${queryString ? `?${queryString}` : ""}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" }
+        });
+
+        return {
+            success: true,
+            comments: data.comments || [],
+            nextPageToken: data.nextPageToken || null,
+            prevPageToken: data.prevPageToken || null,
+            pageInfo: data.pageInfo || {}
+        };
+    } catch (err) {
+        return { success: false, comments: [], nextPageToken: null, prevPageToken: null, pageInfo: {}, error: err };
+    }
+};

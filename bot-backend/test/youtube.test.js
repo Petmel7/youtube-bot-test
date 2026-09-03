@@ -11,13 +11,14 @@ const errorHandler = require("../src/middleware/errorHandler");
 const BotRun = require("../src/models/BotRun");
 const VideoCatalog = require("../src/models/VideoCatalog");
 const aiProvider = require("../src/services/ai/aiProvider");
-const { validateYoutubeVideosQuery } = require("../src/utils/validators");
+const { validateYoutubeCommentsQuery, validateYoutubeVideosQuery } = require("../src/utils/validators");
 const {
     executeBotRun,
     createTextSnapshot,
     getUserChannelInfo,
     getChannelVideos,
     listCatalogVideos,
+    listVideoComments,
     syncVideoCatalog
 } = require("../src/services/youtubeService");
 
@@ -118,6 +119,24 @@ test("validateYoutubeVideosQuery defaults and bounds pagination params", () => {
     assert.throws(() => validateYoutubeVideosQuery({ pageToken: "x".repeat(257) }), { code: "FIELD_TOO_LONG" });
     assert.throws(() => validateYoutubeVideosQuery({ pageToken: "bad token" }), { code: "INVALID_PAGE_TOKEN" });
     assert.throws(() => validateYoutubeVideosQuery({ query: "x".repeat(101) }), { code: "FIELD_TOO_LONG" });
+});
+
+test("validateYoutubeCommentsQuery defaults and validates filters", () => {
+    assert.deepEqual(validateYoutubeCommentsQuery({}), {
+        limit: 20,
+        pageToken: undefined,
+        status: "all"
+    });
+    assert.deepEqual(validateYoutubeCommentsQuery({ limit: "50", pageToken: "CAUQAA", status: "failed" }), {
+        limit: 50,
+        pageToken: "CAUQAA",
+        status: "failed"
+    });
+
+    assert.throws(() => validateYoutubeCommentsQuery({ limit: "0" }), { code: "INVALID_LIMIT" });
+    assert.throws(() => validateYoutubeCommentsQuery({ limit: "51" }), { code: "INVALID_LIMIT" });
+    assert.throws(() => validateYoutubeCommentsQuery({ pageToken: "bad token" }), { code: "INVALID_PAGE_TOKEN" });
+    assert.throws(() => validateYoutubeCommentsQuery({ status: "archived" }), { code: "INVALID_COMMENT_STATUS" });
 });
 
 test("getUserChannelInfo fetches uploads playlist details", async (t) => {
@@ -266,6 +285,206 @@ test("getChannelVideos returns empty page without fetching video details", async
             resultsPerPage: 12
         }
     });
+});
+
+test("listVideoComments returns paginated comments decorated with BotRun statuses", async (t) => {
+    const googleCalls = [];
+    t.mock.method(global, "fetch", async (url, options) => {
+        const parsed = new URL(url);
+
+        assert.equal(parsed.pathname.endsWith("/channels"), true);
+        assert.equal(parsed.searchParams.get("mine"), "true");
+        assert.equal(options.headers.Authorization, "Bearer access-token");
+
+        return jsonResponse({
+            items: [{
+                id: "channel-1",
+                contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+            }]
+        });
+    });
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list(args) {
+                googleCalls.push({ type: "videos", args });
+                assert.equal(args.id, "abcDEF12345");
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list(args) {
+                googleCalls.push({ type: "commentThreads", args });
+                assert.equal(args.part, "snippet");
+                assert.equal(args.videoId, "abcDEF12345");
+                assert.equal(args.maxResults, 3);
+                assert.equal(args.pageToken, "CAUQAA");
+                assert.equal(args.order, "time");
+
+                return {
+                    data: {
+                        items: [
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-1",
+                                        snippet: {
+                                            authorDisplayName: "Viewer One",
+                                            authorProfileImageUrl: "https://img.test/1.jpg",
+                                            textOriginal: "Great recipe!",
+                                            publishedAt: "2026-09-01T10:00:00Z",
+                                            updatedAt: "2026-09-01T10:00:00Z",
+                                            likeCount: 2
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-2",
+                                        snippet: {
+                                            authorDisplayName: "Viewer Two",
+                                            textOriginal: "This failed?",
+                                            publishedAt: "2026-09-01T11:00:00Z",
+                                            likeCount: 0
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-3",
+                                        snippet: {
+                                            authorDisplayName: "Viewer Three",
+                                            textOriginal: "Still unanswered.",
+                                            publishedAt: "2026-09-01T12:00:00Z"
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        nextPageToken: "CBQQAA",
+                        pageInfo: { resultsPerPage: 3 }
+                    }
+                };
+            }
+        }
+    }));
+    t.mock.method(BotRun, "find", (filter) => {
+        assert.equal(String(filter.userId), user._id);
+        assert.equal(filter.videoId, "abcDEF12345");
+        assert.deepEqual(filter["results.commentId"].$in, ["comment-1", "comment-2", "comment-3"]);
+
+        return createQuery([
+            {
+                _id: "66b000000000000000000002",
+                userId: user._id,
+                videoId: "abcDEF12345",
+                createdAt: new Date("2026-09-02T00:00:00Z"),
+                results: [
+                    {
+                        commentId: "comment-1",
+                        status: "skipped",
+                        updatedAt: new Date("2026-09-02T00:01:00Z")
+                    },
+                    {
+                        commentId: "comment-2",
+                        status: "failed",
+                        errorCode: "GEMINI_RATE_LIMIT",
+                        errorMessage: "Gemini generation failed",
+                        updatedAt: new Date("2026-09-02T00:02:00Z")
+                    }
+                ]
+            },
+            {
+                _id: "66b000000000000000000001",
+                userId: user._id,
+                videoId: "abcDEF12345",
+                createdAt: new Date("2026-09-01T00:00:00Z"),
+                results: [
+                    {
+                        commentId: "comment-1",
+                        status: "replied",
+                        replyTextSnapshot: "Thanks for watching!",
+                        updatedAt: new Date("2026-09-01T00:01:00Z")
+                    }
+                ]
+            }
+        ]);
+    });
+
+    const result = await listVideoComments(user, "abcDEF12345", {
+        limit: 3,
+        pageToken: "CAUQAA"
+    });
+
+    assert.deepEqual(googleCalls.map(call => call.type), ["videos", "commentThreads"]);
+    assert.equal(result.nextPageToken, "CBQQAA");
+    assert.equal(result.comments.length, 3);
+    assert.equal(result.comments[0].status, "replied");
+    assert.equal(result.comments[0].latestResult.replyTextSnapshot, "Thanks for watching!");
+    assert.equal(result.comments[0].authorDisplayName, "Viewer One");
+    assert.equal(result.comments[0].likeCount, 2);
+    assert.equal(result.comments[1].status, "failed");
+    assert.equal(result.comments[1].latestResult.errorCode, "GEMINI_RATE_LIMIT");
+    assert.equal(result.comments[2].status, "unanswered");
+    assert.equal(result.comments[2].latestResult, null);
+    assert.equal(result.comments[0].latestResult.prompt, undefined);
+});
+
+test("listVideoComments applies status filter to the decorated page", async (t) => {
+    t.mock.method(global, "fetch", async () => jsonResponse({
+        items: [{
+            id: "channel-1",
+            contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+        }]
+    }));
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-1",
+                                        snippet: { authorDisplayName: "Viewer", textOriginal: "Thanks!" }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-2",
+                                        snippet: { authorDisplayName: "Viewer", textOriginal: "Needs answer." }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                };
+            }
+        }
+    }));
+    t.mock.method(BotRun, "find", () => createQuery([
+        {
+            _id: "66b000000000000000000001",
+            createdAt: new Date("2026-09-01T00:00:00Z"),
+            results: [{ commentId: "comment-1", status: "replied", replyTextSnapshot: "You're welcome!" }]
+        }
+    ]));
+
+    const result = await listVideoComments(user, "abcDEF12345", { status: "unanswered" });
+
+    assert.deepEqual(result.comments.map(comment => comment.commentId), ["comment-2"]);
+    assert.equal(result.comments[0].status, "unanswered");
 });
 
 test("listCatalogVideos searches cached Cyrillic titles without calling YouTube Search API", async (t) => {
@@ -906,6 +1125,29 @@ test("POST /youtube/my-videos/refresh requires auth and write header", async (t)
     assert.equal(ok.status, 202);
     assert.equal(ok.body.success, true);
     assert.equal(ok.body.sync.pagesSynced, 1);
+});
+
+test("GET /youtube/videos/:videoId/comments requires auth and validates query", async () => {
+    const app = createApp();
+
+    const unauthenticated = await request(app, {
+        path: "/youtube/videos/abcDEF12345/comments"
+    });
+    assert.equal(unauthenticated.status, 401);
+
+    const invalidVideo = await request(app, {
+        path: "/youtube/videos/short/comments",
+        userId: user._id
+    });
+    assert.equal(invalidVideo.status, 422);
+    assert.equal(invalidVideo.body.error.code, "INVALID_VIDEO_ID");
+
+    const invalidStatus = await request(app, {
+        path: "/youtube/videos/abcDEF12345/comments?status=archived",
+        userId: user._id
+    });
+    assert.equal(invalidStatus.status, 422);
+    assert.equal(invalidStatus.body.error.code, "INVALID_COMMENT_STATUS");
 });
 
 test("GET /youtube/my-videos query reads catalog and does not call YouTube search", async (t) => {

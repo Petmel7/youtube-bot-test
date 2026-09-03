@@ -14,6 +14,7 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 import Loading from "../components/Loading";
 import BotRunActivity from "../components/BotRunActivity";
 import MyVideos from "../components/MyVideos";
+import VideoCommentsInbox from "../components/VideoCommentsInbox";
 import WalletPanel from "../components/WalletPanel";
 import styles from "../styles/dashboard.module.css";
 
@@ -274,6 +275,7 @@ const Dashboard = () => {
                         </div>
 
                         <MyVideos selectedVideo={selectedVideo} onSelectVideo={handleSelectVideo} />
+                        <VideoCommentsInbox selectedVideo={selectedVideo} />
 
                         <BotStarter {...{
                             error,

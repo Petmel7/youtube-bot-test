@@ -86,6 +86,35 @@
         "refreshing": "Refreshing...",
         "catalogSearch": "Search uses your cached video catalog. Refresh to sync recent uploads."
     },
+    "comments": {
+        "title": "Comments",
+        "filter": "Filter",
+        "refresh": "Refresh comments",
+        "loading": "Loading comments...",
+        "empty": "No comments found for this filter.",
+        "unknownAuthor": "Unknown author",
+        "likes": "Likes",
+        "latestReply": "Latest bot reply",
+        "error": "Error",
+        "filters": {
+            "all": "All",
+            "replied": "Replied",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "unanswered": "Unanswered"
+        },
+        "statuses": {
+            "replied": "Replied",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "unanswered": "Unanswered"
+        },
+        "errors": {
+            "load": "Could not load comments. Try again later.",
+            "forbidden": "This video does not belong to the connected channel.",
+            "notFound": "Video not found."
+        }
+    },
     "wallet": {
         "title": "Wallet",
         "subtitle": "Credits available for bot runs.",

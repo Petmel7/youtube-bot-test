@@ -1,0 +1,301 @@
+.inbox {
+    display: grid;
+    gap: 12px;
+    width: 100%;
+    margin: 0 0 16px;
+    padding: 14px;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    background: #fff;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.header,
+.commentHeader,
+.toolbar,
+.metaRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.heading,
+.author {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.heading h2,
+.heading p {
+    margin: 0;
+}
+
+.heading h2 {
+    color: #101828;
+    font-size: 20px;
+}
+
+.heading p {
+    color: #667085;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.icon {
+    flex: 0 0 auto;
+    color: #ff0033;
+    font-size: 22px;
+}
+
+.refreshButton,
+.loadMoreButton,
+.filterSelect {
+    min-height: 36px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    font: inherit;
+}
+
+.refreshButton,
+.loadMoreButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.refreshButton:hover:not(:disabled),
+.loadMoreButton:hover:not(:disabled) {
+    border-color: #1e90ff;
+    color: #1e90ff;
+}
+
+.refreshButton:disabled,
+.loadMoreButton:disabled,
+.filterSelect:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.toolbar {
+    padding: 10px;
+    border: 1px solid #eaecf0;
+    border-radius: 6px;
+    background: #f9fafb;
+}
+
+.toolbar label {
+    color: #344054;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.filterSelect {
+    min-width: 180px;
+    padding: 7px 10px;
+}
+
+.stateText,
+.error {
+    margin: 8px 0;
+    text-align: center;
+    font-size: 14px;
+}
+
+.stateText {
+    color: #667085;
+}
+
+.error,
+.resultError {
+    color: #b42318;
+}
+
+.commentList {
+    display: grid;
+    gap: 10px;
+    max-height: 460px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.commentCard {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 8px;
+    background: #fcfcfd;
+}
+
+.author img,
+.author > span {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #f1f1f1;
+    object-fit: cover;
+}
+
+.author div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.author strong,
+.author small,
+.metaRow span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.author strong {
+    color: #101828;
+    font-size: 14px;
+}
+
+.author small,
+.metaRow {
+    color: #667085;
+    font-size: 12px;
+}
+
+.statusBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.statusReplied {
+    background: #dcfae6;
+    color: #067647;
+}
+
+.statusFailed {
+    background: #fee4e2;
+    color: #b42318;
+}
+
+.statusSkipped {
+    background: #fef0c7;
+    color: #b54708;
+}
+
+.statusUnanswered {
+    background: #f2f4f7;
+    color: #475467;
+}
+
+.commentText,
+.resultBlock p,
+.resultError {
+    margin: 0;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.commentText {
+    color: #344054;
+}
+
+.resultBlock {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border-left: 3px solid #1e90ff;
+    border-radius: 6px;
+    background: #f5faff;
+}
+
+.resultBlock span {
+    color: #175cd3;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.resultBlock p {
+    color: #344054;
+}
+
+.loadMoreButton {
+    width: 100%;
+    min-height: 40px;
+}
+
+:global(body.dark-mode) .inbox,
+:global(body.dark-mode) .refreshButton,
+:global(body.dark-mode) .loadMoreButton,
+:global(body.dark-mode) .filterSelect {
+    border-color: #3d3d3d;
+    background: #272727;
+    color: #fff;
+}
+
+:global(body.dark-mode) .toolbar,
+:global(body.dark-mode) .commentCard {
+    border-color: #3d3d3d;
+    background: #202020;
+}
+
+:global(body.dark-mode) .heading h2,
+:global(body.dark-mode) .author strong {
+    color: #fff;
+}
+
+:global(body.dark-mode) .heading p,
+:global(body.dark-mode) .toolbar label,
+:global(body.dark-mode) .stateText,
+:global(body.dark-mode) .author small,
+:global(body.dark-mode) .metaRow,
+:global(body.dark-mode) .commentText,
+:global(body.dark-mode) .resultBlock p {
+    color: #c8c8c8;
+}
+
+:global(body.dark-mode) .resultBlock {
+    background: #162232;
+}
+
+@media (max-width: 620px) {
+    .header,
+    .commentHeader,
+    .toolbar,
+    .metaRow {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .refreshButton,
+    .filterSelect {
+        width: 100%;
+    }
+
+    .statusBadge {
+        align-self: flex-start;
+    }
+}
