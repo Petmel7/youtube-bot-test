@@ -19,8 +19,11 @@ const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
 const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
 const BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH = 1000;
 const COMMENT_RESULT_STATUS_PRIORITY = {
+    processing: 2,
+    queued: 1,
     drafted: 2,
     replied: 3,
+    posted: 3,
     failed: 2,
     skipped: 1
 };
@@ -176,6 +179,257 @@ const updateCommentReplyStateFromResult = async ({ userId, videoId, result, yout
     return null;
 };
 
+const getRunTasks = async (runId) => CommentReplyState.find({
+    botRunId: runId,
+    taskType: "bulk-reply"
+}).sort({ createdAt: 1 });
+
+const syncRunCountersFromTasks = async (runId, extra = {}) => {
+    const tasks = await getRunTasks(runId);
+    const counts = tasks.reduce((summary, task) => {
+        if (task.status === "queued") summary.queuedCount++;
+        if (task.status === "processing") summary.processingCount++;
+        if (task.status === "replied" || task.status === "posted") summary.successCount++;
+        if (task.status === "failed") summary.failureCount++;
+        if (task.status === "skipped") summary.skippedCount++;
+        if (["replied", "posted", "failed", "skipped", "drafted"].includes(task.status)) summary.processedCount++;
+        return summary;
+    }, {
+        queuedCount: 0,
+        processingCount: 0,
+        processedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skippedCount: 0
+    });
+
+    const status = counts.processingCount > 0 || counts.queuedCount > 0
+        ? "running"
+        : counts.failureCount > 0
+            ? (counts.successCount > 0 || counts.skippedCount > 0 ? "partial" : "failed")
+            : "completed";
+
+    return BotRun.findByIdAndUpdate(runId, {
+        status,
+        processedCount: counts.processedCount,
+        successCount: counts.successCount,
+        failureCount: counts.failureCount,
+        skippedCount: counts.skippedCount,
+        ...(status === "running" ? {} : { completedAt: new Date() }),
+        ...extra
+    }, { new: true });
+};
+
+const createBulkReplyTasks = async (user, videoId, runId) => {
+    await verifyVideoOwnership(user, videoId);
+
+    const { youtube } = await createYoutubeClient(user);
+    let nextPageToken = null;
+    let pageCount = 0;
+    let scanned = 0;
+    let created = 0;
+    let skipped = 0;
+
+    do {
+        pageCount++;
+        const response = await youtube.commentThreads.list({
+            part: "snippet",
+            videoId,
+            maxResults: Math.min(100, botMaxCommentsPerRun),
+            pageToken: nextPageToken || undefined,
+            order: "time"
+        });
+
+        for (const item of response.data.items || []) {
+            if (scanned >= botMaxCommentsPerRun) break;
+            scanned++;
+
+            const { commentId, commentText } = getTopLevelComment(item);
+            if (!commentId || !commentText) {
+                skipped++;
+                continue;
+            }
+
+            if (await hasPreviouslyReplied(user._id, videoId, commentId)) {
+                skipped++;
+                continue;
+            }
+
+            const result = await CommentReplyState.updateOne({
+                userId: user._id,
+                videoId,
+                commentId,
+                status: { $ne: "replied" }
+            }, {
+                $setOnInsert: {
+                    userId: user._id,
+                    videoId,
+                    commentId,
+                    taskType: "bulk-reply",
+                    status: "queued",
+                    botRunId: runId,
+                    attempts: 0,
+                    idempotencyKey: `${runId}:${commentId}`
+                },
+                $set: {
+                    commentTextSnapshot: createTextSnapshot(commentText),
+                    lastErrorCode: null,
+                    lastErrorMessage: null
+                }
+            }, { upsert: true });
+
+            if (result.upsertedCount || result.modifiedCount) {
+                created++;
+            }
+        }
+
+        nextPageToken = scanned < botMaxCommentsPerRun
+            ? response.data.nextPageToken || null
+            : null;
+    } while (nextPageToken && pageCount < botMaxPagesPerRun);
+
+    const tasks = await getRunTasks(runId);
+    await BotRun.findByIdAndUpdate(runId, {
+        processedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skippedCount: 0,
+        results: tasks.map(task => ({
+            commentId: task.commentId,
+            status: task.status,
+            runId: String(runId),
+            commentTextSnapshot: task.commentTextSnapshot,
+            attemptCount: task.attempts ?? 0,
+            updatedAt: task.updatedAt
+        }))
+    });
+
+    if (tasks.length === 0) {
+        await BotRun.findByIdAndUpdate(runId, {
+            status: "completed",
+            completedAt: new Date()
+        });
+    }
+
+    return { created, skipped, total: tasks.length };
+};
+
+const taskToResult = (task) => ({
+    taskId: String(task._id || task.id),
+    commentId: task.commentId,
+    status: task.status === "posted" ? "replied" : task.status,
+    runId: task.botRunId ? String(task.botRunId) : null,
+    errorCode: task.lastErrorCode || null,
+    errorMessage: task.lastErrorMessage || null,
+    commentTextSnapshot: task.commentTextSnapshot || null,
+    replyTextSnapshot: task.postedReplyTextSnapshot || null,
+    draftReplyText: task.draftReplyText || null,
+    youtubeReplyId: task.youtubeReplyId || null,
+    generatedByAi: Boolean(task.generatedByAi),
+    attemptCount: task.attempts ?? 0,
+    updatedAt: task.updatedAt || null
+});
+
+const refreshRunResultsFromTasks = async (runId, extra = {}) => {
+    const tasks = await getRunTasks(runId);
+    const run = await syncRunCountersFromTasks(runId, {
+        results: tasks.map(taskToResult),
+        ...extra
+    });
+    return run;
+};
+
+const processQueuedBotRunTasks = async ({ runId, user, videoId, userPrompt, accessToken, requestSpacingMs, sleepFn }) => {
+    const tasks = await getRunTasks(runId);
+    if (tasks.length === 0) {
+        return false;
+    }
+
+    let geminiRequestCount = 0;
+    let stopForProviderLimit = false;
+    let providerLimitErrorCode = null;
+
+    for (const task of tasks) {
+        if (stopForProviderLimit) {
+            if (["queued", "processing"].includes(task.status)) {
+                task.status = "skipped";
+                task.lastErrorCode = providerLimitErrorCode;
+                task.lastErrorMessage = getProviderLimitMessage(providerLimitErrorCode);
+                task.completedAt = new Date();
+                await task.save();
+            }
+            continue;
+        }
+
+        if (task.status !== "queued") {
+            continue;
+        }
+
+        task.status = "processing";
+        task.lockedAt = new Date();
+        task.attempts = (task.attempts || 0) + 1;
+        await task.save();
+        await refreshRunResultsFromTasks(runId);
+
+        try {
+            if (geminiRequestCount > 0 && requestSpacingMs > 0) {
+                await sleepFn(requestSpacingMs);
+            }
+            geminiRequestCount++;
+            const response = await aiProvider.generateReply({
+                userId: user._id,
+                runId,
+                videoId,
+                commentId: task.commentId,
+                comment: task.commentTextSnapshot,
+                prompt: userPrompt,
+                deferBilling: true
+            });
+
+            const insertStartedAt = Date.now();
+            let youtubeReplyId;
+            try {
+                youtubeReplyId = await replyToComment(accessToken, task.commentId, response.text);
+                await response.finalizeBilling();
+            } catch (error) {
+                if (response.releaseBilling && error.code === "YOUTUBE_REPLY_FAILED") {
+                    await response.releaseBilling("youtube-reply-failed");
+                }
+                throw error;
+            }
+
+            task.status = "replied";
+            task.postedReplyTextSnapshot = createTextSnapshot(response.text);
+            task.youtubeReplyId = youtubeReplyId;
+            task.generatedByAi = true;
+            task.lastErrorCode = null;
+            task.lastErrorMessage = null;
+            task.completedAt = new Date();
+            task.lockedAt = null;
+            await task.save();
+        } catch (error) {
+            const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
+            task.status = "failed";
+            task.lastErrorCode = errorCode;
+            task.lastErrorMessage = error.isOperational ? error.message : "Failed to process comment";
+            task.lockedAt = null;
+            task.completedAt = new Date();
+            await task.save();
+
+            if (shouldStopRunAfterAiError(errorCode)) {
+                stopForProviderLimit = true;
+                providerLimitErrorCode = errorCode;
+            }
+        }
+    }
+
+    await refreshRunResultsFromTasks(runId, {
+        errorCode: providerLimitErrorCode || undefined,
+        errorMessage: providerLimitErrorCode ? getProviderLimitMessage(providerLimitErrorCode) : undefined
+    });
+    return true;
+};
+
 const verifyVideoOwnership = async (user, videoId) => {
     const { youtube } = await createYoutubeClient(user);
     const channelId = await getUserChannelId(user);
@@ -209,6 +463,19 @@ async function executeBotRun(runId, user, videoId, userPrompt, {
         await verifyVideoOwnership(user, videoId);
 
         const { youtube, accessToken } = await createYoutubeClient(user);
+        const processedQueuedTasks = await processQueuedBotRunTasks({
+            runId,
+            user,
+            videoId,
+            userPrompt,
+            accessToken,
+            requestSpacingMs,
+            sleepFn
+        });
+        if (processedQueuedTasks) {
+            return;
+        }
+
         let nextPageToken = null;
         let pageCount = 0;
         let processed = 0;
@@ -1039,6 +1306,7 @@ module.exports = {
     listCatalogVideos,
     listVideoComments,
     getVideoCommentForReply,
+    createBulkReplyTasks,
     executeSingleCommentReply,
     createTextSnapshot,
     sleep,

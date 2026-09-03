@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "../styles/dashboard.module.css";
 
@@ -11,6 +11,7 @@ const getStatusClassName = (status) => {
     switch (status) {
         case "completed":
         case "replied":
+        case "posted":
             return styles.botRunStatusSuccess;
         case "partial":
         case "skipped":
@@ -19,21 +20,38 @@ const getStatusClassName = (status) => {
             return styles.botRunStatusError;
         case "cancelled":
             return styles.botRunStatusMuted;
+        case "queued":
+        case "processing":
+        case "drafted":
+            return styles.botRunStatusActive;
         default:
             return styles.botRunStatusActive;
     }
 };
 
-const BotRunActivity = ({ run, videoTitle, getErrorMessage }) => {
+const BotRunActivity = ({ run, videoTitle, getErrorMessage, onRetryTask }) => {
     const { t } = useTranslation();
+    const [retryingTaskId, setRetryingTaskId] = useState(null);
     const results = Array.isArray(run?.results) ? run.results : [];
     const processed = getCount(run?.processedCount);
+    const queued = getCount(run?.queuedCount);
+    const processing = getCount(run?.processingCount);
     const replied = getCount(run?.successCount);
     const failed = getCount(run?.failureCount);
     const skipped = getCount(run?.skippedCount);
-    const totalKnown = Math.max(processed, replied + failed + skipped);
+    const totalKnown = Math.max(results.length, processed + queued + processing, replied + failed + skipped + queued + processing);
     const progressPercent = totalKnown > 0 ? Math.min(100, Math.round((processed / totalKnown) * 100)) : 0;
     const runError = useMemo(() => getErrorMessage?.(run), [getErrorMessage, run]);
+
+    const handleRetry = async (taskId) => {
+        if (!taskId || !onRetryTask || retryingTaskId) return;
+        setRetryingTaskId(taskId);
+        try {
+            await onRetryTask(taskId);
+        } finally {
+            setRetryingTaskId(null);
+        }
+    };
 
     if (!run) return null;
 
@@ -61,6 +79,14 @@ const BotRunActivity = ({ run, videoTitle, getErrorMessage }) => {
                 <div>
                     <span>{t("bot.activity.processed")}</span>
                     <strong>{processed}</strong>
+                </div>
+                <div>
+                    <span>{t("bot.activity.queued")}</span>
+                    <strong>{queued}</strong>
+                </div>
+                <div>
+                    <span>{t("bot.activity.processing")}</span>
+                    <strong>{processing}</strong>
                 </div>
                 <div>
                     <span>{t("bot.activity.replied")}</span>
@@ -115,6 +141,21 @@ const BotRunActivity = ({ run, videoTitle, getErrorMessage }) => {
                                     <p className={styles.botRunResultError}>
                                         {result.errorMessage || result.errorCode || t("bot.activity.error")}
                                     </p>
+                                )}
+
+                                {onRetryTask && result.taskId && ["failed", "skipped"].includes(result.status) && (
+                                    <div className={styles.botRunResultActions}>
+                                        <button
+                                            type="button"
+                                            className={styles.botRunActionButton}
+                                            onClick={() => handleRetry(result.taskId)}
+                                            disabled={Boolean(retryingTaskId)}
+                                        >
+                                            {retryingTaskId === result.taskId
+                                                ? t("comments.replying")
+                                                : t("comments.retry")}
+                                        </button>
+                                    </div>
                                 )}
                             </li>
                         ))}

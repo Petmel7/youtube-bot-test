@@ -21,6 +21,7 @@ const {
     getChannelVideos,
     listCatalogVideos,
     listVideoComments,
+    createBulkReplyTasks,
     syncVideoCatalog
 } = require("../src/services/youtubeService");
 
@@ -56,6 +57,9 @@ const mockCommentReplyStateEmpty = (t) => {
     t.mock.method(CommentReplyState, "exists", async () => false);
     t.mock.method(CommentReplyState, "findOneAndUpdate", async () => ({}));
     t.mock.method(CommentReplyState, "find", () => ({
+        sort() {
+            return Promise.resolve([]);
+        },
         lean: async () => []
     }));
 };
@@ -546,6 +550,81 @@ test("listVideoComments decorates drafts from comment reply state", async (t) =>
     assert.equal(result.comments[0].status, "drafted");
     assert.equal(result.comments[0].latestResult.draftReplyText, "Yes, dill would work nicely here.");
     assert.equal(result.comments[0].latestResult.generatedByAi, true);
+});
+
+test("createBulkReplyTasks creates queued tasks for eligible comments", async (t) => {
+    const updates = [];
+    t.mock.method(global, "fetch", async () => jsonResponse({
+        items: [{
+            id: "channel-1",
+            contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+        }]
+    }));
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list(args) {
+                assert.equal(args.videoId, "abcDEF12345");
+                assert.equal(args.order, "time");
+                return {
+                    data: {
+                        items: [
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-1",
+                                        snippet: { textOriginal: "  Great recipe!\nThanks.  " }
+                                    }
+                                }
+                            },
+                            {
+                                snippet: {
+                                    topLevelComment: {
+                                        id: "comment-2",
+                                        snippet: { textOriginal: "Can I use dill?" }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                };
+            }
+        }
+    }));
+    t.mock.method(CommentReplyState, "exists", async ({ commentId }) => commentId === "comment-2");
+    t.mock.method(BotRun, "exists", async () => false);
+    t.mock.method(CommentReplyState, "updateOne", async (filter, update) => {
+        updates.push({ filter, update });
+        return { upsertedCount: 1, modifiedCount: 0 };
+    });
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort() {
+            return Promise.resolve(updates.map((entry, index) => ({
+                _id: `state-${index}`,
+                commentId: entry.filter.commentId,
+                status: "queued",
+                botRunId: "66b000000000000000000001",
+                commentTextSnapshot: entry.update.$set.commentTextSnapshot,
+                attempts: 0
+            })));
+        }
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async () => ({}));
+
+    const result = await createBulkReplyTasks(user, "abcDEF12345", "66b000000000000000000001");
+
+    assert.equal(result.created, 1);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.total, 1);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].filter.commentId, "comment-1");
+    assert.equal(updates[0].update.$setOnInsert.status, "queued");
+    assert.equal(updates[0].update.$setOnInsert.taskType, "bulk-reply");
+    assert.equal(updates[0].update.$set.commentTextSnapshot, "Great recipe! Thanks.");
 });
 
 test("listCatalogVideos searches cached Cyrillic titles without calling YouTube Search API", async (t) => {

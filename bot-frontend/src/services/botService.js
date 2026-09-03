@@ -140,3 +140,18 @@ export const fetchPublishCommentReply = async ({ videoId, commentId, replyText, 
     };
 };
 
+export const fetchRetryCommentTask = async ({ taskId } = {}) => {
+    const data = await apiRequest(`/bot/tasks/${encodeURIComponent(taskId)}/retry`, {
+        method: "POST",
+        body: JSON.stringify({
+            idempotencyKey: createIdempotencyKey()
+        })
+    });
+
+    return {
+        success: data.success,
+        run: data.run || null,
+        result: data.result || null
+    };
+};
+

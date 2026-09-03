@@ -6,6 +6,7 @@ const {
     updateCommentDraft,
     publishCommentReply,
     clearCommentDraft,
+    retryCommentTask,
     getOwnedBotRun,
     getBotRunCreditEstimate
 } = require("../services/botRunService");
@@ -16,6 +17,7 @@ const {
     validateYoutubeCommentId,
     validatePrompt,
     validateIdempotencyKey,
+    validateCommentTaskId,
     validateCommentReplyText,
     validateCommentReplySource
 } = require("../utils/validators");
@@ -157,6 +159,26 @@ const clearCommentDraftController = async (req, res) => {
     });
 };
 
+const retryCommentTaskController = async (req, res) => {
+    assertObjectBody(req.body);
+
+    const taskId = validateCommentTaskId(req.params.taskId);
+    const idempotencyKey = req.body.idempotencyKey
+        ? validateIdempotencyKey(req.body.idempotencyKey)
+        : undefined;
+    const { run, task } = await retryCommentTask({
+        user: req.user,
+        taskId,
+        idempotencyKey
+    });
+
+    res.status(202).json({
+        success: true,
+        run: toBotRunDto(run),
+        result: toCommentReplyStateDto(task)
+    });
+};
+
 module.exports = {
     startBotController,
     getBotRunController,
@@ -165,5 +187,6 @@ module.exports = {
     generateCommentDraftController,
     updateCommentDraftController,
     publishCommentReplyController,
-    clearCommentDraftController
+    clearCommentDraftController,
+    retryCommentTaskController
 };

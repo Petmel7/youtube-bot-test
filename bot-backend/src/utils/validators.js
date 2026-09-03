@@ -119,6 +119,14 @@ const validatePaymentIntentId = (id) => {
     return value;
 };
 
+const validateCommentTaskId = (id) => {
+    const value = normalizeString(id, "taskId", 64);
+    if (!/^[a-f0-9]{24}$/i.test(value)) {
+        throw unprocessable("INVALID_COMMENT_TASK_ID", "Invalid comment task ID");
+    }
+    return value;
+};
+
 const validatePaymentTxHash = (txHash) => {
     const value = normalizeString(txHash, "txHash", 128);
     if (!EVM_TX_HASH_RE.test(value) && !SOLANA_TX_SIGNATURE_RE.test(value)) {
@@ -249,6 +257,7 @@ module.exports = {
     validateGender,
     validateIdempotencyKey,
     validatePaymentIntentId,
+    validateCommentTaskId,
     validatePaymentMethodId,
     validatePaymentPackageId,
     validatePaymentNamespace,

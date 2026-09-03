@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { fetchBotCostEstimate, fetchBotRun, fetchStartBot } from "../services/botService";
+import { fetchBotCostEstimate, fetchBotRun, fetchRetryCommentTask, fetchStartBot } from "../services/botService";
 import { validateChannelTheme } from "../validate/validateInputs";
 import { fetchUserPrompt, fetchSaveTheme, fetchSaveGender, generateBotPrompt } from "../services/promptService";
 import { fetchWallet } from "../services/paymentService";
@@ -237,6 +237,17 @@ const Dashboard = () => {
         return run?.topErrorMessage || run?.errorMessage || code;
     };
 
+    const retryBotRunTask = async (taskId) => {
+        const response = await fetchRetryCommentTask({ taskId });
+        if (response.run) {
+            setBotRun(response.run);
+            setIsBotRunning(true);
+            setShowStillProcessingNotice(false);
+            pollStartedAtRef.current = null;
+        }
+        await loadWalletSummary();
+    };
+
     if (isConnected === null) {
         return <Loading />;
     }
@@ -300,6 +311,7 @@ const Dashboard = () => {
                                 run={botRun}
                                 videoTitle={selectedVideo?.title}
                                 getErrorMessage={getBotRunErrorMessage}
+                                onRetryTask={retryBotRunTask}
                             />
                         )}
                     </div>

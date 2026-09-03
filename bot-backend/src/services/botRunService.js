@@ -11,6 +11,7 @@ const {
     executeBotRun,
     executeSingleCommentReply,
     getVideoCommentForReply,
+    createBulkReplyTasks,
     replyToComment,
     createTextSnapshot
 } = require("./youtubeService");
@@ -78,6 +79,7 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
         run = await BotRun.create({
             userId: user._id,
             videoId,
+            mode: "bulk",
             idempotencyKey
         });
     } catch (error) {
@@ -90,6 +92,9 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
         }
         throw error;
     }
+
+    await createBulkReplyTasks(user, videoId, run._id);
+    run = await BotRun.findById(run._id) || run;
 
     setImmediate(async () => {
         const freshUser = await User.findById(user._id);
@@ -152,6 +157,7 @@ const toStateResult = (state) => {
     if (!state) return null;
 
     return {
+        taskId: state._id ? String(state._id) : null,
         commentId: state.commentId,
         status: state.status,
         runId: state.botRunId ? String(state.botRunId) : null,
@@ -526,6 +532,64 @@ const clearCommentDraft = async ({ user, videoId, commentId }) => {
     };
 };
 
+const retryCommentTask = async ({ user, taskId, idempotencyKey }) => {
+    const task = await CommentReplyState.findOne({
+        _id: taskId,
+        userId: user._id,
+        taskType: "bulk-reply"
+    });
+
+    if (!task) {
+        throw notFound("COMMENT_TASK_NOT_FOUND", "Comment task not found");
+    }
+
+    if (task.status === "replied" || task.status === "posted") {
+        throw conflict("COMMENT_ALREADY_REPLIED", "This comment already has a bot reply");
+    }
+
+    if (!["failed", "skipped"].includes(task.status)) {
+        throw conflict("COMMENT_TASK_NOT_RETRYABLE", "Only failed or skipped tasks can be retried");
+    }
+
+    const run = await BotRun.findById(task.botRunId);
+    if (!run) {
+        throw notFound("BOT_RUN_NOT_FOUND", "Bot run not found");
+    }
+
+    task.status = "queued";
+    task.lockedAt = null;
+    task.completedAt = null;
+    task.lastErrorCode = null;
+    task.lastErrorMessage = null;
+    task.idempotencyKey = idempotencyKey || task.idempotencyKey;
+    await task.save();
+
+    const resumedRun = await BotRun.findByIdAndUpdate(run._id, {
+        status: "queued",
+        errorCode: undefined,
+        errorMessage: undefined,
+        completedAt: null
+    }, { new: true });
+
+    setImmediate(async () => {
+        const freshUser = await User.findById(user._id);
+        if (!freshUser) {
+            await BotRun.findByIdAndUpdate(run._id, {
+                status: "failed",
+                errorCode: "USER_NOT_FOUND",
+                errorMessage: "User not found",
+                completedAt: new Date()
+            });
+            return;
+        }
+
+        const resolvedPrompt = await resolveBotRunPrompt({ user: freshUser, fallbackPrompt: "" });
+        await executeBotRun(run._id, freshUser, task.videoId, resolvedPrompt);
+    });
+
+    return { run: resumedRun, task };
+};
+
 const getOwnedBotRun = async (userId, runId) => {
     const run = await BotRun.findById(runId);
     if (!run) {
@@ -536,7 +600,59 @@ const getOwnedBotRun = async (userId, runId) => {
         throw forbidden("BOT_RUN_FORBIDDEN", "Bot run does not belong to this user");
     }
 
-    return run;
+    const tasks = await CommentReplyState.find({
+        userId,
+        botRunId: run._id,
+        taskType: "bulk-reply"
+    }).sort({ createdAt: 1 }).lean();
+
+    if (tasks.length === 0) {
+        return run;
+    }
+
+    const runDtoSource = run.toObject ? run.toObject() : { ...run };
+    const counts = tasks.reduce((summary, task) => {
+        if (task.status === "queued") summary.queuedCount++;
+        if (task.status === "processing") summary.processingCount++;
+        if (task.status === "replied" || task.status === "posted") summary.successCount++;
+        if (task.status === "failed") summary.failureCount++;
+        if (task.status === "skipped") summary.skippedCount++;
+        if (["replied", "posted", "failed", "skipped", "drafted"].includes(task.status)) summary.processedCount++;
+        return summary;
+    }, {
+        queuedCount: 0,
+        processingCount: 0,
+        processedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        skippedCount: 0
+    });
+
+    return {
+        ...runDtoSource,
+        queuedCount: counts.queuedCount,
+        processingCount: counts.processingCount,
+        processedCount: counts.processedCount,
+        successCount: counts.successCount,
+        failureCount: counts.failureCount,
+        skippedCount: counts.skippedCount,
+        results: tasks.map(task => ({
+            taskId: String(task._id),
+            commentId: task.commentId,
+            status: task.status === "posted" ? "replied" : task.status,
+            runId: String(run._id),
+            errorCode: task.lastErrorCode || null,
+            errorMessage: task.lastErrorMessage || null,
+            commentTextSnapshot: task.commentTextSnapshot || null,
+            replyTextSnapshot: task.postedReplyTextSnapshot || null,
+            draftReplyText: task.draftReplyText || null,
+            youtubeReplyId: task.youtubeReplyId || null,
+            generatedByAi: task.generatedByAi,
+            attemptCount: task.attempts ?? 0,
+            createdAt: task.createdAt || null,
+            updatedAt: task.updatedAt || null
+        }))
+    };
 };
 
 module.exports = {
@@ -546,6 +662,7 @@ module.exports = {
     updateCommentDraft,
     publishCommentReply,
     clearCommentDraft,
+    retryCommentTask,
     getOwnedBotRun,
     getBotRunCreditEstimate,
     resolveBotRunPrompt

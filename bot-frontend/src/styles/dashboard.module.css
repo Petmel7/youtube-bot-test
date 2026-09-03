@@ -266,7 +266,7 @@
 
 .botRunCounters {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 10px;
 }
 
@@ -334,6 +334,37 @@
     color: #344054;
     line-height: 1.45;
     overflow-wrap: anywhere;
+}
+
+.botRunResultActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.botRunActionButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    min-width: 132px;
+    padding: 8px 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #fff;
+    color: #101828;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.botRunActionButton:hover:not(:disabled) {
+    border-color: #1e90ff;
+    color: #1e90ff;
+}
+
+.botRunActionButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .videoDetailPanel {
@@ -613,9 +644,14 @@
 
 :global(body.dark-mode) .videoStats span,
 :global(body.dark-mode) .botRunCounters div,
-:global(body.dark-mode) .botRunResultItem {
+:global(body.dark-mode) .botRunResultItem,
+:global(body.dark-mode) .botRunActionButton {
     border-color: #333;
     background: #333;
+}
+
+:global(body.dark-mode) .botRunActionButton {
+    color: #fff;
 }
 
 :global(body.dark-mode) .videoStats span {

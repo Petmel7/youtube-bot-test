@@ -8,7 +8,8 @@ const {
     generateCommentDraftController,
     updateCommentDraftController,
     publishCommentReplyController,
-    clearCommentDraftController
+    clearCommentDraftController,
+    retryCommentTaskController
 } = require("../controllers/botController");
 const { isAuthenticated, requireYouTubeConnection } = require("../middleware/auth");
 const requireWriteHeader = require("../middleware/requireWriteHeader");
@@ -24,6 +25,7 @@ router.post("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnect
 router.put("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(updateCommentDraftController));
 router.delete("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(clearCommentDraftController));
 router.post("/comments/:commentId/publish", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(publishCommentReplyController));
+router.post("/tasks/:taskId/retry", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(retryCommentTaskController));
 router.get("/runs/:runId", noCache, isAuthenticated, asyncHandler(getBotRunController));
 
 module.exports = router;

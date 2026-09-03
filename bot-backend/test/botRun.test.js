@@ -16,6 +16,7 @@ const {
     createSingleCommentReply,
     generateCommentDraft,
     publishCommentReply,
+    retryCommentTask,
     getBotRunCreditEstimate,
     resolveBotRunPrompt
 } = require("../src/services/botRunService");
@@ -225,11 +226,47 @@ test("createBotRun starts as before when available credits pass preflight", asyn
     };
 
     t.mock.method(BotRun, "findOne", async () => null);
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("/channels")) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    items: [{
+                        id: "channel-1",
+                        contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                    }]
+                })
+            };
+        }
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return { data: { items: [] } };
+            }
+        }
+    }));
+    t.mock.method(CommentReplyState, "exists", async () => false);
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort() {
+            return Promise.resolve([]);
+        }
+    }));
     t.mock.method(BotRun, "create", async (doc) => {
         assert.equal(String(doc.userId), user._id);
         assert.equal(doc.videoId, "abcDEF12345");
         return run;
     });
+    t.mock.method(BotRun, "findById", async () => run);
+    t.mock.method(BotRun, "findByIdAndUpdate", async () => run);
     t.mock.method(walletService, "getAvailableCredits", async () => 1);
     t.mock.method(global, "setImmediate", () => {
         scheduled = true;
@@ -413,6 +450,71 @@ test("publishCommentReply posts manual text without invoking AI or wallet billin
     assert.equal(result.result.youtubeReplyId, "reply-123");
 });
 
+test("retryCommentTask queues a failed task and resumes its run", async (t) => {
+    let saved = false;
+    let scheduled = false;
+    const task = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskType: "bulk-reply",
+        status: "failed",
+        botRunId: "66b000000000000000000001",
+        lastErrorCode: "GEMINI_TIMEOUT",
+        lastErrorMessage: "Gemini request timed out",
+        async save() {
+            saved = true;
+        }
+    };
+    t.mock.method(CommentReplyState, "findOne", async () => task);
+    t.mock.method(BotRun, "findById", async () => ({
+        _id: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        status: "partial"
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        assert.equal(String(runId), "66b000000000000000000001");
+        assert.equal(update.status, "queued");
+        return { _id: runId, userId: user._id, videoId: "abcDEF12345", status: "queued" };
+    });
+    t.mock.method(global, "setImmediate", () => {
+        scheduled = true;
+    });
+
+    const result = await retryCommentTask({
+        user,
+        taskId: "66c000000000000000000001",
+        idempotencyKey: "retry-comment-key-123"
+    });
+
+    assert.equal(saved, true);
+    assert.equal(scheduled, true);
+    assert.equal(task.status, "queued");
+    assert.equal(task.lastErrorCode, null);
+    assert.equal(task.idempotencyKey, "retry-comment-key-123");
+    assert.equal(result.run.status, "queued");
+});
+
+test("retryCommentTask rejects already posted tasks", async (t) => {
+    t.mock.method(CommentReplyState, "findOne", async () => ({
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        taskType: "bulk-reply",
+        status: "replied"
+    }));
+
+    await assert.rejects(
+        () => retryCommentTask({
+            user,
+            taskId: "66c000000000000000000001",
+            idempotencyKey: "retry-comment-key-123"
+        }),
+        { code: "COMMENT_ALREADY_REPLIED", status: 409 }
+    );
+});
+
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {
     mockPromptNotFound(t);
     let createCalled = false;
@@ -570,6 +672,13 @@ test("GET /bot/runs/:runId disables cache and returns safe dominant comment erro
             }
         ]
     }));
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort() {
+            return {
+                lean: async () => []
+            };
+        }
+    }));
 
     const response = await request(createApp(), {
         path: "/bot/runs/66b000000000000000000001",
@@ -620,6 +729,7 @@ test("toBotRunDto exposes safe result summaries and handles legacy runs without 
 
     assert.equal(dto.results.length, 2);
     assert.deepEqual(dto.results[0], {
+        taskId: null,
         commentId: "comment-1",
         status: "replied",
         runId: null,

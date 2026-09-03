@@ -28,6 +28,7 @@ const toBotRunResultDto = (result) => {
     if (!result) return null;
 
     return {
+        taskId: result.taskId ? String(result.taskId) : (result._id ? String(result._id) : null),
         commentId: result.commentId,
         status: result.status,
         runId: result.runId || null,
@@ -50,6 +51,7 @@ const toCommentReplyStateDto = (state) => {
     if (!state) return null;
 
     return {
+        taskId: String(state._id || state.id),
         commentId: state.commentId,
         status: state.status,
         runId: state.botRunId ? String(state.botRunId) : null,
@@ -83,6 +85,8 @@ const toBotRunDto = (run) => {
         videoId: run.videoId,
         mode: run.mode || "bulk",
         status: run.status,
+        queuedCount: run.queuedCount ?? null,
+        processingCount: run.processingCount ?? null,
         processedCount: run.processedCount,
         successCount: run.successCount,
         failureCount: run.failureCount,
