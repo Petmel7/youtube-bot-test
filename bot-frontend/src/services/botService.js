@@ -140,6 +140,23 @@ export const fetchPublishCommentReply = async ({ videoId, commentId, replyText, 
     };
 };
 
+export const fetchEditPostedCommentReply = async ({ videoId, commentId, taskId, replyText } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/reply`, {
+        method: "PUT",
+        body: JSON.stringify({
+            videoId,
+            taskId,
+            replyText,
+            idempotencyKey: createIdempotencyKey()
+        })
+    });
+
+    return {
+        success: data.success,
+        result: data.result || null
+    };
+};
+
 export const fetchRetryCommentTask = async ({ taskId } = {}) => {
     const data = await apiRequest(`/bot/tasks/${encodeURIComponent(taskId)}/retry`, {
         method: "POST",

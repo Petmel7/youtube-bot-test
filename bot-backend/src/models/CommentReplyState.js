@@ -21,6 +21,8 @@ const commentReplyStateSchema = new mongoose.Schema({
     draftReplyText: { type: String, default: null, maxlength: 10000 },
     postedReplyTextSnapshot: { type: String, default: null, maxlength: 1000 },
     youtubeReplyId: { type: String, default: null },
+    editCount: { type: Number, default: 0 },
+    lastEditedAt: { type: Date, default: null },
     lastErrorCode: { type: String, default: null },
     lastErrorMessage: { type: String, default: null },
     generatedByAi: { type: Boolean, default: false },
@@ -30,7 +32,8 @@ const commentReplyStateSchema = new mongoose.Schema({
     completedAt: { type: Date, default: null },
     idempotencyKey: { type: String, default: null },
     draftIdempotencyKey: { type: String, default: null },
-    publishIdempotencyKey: { type: String, default: null }
+    publishIdempotencyKey: { type: String, default: null },
+    editIdempotencyKey: { type: String, default: null }
 }, { timestamps: true });
 
 commentReplyStateSchema.index({ userId: 1, videoId: 1, commentId: 1 }, { unique: true });
@@ -46,6 +49,10 @@ commentReplyStateSchema.index(
 commentReplyStateSchema.index(
     { userId: 1, publishIdempotencyKey: 1 },
     { unique: true, partialFilterExpression: { publishIdempotencyKey: { $type: "string" } } }
+);
+commentReplyStateSchema.index(
+    { userId: 1, editIdempotencyKey: 1 },
+    { unique: true, partialFilterExpression: { editIdempotencyKey: { $type: "string" } } }
 );
 
 module.exports = mongoose.model("CommentReplyState", commentReplyStateSchema);

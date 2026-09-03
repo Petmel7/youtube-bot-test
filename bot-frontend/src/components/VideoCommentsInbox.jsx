@@ -3,6 +3,7 @@ import { FaComments } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
 import {
     fetchCancelCommentDraft,
+    fetchEditPostedCommentReply,
     fetchGenerateCommentDraft,
     fetchPublishCommentReply,
     fetchReplyToComment,
@@ -62,6 +63,18 @@ const getReplyErrorMessage = (error, t) => {
             return t("comments.errors.commentMismatch");
         case "YOUTUBE_REPLY_FAILED":
             return t("comments.errors.replyPostFailed");
+        case "YOUTUBE_REPLY_EDIT_FAILED":
+            return t("comments.errors.replyEditFailed");
+        case "YOUTUBE_REPLY_EDIT_FORBIDDEN":
+            return t("comments.errors.replyEditForbidden");
+        case "YOUTUBE_AUTH_FAILED":
+            return t("videos.authFailed");
+        case "YOUTUBE_REPLY_NOT_FOUND":
+            return t("comments.errors.replyNotFound");
+        case "YOUTUBE_REPLY_TEXT_TOO_LONG":
+            return t("comments.errors.replyTooLong");
+        case "YOUTUBE_REPLY_ID_MISSING":
+            return t("comments.errors.replyEditUnavailable");
         case "GEMINI_TIMEOUT":
             return t("bot.aiTimeout");
         case "GEMINI_REPLY_INCOMPLETE":
@@ -113,6 +126,8 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
     const [errorMessage, setErrorMessage] = useState("");
     const [replyingCommentIds, setReplyingCommentIds] = useState({});
     const [draftTextByCommentId, setDraftTextByCommentId] = useState({});
+    const [editTextByCommentId, setEditTextByCommentId] = useState({});
+    const [editModeByCommentId, setEditModeByCommentId] = useState({});
     const [manualModeByCommentId, setManualModeByCommentId] = useState({});
     const [commentErrors, setCommentErrors] = useState({});
     const requestIdRef = useRef(0);
@@ -179,6 +194,8 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
         setNextPageToken(null);
         setErrorMessage("");
         setDraftTextByCommentId({});
+        setEditTextByCommentId({});
+        setEditModeByCommentId({});
         setManualModeByCommentId({});
         setCommentErrors({});
         loadComments({ status: statusFilter });
@@ -204,6 +221,11 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                     replyTextSnapshot: result.replyTextSnapshot || null,
                     draftReplyText: result.draftReplyText || null,
                     youtubeReplyId: result.youtubeReplyId || null,
+                    taskId: result.taskId || comment.latestResult?.taskId || null,
+                    canEditPostedReply: Boolean(result.canEditPostedReply),
+                    editDisabledReason: result.editDisabledReason || null,
+                    editCount: result.editCount ?? comment.latestResult?.editCount ?? 0,
+                    lastEditedAt: result.lastEditedAt || comment.latestResult?.lastEditedAt || null,
                     generatedByAi: result.generatedByAi,
                     runId: result.runId || null,
                     updatedAt: result.updatedAt || new Date().toISOString()
@@ -237,6 +259,16 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                     return next;
                 });
                 setDraftTextByCommentId(current => {
+                    const next = { ...current };
+                    delete next[commentId];
+                    return next;
+                });
+                setEditModeByCommentId(current => {
+                    const next = { ...current };
+                    delete next[commentId];
+                    return next;
+                });
+                setEditTextByCommentId(current => {
                     const next = { ...current };
                     delete next[commentId];
                     return next;
@@ -397,6 +429,55 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
         setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
     };
 
+    const handleStartEditPostedReply = (comment) => {
+        setEditModeByCommentId(current => ({ ...current, [comment.commentId]: true }));
+        setEditTextByCommentId(current => ({
+            ...current,
+            [comment.commentId]: comment.latestResult?.replyTextSnapshot || ""
+        }));
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+    };
+
+    const handleCancelEditPostedReply = (comment) => {
+        setEditModeByCommentId(current => {
+            const next = { ...current };
+            delete next[comment.commentId];
+            return next;
+        });
+        setEditTextByCommentId(current => {
+            const next = { ...current };
+            delete next[comment.commentId];
+            return next;
+        });
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+    };
+
+    const handleSavePostedReplyEdit = async (comment) => {
+        const replyText = editTextByCommentId[comment.commentId] || "";
+        const taskId = comment.latestResult?.taskId;
+        if (!videoId || !comment?.commentId || !taskId || replyingCommentIds[comment.commentId] || !replyText.trim()) return;
+
+        setCommentLoading(comment.commentId, "edit");
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchEditPostedCommentReply({
+                videoId,
+                commentId: comment.commentId,
+                taskId,
+                replyText
+            });
+            applyCommentResult(comment.commentId, response.result);
+        } catch (error) {
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
     if (!selectedVideo) {
         return null;
     }
@@ -455,6 +536,11 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                             ?? "";
                         const isDraftEditorOpen = comment.status === "drafted" || Boolean(manualModeByCommentId[comment.commentId]);
                         const publishSource = comment.status === "drafted" ? "draft" : "manual";
+                        const isEditingPostedReply = Boolean(editModeByCommentId[comment.commentId]);
+                        const editValue = editTextByCommentId[comment.commentId]
+                            ?? comment.latestResult?.replyTextSnapshot
+                            ?? "";
+                        const canEditPostedReply = Boolean(comment.latestResult?.canEditPostedReply);
 
                         return (
                         <li key={comment.commentId} className={styles.commentCard}>
@@ -484,8 +570,53 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
 
                             {comment.latestResult?.replyTextSnapshot && (
                                 <div className={styles.resultBlock}>
-                                    <span>{t("comments.latestReply")}</span>
+                                    <div className={styles.resultHeader}>
+                                        <span>{t("comments.latestReply")}</span>
+                                        {comment.latestResult.lastEditedAt && (
+                                            <small>
+                                                {t("comments.lastEdited", {
+                                                    date: formatDate(comment.latestResult.lastEditedAt, t("videos.noDate"))
+                                                })}
+                                            </small>
+                                        )}
+                                    </div>
                                     <p>{comment.latestResult.replyTextSnapshot}</p>
+                                </div>
+                            )}
+
+                            {isEditingPostedReply && (
+                                <div className={styles.draftEditor}>
+                                    <label htmlFor={`comment-edit-${comment.commentId}`}>
+                                        {t("comments.editPostedReplyLabel")}
+                                    </label>
+                                    <textarea
+                                        id={`comment-edit-${comment.commentId}`}
+                                        value={editValue}
+                                        onChange={(event) => setEditTextByCommentId(current => ({
+                                            ...current,
+                                            [comment.commentId]: event.target.value
+                                        }))}
+                                        disabled={isBusy}
+                                        rows={4}
+                                    />
+                                    <div className={styles.editorActions}>
+                                        <button
+                                            type="button"
+                                            className={styles.replyButton}
+                                            onClick={() => handleSavePostedReplyEdit(comment)}
+                                            disabled={isBusy || !editValue.trim()}
+                                        >
+                                            {actionLoading === "edit" ? t("comments.savingChanges") : t("comments.saveChanges")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={styles.secondaryButton}
+                                            onClick={() => handleCancelEditPostedReply(comment)}
+                                            disabled={isBusy}
+                                        >
+                                            {t("comments.cancelEdit")}
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -576,6 +707,20 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                                         disabled={isBusy}
                                     >
                                         {t("comments.manualReply")}
+                                    </button>
+                                </div>
+                            )}
+
+                            {(comment.status === "replied" || comment.status === "posted") && !isEditingPostedReply && (
+                                <div className={styles.actions}>
+                                    <button
+                                        type="button"
+                                        className={styles.secondaryButton}
+                                        onClick={() => handleStartEditPostedReply(comment)}
+                                        disabled={isBusy || !canEditPostedReply}
+                                        title={!canEditPostedReply ? t("comments.editUnavailable") : undefined}
+                                    >
+                                        {t("comments.editPostedReply")}
                                     </button>
                                 </div>
                             )}

@@ -9,6 +9,8 @@ const resultSchema = new mongoose.Schema({
     replyTextSnapshot: { type: String, default: null },
     draftReplyText: { type: String, default: null },
     youtubeReplyId: { type: String, default: null },
+    editCount: { type: Number, default: 0 },
+    lastEditedAt: { type: Date, default: null },
     generatedByAi: { type: Boolean, default: null },
     aiLatencyMs: { type: Number, default: null },
     youtubeInsertLatencyMs: { type: Number, default: null },

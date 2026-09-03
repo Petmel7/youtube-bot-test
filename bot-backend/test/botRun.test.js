@@ -6,6 +6,7 @@ const { google } = require("googleapis");
 
 const BotRun = require("../src/models/BotRun");
 const CommentReplyState = require("../src/models/CommentReplyState");
+const CommentReplyEditAudit = require("../src/models/CommentReplyEditAudit");
 const botRoutes = require("../src/routes/botRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
 const aiProvider = require("../src/services/ai/aiProvider");
@@ -16,6 +17,7 @@ const {
     createSingleCommentReply,
     generateCommentDraft,
     publishCommentReply,
+    editPostedCommentReply,
     retryCommentTask,
     getBotRunCreditEstimate,
     resolveBotRunPrompt
@@ -143,6 +145,64 @@ const mockYoutubeCommentLookup = (t, {
             async insert(args) {
                 assert.equal(args.resource.snippet.parentId, commentId);
                 return { data: { id: youtubeReplyId } };
+            }
+        }
+    }));
+};
+
+const mockYoutubeReplyEditLookup = (t, {
+    commentId = "comment-1",
+    videoId = "abcDEF12345",
+    commentText = "Great recipe!",
+    youtubeReplyId = "reply-1",
+    updatedYoutubeReplyId = youtubeReplyId
+} = {}) => {
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("/channels")) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    items: [{
+                        id: "channel-1",
+                        contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                    }]
+                })
+            };
+        }
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list(args) {
+                assert.equal(args.id, commentId);
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                videoId,
+                                topLevelComment: {
+                                    id: commentId,
+                                    snippet: { textOriginal: commentText }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        },
+        comments: {
+            async update(args) {
+                assert.equal(args.part, "snippet");
+                assert.equal(args.resource.id, youtubeReplyId);
+                assert.equal(args.resource.snippet.textOriginal, "Edited reply with a useful correction.");
+                return { data: { id: updatedYoutubeReplyId } };
             }
         }
     }));
@@ -450,6 +510,203 @@ test("publishCommentReply posts manual text without invoking AI or wallet billin
     assert.equal(result.result.youtubeReplyId, "reply-123");
 });
 
+test("editPostedCommentReply updates a stored YouTube reply snapshot and writes audit", async (t) => {
+    mockYoutubeReplyEditLookup(t);
+    let updateOneCalled = false;
+    let auditCreated = false;
+    let aiCalled = false;
+    let walletCalled = false;
+    const state = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        status: "replied",
+        taskType: "bulk-reply",
+        postedReplyTextSnapshot: "Original posted reply.",
+        youtubeReplyId: "reply-1",
+        botRunId: "66b000000000000000000001",
+        generatedByAi: true,
+        editCount: 0,
+        async save() {}
+    };
+
+    t.mock.method(CommentReplyEditAudit, "findOne", async () => null);
+    t.mock.method(CommentReplyState, "findOne", async (filter) => {
+        assert.equal(String(filter._id), state._id);
+        assert.equal(String(filter.userId), user._id);
+        assert.equal(filter.videoId, "abcDEF12345");
+        assert.equal(filter.commentId, "comment-1");
+        return state;
+    });
+    t.mock.method(BotRun, "updateOne", async (filter, update) => {
+        updateOneCalled = true;
+        assert.equal(String(filter._id), state.botRunId);
+        assert.equal(filter["results.commentId"], "comment-1");
+        assert.equal(update.$set["results.$.replyTextSnapshot"], "Edited reply with a useful correction.");
+        assert.equal(update.$set["results.$.youtubeReplyId"], "reply-1");
+        return {};
+    });
+    t.mock.method(CommentReplyEditAudit, "create", async (doc) => {
+        auditCreated = true;
+        assert.equal(String(doc.userId), user._id);
+        assert.equal(doc.action, "BOT_REPLY_EDITED");
+        assert.equal(doc.beforeTextSnapshot, "Original posted reply.");
+        assert.equal(doc.afterTextSnapshot, "Edited reply with a useful correction.");
+        assert.equal(doc.idempotencyKey, "edit-comment-key-1234");
+        return { _id: "audit-1", ...doc };
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        aiCalled = true;
+    });
+    t.mock.method(walletService, "getAvailableCredits", async () => {
+        walletCalled = true;
+    });
+
+    const result = await editPostedCommentReply({
+        user,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskId: "66c000000000000000000001",
+        replyText: "Edited reply with a useful correction.",
+        idempotencyKey: "edit-comment-key-1234"
+    });
+
+    assert.equal(result.edited, true);
+    assert.equal(result.state.postedReplyTextSnapshot, "Edited reply with a useful correction.");
+    assert.equal(result.state.editCount, 1);
+    assert.equal(updateOneCalled, true);
+    assert.equal(auditCreated, true);
+    assert.equal(aiCalled, false);
+    assert.equal(walletCalled, false);
+});
+
+test("editPostedCommentReply is idempotent after a successful edit", async (t) => {
+    let youtubeUpdateCalled = false;
+    const state = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        status: "replied",
+        postedReplyTextSnapshot: "Already edited reply.",
+        youtubeReplyId: "reply-1",
+        editCount: 1
+    };
+
+    t.mock.method(CommentReplyEditAudit, "findOne", async () => ({
+        replyStateId: state._id,
+        userId: user._id,
+        idempotencyKey: "edit-comment-key-1234"
+    }));
+    t.mock.method(CommentReplyState, "findOne", async (filter) => {
+        assert.equal(String(filter._id), state._id);
+        assert.equal(String(filter.userId), user._id);
+        return state;
+    });
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async update() {
+                youtubeUpdateCalled = true;
+            }
+        }
+    }));
+
+    const result = await editPostedCommentReply({
+        user,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskId: "66c000000000000000000001",
+        replyText: "Already edited reply.",
+        idempotencyKey: "edit-comment-key-1234"
+    });
+
+    assert.equal(result.edited, false);
+    assert.equal(result.state, state);
+    assert.equal(youtubeUpdateCalled, false);
+});
+
+test("editPostedCommentReply rejects non-owned or non-editable reply records", async (t) => {
+    mockYoutubeReplyEditLookup(t);
+    t.mock.method(CommentReplyEditAudit, "findOne", async () => null);
+    t.mock.method(CommentReplyState, "findOne", async () => null);
+
+    await assert.rejects(
+        () => editPostedCommentReply({
+            user,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            taskId: "66c000000000000000000002",
+            replyText: "Edited reply with a useful correction.",
+            idempotencyKey: "edit-comment-key-1234"
+        }),
+        { code: "COMMENT_REPLY_NOT_FOUND", status: 404 }
+    );
+});
+
+test("editPostedCommentReply rejects replied records without a stored YouTube reply id", async (t) => {
+    mockYoutubeReplyEditLookup(t);
+    t.mock.method(CommentReplyEditAudit, "findOne", async () => null);
+    t.mock.method(CommentReplyState, "findOne", async () => ({
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        status: "replied",
+        postedReplyTextSnapshot: "Old reply without ID.",
+        youtubeReplyId: null
+    }));
+
+    await assert.rejects(
+        () => editPostedCommentReply({
+            user,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            taskId: "66c000000000000000000001",
+            replyText: "Edited reply with a useful correction.",
+            idempotencyKey: "edit-comment-key-1234"
+        }),
+        { code: "YOUTUBE_REPLY_ID_MISSING", status: 422 }
+    );
+});
+
+test("editYoutubeReply maps YouTube permission and missing reply errors safely", async (t) => {
+    let mode = "forbidden";
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async update() {
+                if (mode === "forbidden") {
+                    const error = new Error("Forbidden");
+                    error.response = {
+                        status: 403,
+                        data: { error: { errors: [{ reason: "forbidden" }] } }
+                    };
+                    throw error;
+                }
+
+                const error = new Error("Not found");
+                error.response = {
+                    status: 404,
+                    data: { error: { errors: [{ reason: "commentNotFound" }] } }
+                };
+                throw error;
+            }
+        }
+    }));
+
+    await assert.rejects(
+        () => youtubeService.editYoutubeReply("access-token", "reply-1", "Edited reply"),
+        { code: "YOUTUBE_REPLY_EDIT_FORBIDDEN", status: 403 }
+    );
+
+    mode = "not-found";
+
+    await assert.rejects(
+        () => youtubeService.editYoutubeReply("access-token", "reply-1", "Edited reply"),
+        { code: "YOUTUBE_REPLY_NOT_FOUND", status: 404 }
+    );
+});
+
 test("retryCommentTask queues a failed task and resumes its run", async (t) => {
     let saved = false;
     let scheduled = false;
@@ -623,7 +880,8 @@ test("comment draft and publish endpoints require auth and write header", async 
         { method: "POST", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345", idempotencyKey: "draft-comment-key-123" } },
         { method: "PUT", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345", draftReplyText: "Draft reply" } },
         { method: "DELETE", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345" } },
-        { method: "POST", path: "/bot/comments/comment-1/publish", body: { videoId: "abcDEF12345", replyText: "Manual reply", source: "manual", idempotencyKey: "publish-comment-key-123" } }
+        { method: "POST", path: "/bot/comments/comment-1/publish", body: { videoId: "abcDEF12345", replyText: "Manual reply", source: "manual", idempotencyKey: "publish-comment-key-123" } },
+        { method: "PUT", path: "/bot/comments/comment-1/reply", body: { videoId: "abcDEF12345", taskId: "66c000000000000000000001", replyText: "Edited reply", idempotencyKey: "edit-comment-key-1234" } }
     ];
 
     for (const endpoint of endpoints) {
@@ -739,6 +997,10 @@ test("toBotRunDto exposes safe result summaries and handles legacy runs without 
         replyTextSnapshot: "Thanks, the sauce works best when stirred slowly.",
         draftReplyText: null,
         youtubeReplyId: null,
+        canEditPostedReply: false,
+        editDisabledReason: "MISSING_YOUTUBE_REPLY_ID",
+        editCount: 0,
+        lastEditedAt: null,
         generatedByAi: null,
         aiLatencyMs: 123,
         youtubeInsertLatencyMs: 45,

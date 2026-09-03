@@ -5,6 +5,7 @@ const {
     generateCommentDraft,
     updateCommentDraft,
     publishCommentReply,
+    editPostedCommentReply,
     clearCommentDraft,
     retryCommentTask,
     getOwnedBotRun,
@@ -62,7 +63,7 @@ const replyToSingleCommentController = async (req, res) => {
     const videoId = validateVideoId(req.body.videoId);
     const prompt = validatePrompt(req.body.prompt);
     const idempotencyKey = validateIdempotencyKey(req.body.idempotencyKey);
-    const { run, result, created } = await createSingleCommentReply({
+    const { run, result, state, created } = await createSingleCommentReply({
         user: req.user,
         videoId,
         commentId,
@@ -73,7 +74,7 @@ const replyToSingleCommentController = async (req, res) => {
     res.status(created ? 201 : 200).json({
         success: true,
         run: toBotRunDto(run),
-        result: toBotRunResultDto(result)
+        result: state ? toCommentReplyStateDto(state) : toBotRunResultDto(result)
     });
 };
 
@@ -95,7 +96,7 @@ const generateCommentDraftController = async (req, res) => {
     res.status(created ? 201 : 200).json({
         success: true,
         run: run ? toBotRunDto(run) : null,
-        result: result ? toBotRunResultDto(result) : toCommentReplyStateDto(state)
+        result: state ? toCommentReplyStateDto(state) : toBotRunResultDto(result)
     });
 };
 
@@ -138,7 +139,30 @@ const publishCommentReplyController = async (req, res) => {
     res.status(created ? 201 : 200).json({
         success: true,
         run: run ? toBotRunDto(run) : null,
-        result: result ? toBotRunResultDto(result) : toCommentReplyStateDto(state)
+        result: state ? toCommentReplyStateDto(state) : toBotRunResultDto(result)
+    });
+};
+
+const editPostedCommentReplyController = async (req, res) => {
+    assertObjectBody(req.body);
+
+    const commentId = validateYoutubeCommentId(req.params.commentId);
+    const videoId = validateVideoId(req.body.videoId);
+    const taskId = validateCommentTaskId(req.body.taskId);
+    const replyText = validateCommentReplyText(req.body.replyText);
+    const idempotencyKey = validateIdempotencyKey(req.body.idempotencyKey);
+    const { state, edited } = await editPostedCommentReply({
+        user: req.user,
+        videoId,
+        commentId,
+        taskId,
+        replyText,
+        idempotencyKey
+    });
+
+    res.json({
+        success: true,
+        result: toCommentReplyStateDto(state)
     });
 };
 
@@ -187,6 +211,7 @@ module.exports = {
     generateCommentDraftController,
     updateCommentDraftController,
     publishCommentReplyController,
+    editPostedCommentReplyController,
     clearCommentDraftController,
     retryCommentTaskController
 };

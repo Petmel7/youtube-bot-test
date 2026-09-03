@@ -1,18 +1,20 @@
 const BotRun = require("../models/BotRun");
 const CommentReplyState = require("../models/CommentReplyState");
+const CommentReplyEditAudit = require("../models/CommentReplyEditAudit");
 const User = require("../models/User");
 const aiProvider = require("./ai/aiProvider");
 const walletService = require("./billing/walletService");
 const { estimateAiOperationCost } = require("./billing/costEstimator");
 const userPromptService = require("./userPromptService");
 const { generatePrompt } = require("../config/promptConfig");
-const { conflict, notFound, forbidden, paymentRequired } = require("../utils/errors");
+const { conflict, notFound, forbidden, paymentRequired, unprocessable } = require("../utils/errors");
 const {
     executeBotRun,
     executeSingleCommentReply,
     getVideoCommentForReply,
     createBulkReplyTasks,
     replyToComment,
+    editYoutubeReply,
     createTextSnapshot
 } = require("./youtubeService");
 
@@ -167,6 +169,12 @@ const toStateResult = (state) => {
         replyTextSnapshot: state.postedReplyTextSnapshot || null,
         draftReplyText: state.draftReplyText || null,
         youtubeReplyId: state.youtubeReplyId || null,
+        canEditPostedReply: (state.status === "replied" || state.status === "posted") && Boolean(state.youtubeReplyId),
+        editDisabledReason: (state.status === "replied" || state.status === "posted") && !state.youtubeReplyId
+            ? "MISSING_YOUTUBE_REPLY_ID"
+            : (!["replied", "posted"].includes(state.status) ? "NOT_POSTED" : null),
+        editCount: state.editCount ?? 0,
+        lastEditedAt: state.lastEditedAt || null,
         generatedByAi: Boolean(state.generatedByAi),
         createdAt: state.createdAt || null,
         updatedAt: state.updatedAt || null
@@ -496,6 +504,97 @@ const publishCommentReply = async ({ user, videoId, commentId, replyText, source
     }
 };
 
+const editPostedCommentReply = async ({ user, videoId, commentId, taskId, replyText, idempotencyKey }) => {
+    const existingAudit = await CommentReplyEditAudit.findOne({ userId: user._id, idempotencyKey });
+    if (existingAudit) {
+        const existingState = await CommentReplyState.findOne({
+            _id: existingAudit.replyStateId,
+            userId: user._id
+        });
+        if (!existingState) {
+            throw notFound("COMMENT_REPLY_NOT_FOUND", "Comment reply record not found");
+        }
+        return { state: existingState, edited: false };
+    }
+
+    const { accessToken } = await getVideoCommentForReply(user, videoId, commentId);
+
+    const state = await CommentReplyState.findOne({
+        _id: taskId,
+        userId: user._id,
+        videoId,
+        commentId
+    });
+
+    if (!state) {
+        throw notFound("COMMENT_REPLY_NOT_FOUND", "Comment reply record not found");
+    }
+
+    if (!["replied", "posted"].includes(state.status)) {
+        throw conflict("COMMENT_REPLY_NOT_POSTED", "Only posted bot replies can be edited");
+    }
+
+    if (!state.youtubeReplyId) {
+        throw unprocessable("YOUTUBE_REPLY_ID_MISSING", "This reply cannot be edited because no YouTube reply ID was stored");
+    }
+
+    const beforeTextSnapshot = createTextSnapshot(state.postedReplyTextSnapshot);
+    const afterTextSnapshot = createTextSnapshot(replyText);
+    const updatedYoutubeReplyId = await editYoutubeReply(accessToken, state.youtubeReplyId, replyText);
+    const editedAt = new Date();
+    const nextEditCount = (state.editCount || 0) + 1;
+
+    state.postedReplyTextSnapshot = afterTextSnapshot;
+    state.youtubeReplyId = updatedYoutubeReplyId || state.youtubeReplyId;
+    state.lastErrorCode = null;
+    state.lastErrorMessage = null;
+    state.editCount = nextEditCount;
+    state.lastEditedAt = editedAt;
+    state.editIdempotencyKey = idempotencyKey;
+    await state.save();
+
+    if (state.botRunId) {
+        await BotRun.updateOne({
+            _id: state.botRunId,
+            userId: user._id,
+            "results.commentId": commentId
+        }, {
+            $set: {
+                "results.$.replyTextSnapshot": afterTextSnapshot,
+                "results.$.youtubeReplyId": state.youtubeReplyId,
+                "results.$.editCount": nextEditCount,
+                "results.$.lastEditedAt": editedAt
+            }
+        });
+    }
+
+    try {
+        await CommentReplyEditAudit.create({
+            userId: user._id,
+            actorUserId: user._id,
+            videoId,
+            commentId,
+            replyStateId: state._id,
+            botRunId: state.botRunId || null,
+            youtubeReplyId: state.youtubeReplyId,
+            action: "BOT_REPLY_EDITED",
+            beforeTextSnapshot,
+            afterTextSnapshot,
+            source: "user-edit",
+            idempotencyKey,
+            metadata: {
+                editCount: nextEditCount
+            }
+        });
+    } catch (error) {
+        if (error.code !== 11000) {
+            throw error;
+        }
+    }
+
+    return { state, edited: true };
+};
+
 const clearCommentDraft = async ({ user, videoId, commentId }) => {
     const state = await CommentReplyState.findOne({
         userId: user._id,
@@ -661,6 +760,7 @@ module.exports = {
     generateCommentDraft,
     updateCommentDraft,
     publishCommentReply,
+    editPostedCommentReply,
     clearCommentDraft,
     retryCommentTask,
     getOwnedBotRun,

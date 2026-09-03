@@ -628,6 +628,56 @@ async function replyToComment(accessToken, commentId, responseText) {
     }
 }
 
+async function editYoutubeReply(accessToken, youtubeReplyId, responseText) {
+    if (!responseText) {
+        throw upstream("EMPTY_REPLY", "Reply text is empty");
+    }
+
+    const authClient = new google.auth.OAuth2(googleClientId, googleClientSecret, googleRedirectUri);
+    authClient.setCredentials({ access_token: accessToken });
+    const youtube = google.youtube({ version: "v3", auth: authClient });
+
+    try {
+        const response = await youtube.comments.update({
+            part: "snippet",
+            resource: {
+                id: youtubeReplyId,
+                snippet: {
+                    textOriginal: responseText
+                }
+            }
+        });
+        return response.data?.id || youtubeReplyId;
+    } catch (error) {
+        const info = readYoutubeClientErrorInfo(error);
+        console.warn("YouTube upstream request failed", {
+            endpointKind: "comments.update",
+            status: info.status,
+            providerCode: info.providerCode,
+            reason: info.reason
+        });
+
+        const reason = String(info.reason || "").toLowerCase();
+        if (isYoutubeAuthFailure(info) || info.status === 403 || reason.includes("forbidden")) {
+            throw forbidden("YOUTUBE_REPLY_EDIT_FORBIDDEN", "YouTube did not allow editing this reply for the authenticated account");
+        }
+
+        if (info.status === 404 || reason.includes("notfound") || reason.includes("not found")) {
+            throw notFound("YOUTUBE_REPLY_NOT_FOUND", "YouTube reply was not found");
+        }
+
+        if (reason.includes("toolong") || reason.includes("too long") || reason.includes("invalidvalue")) {
+            throw unprocessable("YOUTUBE_REPLY_TEXT_TOO_LONG", "YouTube rejected the reply text length");
+        }
+
+        if (isYoutubeQuotaFailure(info)) {
+            throw upstream("YOUTUBE_QUOTA_EXCEEDED", "YouTube API quota exceeded. Try again later.");
+        }
+
+        throw upstream("YOUTUBE_REPLY_EDIT_FAILED", "Failed to edit YouTube reply");
+    }
+}
+
 const getUserChannelInfo = async (user) => {
     const accessToken = await getValidAccessToken(user);
     const params = new URLSearchParams({
@@ -1052,28 +1102,48 @@ const getResultTimestamp = (run, result) => {
 };
 
 const toLatestResultDto = (run, result) => ({
+    taskId: result.taskId ? String(result.taskId) : null,
     status: result.status,
     errorCode: result.errorCode || null,
     errorMessage: result.errorMessage || null,
     replyTextSnapshot: result.replyTextSnapshot || null,
     draftReplyText: result.draftReplyText || null,
     youtubeReplyId: result.youtubeReplyId || null,
+    canEditPostedReply: (result.status === "replied" || result.status === "posted") && Boolean(result.taskId) && Boolean(result.youtubeReplyId),
+    editDisabledReason: (result.status === "replied" || result.status === "posted")
+        ? (!result.youtubeReplyId ? "MISSING_YOUTUBE_REPLY_ID" : (!result.taskId ? "MISSING_REPLY_RECORD" : null))
+        : null,
+    editCount: result.editCount ?? 0,
+    lastEditedAt: result.lastEditedAt || null,
     generatedByAi: result.generatedByAi === undefined ? null : Boolean(result.generatedByAi),
     runId: String(run._id || run.id),
     updatedAt: result.updatedAt || result.createdAt || run.updatedAt || run.createdAt || null
 });
 
-const toCommentStateResultDto = (state) => ({
-    status: state.status,
-    errorCode: state.lastErrorCode || null,
-    errorMessage: state.lastErrorMessage || null,
-    replyTextSnapshot: state.postedReplyTextSnapshot || null,
-    draftReplyText: state.draftReplyText || null,
-    youtubeReplyId: state.youtubeReplyId || null,
-    generatedByAi: Boolean(state.generatedByAi),
-    runId: state.botRunId ? String(state.botRunId) : null,
-    updatedAt: state.updatedAt || state.createdAt || null
-});
+const toCommentStateResultDto = (state) => {
+    const canEditPostedReply = (state.status === "replied" || state.status === "posted") && Boolean(state.youtubeReplyId);
+
+    return {
+        taskId: state._id ? String(state._id) : null,
+        status: state.status,
+        errorCode: state.lastErrorCode || null,
+        errorMessage: state.lastErrorMessage || null,
+        replyTextSnapshot: state.postedReplyTextSnapshot || null,
+        draftReplyText: state.draftReplyText || null,
+        youtubeReplyId: state.youtubeReplyId || null,
+        canEditPostedReply,
+        editDisabledReason: canEditPostedReply
+            ? null
+            : ((state.status === "replied" || state.status === "posted")
+                ? "MISSING_YOUTUBE_REPLY_ID"
+                : "NOT_POSTED"),
+        editCount: state.editCount ?? 0,
+        lastEditedAt: state.lastEditedAt || null,
+        generatedByAi: Boolean(state.generatedByAi),
+        runId: state.botRunId ? String(state.botRunId) : null,
+        updatedAt: state.updatedAt || state.createdAt || null
+    };
+};
 
 const isBetterCommentResult = (candidate, current) => {
     if (!current) return true;
@@ -1252,13 +1322,13 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         };
 
         await addRunResult(runId, result);
-        await updateCommentReplyStateFromResult({ userId, videoId, result, youtubeReplyId });
+        const state = await updateCommentReplyStateFromResult({ userId, videoId, result, youtubeReplyId });
         const run = await BotRun.findByIdAndUpdate(runId, {
             status: "completed",
             completedAt: new Date()
         }, { new: true });
 
-        return { run, result };
+        return { run, result, state };
     } catch (error) {
         if (aiResult?.releaseBilling && error.code === "YOUTUBE_REPLY_FAILED") {
             await aiResult.releaseBilling("youtube-reply-failed");
@@ -1298,6 +1368,7 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
 module.exports = {
     executeBotRun,
     replyToComment,
+    editYoutubeReply,
     getUserChannelInfo,
     getUserChannelId,
     getChannelVideos,

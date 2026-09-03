@@ -26,6 +26,9 @@ const toPromptDto = (prompt) => {
 
 const toBotRunResultDto = (result) => {
     if (!result) return null;
+    const canEditPostedReply = (result.status === "replied" || result.status === "posted")
+        && Boolean(result.youtubeReplyId)
+        && Boolean(result.taskId || result._id);
 
     return {
         taskId: result.taskId ? String(result.taskId) : (result._id ? String(result._id) : null),
@@ -38,6 +41,14 @@ const toBotRunResultDto = (result) => {
         replyTextSnapshot: result.replyTextSnapshot || null,
         draftReplyText: result.draftReplyText || null,
         youtubeReplyId: result.youtubeReplyId || null,
+        canEditPostedReply,
+        editDisabledReason: canEditPostedReply
+            ? null
+            : ((result.status === "replied" || result.status === "posted")
+                ? "MISSING_YOUTUBE_REPLY_ID"
+                : "NOT_POSTED"),
+        editCount: result.editCount ?? 0,
+        lastEditedAt: result.lastEditedAt || null,
         generatedByAi: result.generatedByAi === undefined ? null : Boolean(result.generatedByAi),
         aiLatencyMs: result.aiLatencyMs ?? null,
         youtubeInsertLatencyMs: result.youtubeInsertLatencyMs ?? null,
@@ -49,6 +60,7 @@ const toBotRunResultDto = (result) => {
 
 const toCommentReplyStateDto = (state) => {
     if (!state) return null;
+    const canEditPostedReply = (state.status === "replied" || state.status === "posted") && Boolean(state.youtubeReplyId);
 
     return {
         taskId: String(state._id || state.id),
@@ -61,6 +73,14 @@ const toCommentReplyStateDto = (state) => {
         replyTextSnapshot: state.postedReplyTextSnapshot || null,
         draftReplyText: state.draftReplyText || null,
         youtubeReplyId: state.youtubeReplyId || null,
+        canEditPostedReply,
+        editDisabledReason: canEditPostedReply
+            ? null
+            : ((state.status === "replied" || state.status === "posted")
+                ? "MISSING_YOUTUBE_REPLY_ID"
+                : "NOT_POSTED"),
+        editCount: state.editCount ?? 0,
+        lastEditedAt: state.lastEditedAt || null,
         generatedByAi: Boolean(state.generatedByAi),
         createdAt: state.createdAt || null,
         updatedAt: state.updatedAt || null

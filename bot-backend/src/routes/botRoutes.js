@@ -8,6 +8,7 @@ const {
     generateCommentDraftController,
     updateCommentDraftController,
     publishCommentReplyController,
+    editPostedCommentReplyController,
     clearCommentDraftController,
     retryCommentTaskController
 } = require("../controllers/botController");
@@ -21,6 +22,7 @@ const router = express.Router();
 router.post("/cost-estimate", isAuthenticated, requireYouTubeConnection, asyncHandler(getBotCostEstimateController));
 router.post("/start", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(startBotController));
 router.post("/comments/:commentId/reply", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(replyToSingleCommentController));
+router.put("/comments/:commentId/reply", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(editPostedCommentReplyController));
 router.post("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(generateCommentDraftController));
 router.put("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(updateCommentDraftController));
 router.delete("/comments/:commentId/draft", isAuthenticated, requireYouTubeConnection, requireWriteHeader, asyncHandler(clearCommentDraftController));
