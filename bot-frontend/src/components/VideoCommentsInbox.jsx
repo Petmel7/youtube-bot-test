@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaComments } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
-import { fetchReplyToComment } from "../services/botService";
+import {
+    fetchCancelCommentDraft,
+    fetchGenerateCommentDraft,
+    fetchPublishCommentReply,
+    fetchReplyToComment,
+    fetchUpdateCommentDraft
+} from "../services/botService";
 import { fetchVideoComments } from "../services/youtubeService";
 import styles from "../styles/videoCommentsInbox.module.css";
 
 const commentPageLimit = 20;
-const statusFilters = ["all", "unanswered", "replied", "failed", "skipped"];
+const statusFilters = ["all", "unanswered", "drafted", "replied", "failed", "skipped"];
 
 const appendUniqueComments = (currentComments, nextComments) => {
     const seen = new Set(currentComments.map(comment => comment.commentId));
@@ -50,6 +56,10 @@ const getReplyErrorMessage = (error, t) => {
             });
         case "COMMENT_ALREADY_REPLIED":
             return t("comments.errors.alreadyReplied");
+        case "DRAFT_NOT_FOUND":
+            return t("comments.errors.draftNotFound");
+        case "COMMENT_VIDEO_MISMATCH":
+            return t("comments.errors.commentMismatch");
         case "YOUTUBE_REPLY_FAILED":
             return t("comments.errors.replyPostFailed");
         case "GEMINI_TIMEOUT":
@@ -76,6 +86,8 @@ const getStatusClassName = (status) => {
     switch (status) {
         case "replied":
             return styles.statusReplied;
+        case "drafted":
+            return styles.statusDrafted;
         case "failed":
             return styles.statusFailed;
         case "skipped":
@@ -100,6 +112,8 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const [replyingCommentIds, setReplyingCommentIds] = useState({});
+    const [draftTextByCommentId, setDraftTextByCommentId] = useState({});
+    const [manualModeByCommentId, setManualModeByCommentId] = useState({});
     const [commentErrors, setCommentErrors] = useState({});
     const requestIdRef = useRef(0);
     const pendingPageTokenRef = useRef(null);
@@ -164,6 +178,9 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
         setComments([]);
         setNextPageToken(null);
         setErrorMessage("");
+        setDraftTextByCommentId({});
+        setManualModeByCommentId({});
+        setCommentErrors({});
         loadComments({ status: statusFilter });
     }, [loadComments, statusFilter, videoId]);
 
@@ -185,6 +202,9 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                     errorCode: result.errorCode || null,
                     errorMessage: result.errorMessage || null,
                     replyTextSnapshot: result.replyTextSnapshot || null,
+                    draftReplyText: result.draftReplyText || null,
+                    youtubeReplyId: result.youtubeReplyId || null,
+                    generatedByAi: result.generatedByAi,
                     runId: result.runId || null,
                     updatedAt: result.updatedAt || new Date().toISOString()
                 } : comment.latestResult
@@ -192,10 +212,43 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
         }));
     };
 
+    const setCommentLoading = (commentId, value) => {
+        setReplyingCommentIds(current => {
+            const next = { ...current };
+            if (value) {
+                next[commentId] = value;
+            } else {
+                delete next[commentId];
+            }
+            return next;
+        });
+    };
+
+    const applyCommentResult = (commentId, result) => {
+        if (result) {
+            updateCommentWithResult(commentId, result);
+            if (result.draftReplyText) {
+                setDraftTextByCommentId(current => ({ ...current, [commentId]: result.draftReplyText }));
+            }
+            if (result.status === "replied" || result.status === "unanswered") {
+                setManualModeByCommentId(current => {
+                    const next = { ...current };
+                    delete next[commentId];
+                    return next;
+                });
+                setDraftTextByCommentId(current => {
+                    const next = { ...current };
+                    delete next[commentId];
+                    return next;
+                });
+            }
+        }
+    };
+
     const handleReplyToComment = async (comment) => {
         if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId]) return;
 
-        setReplyingCommentIds(current => ({ ...current, [comment.commentId]: true }));
+        setCommentLoading(comment.commentId, "reply");
         setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
 
         try {
@@ -206,24 +259,142 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
             });
 
             if (response.result) {
-                updateCommentWithResult(comment.commentId, response.result);
+                applyCommentResult(comment.commentId, response.result);
             }
             onReplyComplete?.(response.run || null);
         } catch (error) {
             if (error.details?.result) {
-                updateCommentWithResult(comment.commentId, error.details.result);
+                applyCommentResult(comment.commentId, error.details.result);
             }
             setCommentErrors(current => ({
                 ...current,
                 [comment.commentId]: getReplyErrorMessage(error, t)
             }));
         } finally {
-            setReplyingCommentIds(current => {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
+    const handleGenerateDraft = async (comment) => {
+        if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId]) return;
+
+        setCommentLoading(comment.commentId, "draft");
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchGenerateCommentDraft({
+                videoId,
+                commentId: comment.commentId,
+                prompt: botPrompt?.generalPrompt || ""
+            });
+            applyCommentResult(comment.commentId, response.result);
+            onReplyComplete?.(response.run || null);
+        } catch (error) {
+            if (error.details?.result) {
+                applyCommentResult(comment.commentId, error.details.result);
+            }
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
+    const handleSaveDraft = async (comment) => {
+        const draftReplyText = draftTextByCommentId[comment.commentId] || "";
+        if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId] || !draftReplyText.trim()) return;
+
+        setCommentLoading(comment.commentId, "save");
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchUpdateCommentDraft({
+                videoId,
+                commentId: comment.commentId,
+                draftReplyText
+            });
+            applyCommentResult(comment.commentId, response.result);
+        } catch (error) {
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
+    const handlePublishReply = async (comment, source) => {
+        const replyText = draftTextByCommentId[comment.commentId] || "";
+        if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId] || !replyText.trim()) return;
+
+        setCommentLoading(comment.commentId, "publish");
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchPublishCommentReply({
+                videoId,
+                commentId: comment.commentId,
+                replyText,
+                source
+            });
+            applyCommentResult(comment.commentId, response.result);
+            onReplyComplete?.(response.run || null);
+        } catch (error) {
+            if (error.details?.result) {
+                applyCommentResult(comment.commentId, error.details.result);
+            }
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
+    const handleCancelDraft = async (comment) => {
+        if (!videoId || !comment?.commentId || replyingCommentIds[comment.commentId]) return;
+
+        if (manualModeByCommentId[comment.commentId] && comment.status !== "drafted") {
+            setManualModeByCommentId(current => {
                 const next = { ...current };
                 delete next[comment.commentId];
                 return next;
             });
+            setDraftTextByCommentId(current => {
+                const next = { ...current };
+                delete next[comment.commentId];
+                return next;
+            });
+            return;
         }
+
+        setCommentLoading(comment.commentId, "cancel");
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
+
+        try {
+            const response = await fetchCancelCommentDraft({ videoId, commentId: comment.commentId });
+            applyCommentResult(comment.commentId, response.result);
+        } catch (error) {
+            setCommentErrors(current => ({
+                ...current,
+                [comment.commentId]: getReplyErrorMessage(error, t)
+            }));
+        } finally {
+            setCommentLoading(comment.commentId, null);
+        }
+    };
+
+    const handleManualReply = (comment) => {
+        setManualModeByCommentId(current => ({ ...current, [comment.commentId]: true }));
+        setDraftTextByCommentId(current => ({
+            ...current,
+            [comment.commentId]: comment.latestResult?.draftReplyText || ""
+        }));
+        setCommentErrors(current => ({ ...current, [comment.commentId]: "" }));
     };
 
     if (!selectedVideo) {
@@ -276,8 +447,14 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
             {!loading && !errorMessage && comments.length > 0 && (
                 <ul className={styles.commentList}>
                     {comments.map(comment => {
-                        const isReplying = Boolean(replyingCommentIds[comment.commentId]);
+                        const actionLoading = replyingCommentIds[comment.commentId];
+                        const isBusy = Boolean(actionLoading);
                         const rowError = commentErrors[comment.commentId];
+                        const draftValue = draftTextByCommentId[comment.commentId]
+                            ?? comment.latestResult?.draftReplyText
+                            ?? "";
+                        const isDraftEditorOpen = comment.status === "drafted" || Boolean(manualModeByCommentId[comment.commentId]);
+                        const publishSource = comment.status === "drafted" ? "draft" : "manual";
 
                         return (
                         <li key={comment.commentId} className={styles.commentCard}>
@@ -312,6 +489,58 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
                                 </div>
                             )}
 
+                            {isDraftEditorOpen && (
+                                <div className={styles.draftEditor}>
+                                    <label htmlFor={`comment-draft-${comment.commentId}`}>
+                                        {comment.status === "drafted"
+                                            ? t("comments.draftLabel")
+                                            : t("comments.manualReplyLabel")}
+                                    </label>
+                                    <textarea
+                                        id={`comment-draft-${comment.commentId}`}
+                                        value={draftValue}
+                                        onChange={(event) => setDraftTextByCommentId(current => ({
+                                            ...current,
+                                            [comment.commentId]: event.target.value
+                                        }))}
+                                        disabled={isBusy}
+                                        rows={4}
+                                    />
+                                    <div className={styles.editorActions}>
+                                        {comment.status === "drafted" && (
+                                            <button
+                                                type="button"
+                                                className={styles.secondaryButton}
+                                                onClick={() => handleSaveDraft(comment)}
+                                                disabled={isBusy || !draftValue.trim()}
+                                            >
+                                                {actionLoading === "save" ? t("comments.saving") : t("comments.saveDraft")}
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            className={styles.replyButton}
+                                            onClick={() => handlePublishReply(comment, publishSource)}
+                                            disabled={isBusy || !draftValue.trim()}
+                                        >
+                                            {actionLoading === "publish" ? t("comments.publishing") : t("comments.publish")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={styles.secondaryButton}
+                                            onClick={() => handleCancelDraft(comment)}
+                                            disabled={isBusy}
+                                        >
+                                            {actionLoading === "cancel"
+                                                ? t("comments.clearing")
+                                                : comment.status === "drafted"
+                                                    ? t("comments.cancelDraft")
+                                                    : t("comments.clear")}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {comment.status === "failed" && comment.latestResult && (
                                 <p className={styles.resultError}>
                                     {comment.latestResult.errorMessage || comment.latestResult.errorCode || t("comments.error")}
@@ -322,17 +551,31 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
 
                             {canReplyToStatus(comment.status) && (
                                 <div className={styles.actions}>
+                                    {comment.status === "failed" && (
+                                        <button
+                                            type="button"
+                                            className={styles.secondaryButton}
+                                            onClick={() => handleReplyToComment(comment)}
+                                            disabled={isBusy}
+                                        >
+                                            {actionLoading === "reply" ? t("comments.replying") : t("comments.retry")}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         className={styles.replyButton}
-                                        onClick={() => handleReplyToComment(comment)}
-                                        disabled={isReplying}
+                                        onClick={() => handleGenerateDraft(comment)}
+                                        disabled={isBusy}
                                     >
-                                        {isReplying
-                                            ? t("comments.replying")
-                                            : comment.status === "failed"
-                                                ? t("comments.retry")
-                                                : t("comments.reply")}
+                                        {actionLoading === "draft" ? t("comments.generatingDraft") : t("comments.generateDraft")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={styles.secondaryButton}
+                                        onClick={() => handleManualReply(comment)}
+                                        disabled={isBusy}
+                                    >
+                                        {t("comments.manualReply")}
                                     </button>
                                 </div>
                             )}

@@ -78,3 +78,65 @@ export const fetchReplyToComment = async ({ videoId, commentId, prompt } = {}) =
     };
 };
 
+export const fetchGenerateCommentDraft = async ({ videoId, commentId, prompt } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/draft`, {
+        method: "POST",
+        body: JSON.stringify({
+            videoId,
+            prompt: prompt || "",
+            idempotencyKey: createIdempotencyKey()
+        })
+    });
+
+    return {
+        success: data.success,
+        run: data.run || null,
+        result: data.result || null
+    };
+};
+
+export const fetchUpdateCommentDraft = async ({ videoId, commentId, draftReplyText } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/draft`, {
+        method: "PUT",
+        body: JSON.stringify({
+            videoId,
+            draftReplyText
+        })
+    });
+
+    return {
+        success: data.success,
+        result: data.result || null
+    };
+};
+
+export const fetchCancelCommentDraft = async ({ videoId, commentId } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/draft`, {
+        method: "DELETE",
+        body: JSON.stringify({ videoId })
+    });
+
+    return {
+        success: data.success,
+        result: data.result || null
+    };
+};
+
+export const fetchPublishCommentReply = async ({ videoId, commentId, replyText, source } = {}) => {
+    const data = await apiRequest(`/bot/comments/${encodeURIComponent(commentId)}/publish`, {
+        method: "POST",
+        body: JSON.stringify({
+            videoId,
+            replyText,
+            source,
+            idempotencyKey: createIdempotencyKey()
+        })
+    });
+
+    return {
+        success: data.success,
+        run: data.run || null,
+        result: data.result || null
+    };
+};
+

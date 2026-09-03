@@ -9,6 +9,7 @@ process.env.YOUTUBE_API_BASE = process.env.YOUTUBE_API_BASE || "https://youtube.
 const youtubeRoutes = require("../src/routes/youtubeRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
 const BotRun = require("../src/models/BotRun");
+const CommentReplyState = require("../src/models/CommentReplyState");
 const VideoCatalog = require("../src/models/VideoCatalog");
 const aiProvider = require("../src/services/ai/aiProvider");
 const { validateYoutubeCommentsQuery, validateYoutubeVideosQuery } = require("../src/utils/validators");
@@ -50,6 +51,14 @@ const createQuery = (docs) => ({
         return Promise.resolve(docs.slice(0, this.limitArg || docs.length));
     }
 });
+
+const mockCommentReplyStateEmpty = (t) => {
+    t.mock.method(CommentReplyState, "exists", async () => false);
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async () => ({}));
+    t.mock.method(CommentReplyState, "find", () => ({
+        lean: async () => []
+    }));
+};
 
 const createApp = () => {
     const app = express();
@@ -128,10 +137,10 @@ test("validateYoutubeCommentsQuery defaults and validates filters", () => {
         pageToken: undefined,
         status: "all"
     });
-    assert.deepEqual(validateYoutubeCommentsQuery({ limit: "50", pageToken: "CAUQAA", status: "failed" }), {
+    assert.deepEqual(validateYoutubeCommentsQuery({ limit: "50", pageToken: "CAUQAA", status: "drafted" }), {
         limit: 50,
         pageToken: "CAUQAA",
-        status: "failed"
+        status: "drafted"
     });
 
     assert.throws(() => validateYoutubeCommentsQuery({ limit: "0" }), { code: "INVALID_LIMIT" });
@@ -289,6 +298,7 @@ test("getChannelVideos returns empty page without fetching video details", async
 });
 
 test("listVideoComments returns paginated comments decorated with BotRun statuses", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const googleCalls = [];
     t.mock.method(global, "fetch", async (url, options) => {
         const parsed = new URL(url);
@@ -435,6 +445,7 @@ test("listVideoComments returns paginated comments decorated with BotRun statuse
 });
 
 test("listVideoComments applies status filter to the decorated page", async (t) => {
+    mockCommentReplyStateEmpty(t);
     t.mock.method(global, "fetch", async () => jsonResponse({
         items: [{
             id: "channel-1",
@@ -486,6 +497,55 @@ test("listVideoComments applies status filter to the decorated page", async (t) 
 
     assert.deepEqual(result.comments.map(comment => comment.commentId), ["comment-2"]);
     assert.equal(result.comments[0].status, "unanswered");
+});
+
+test("listVideoComments decorates drafts from comment reply state", async (t) => {
+    t.mock.method(global, "fetch", async () => jsonResponse({
+        items: [{
+            id: "channel-1",
+            contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+        }]
+    }));
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list() {
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                topLevelComment: {
+                                    id: "comment-1",
+                                    snippet: { authorDisplayName: "Viewer", textOriginal: "Can I use dill?" }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        }
+    }));
+    t.mock.method(BotRun, "find", () => createQuery([]));
+    t.mock.method(CommentReplyState, "find", () => ({
+        lean: async () => [{
+            commentId: "comment-1",
+            status: "drafted",
+            draftReplyText: "Yes, dill would work nicely here.",
+            generatedByAi: true,
+            updatedAt: new Date("2026-09-02T00:00:00Z")
+        }]
+    }));
+
+    const result = await listVideoComments(user, "abcDEF12345", { status: "drafted" });
+
+    assert.equal(result.comments.length, 1);
+    assert.equal(result.comments[0].status, "drafted");
+    assert.equal(result.comments[0].latestResult.draftReplyText, "Yes, dill would work nicely here.");
+    assert.equal(result.comments[0].latestResult.generatedByAi, true);
 });
 
 test("listCatalogVideos searches cached Cyrillic titles without calling YouTube Search API", async (t) => {
@@ -627,6 +687,7 @@ test("syncVideoCatalog maps YouTube quota failures to safe error code", async (t
 });
 
 test("executeBotRun stores provider-specific AI error codes in comment results", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let findByIdCalls = 0;
 
@@ -713,6 +774,7 @@ test("executeBotRun stores provider-specific AI error codes in comment results",
 });
 
 test("executeBotRun stops early after Gemini rate limit to avoid burning quota", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let findByIdCalls = 0;
     let aiCalls = 0;
@@ -816,6 +878,7 @@ test("executeBotRun stops early after Gemini rate limit to avoid burning quota",
 });
 
 test("executeBotRun records separate AI and YouTube insert latency diagnostics", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let findByIdCalls = 0;
 
@@ -898,6 +961,7 @@ test("executeBotRun records separate AI and YouTube insert latency diagnostics",
 });
 
 test("executeSingleCommentReply posts one reply, finalizes billing, and stores result", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let finalized = false;
     let released = false;
@@ -955,6 +1019,7 @@ test("executeSingleCommentReply posts one reply, finalizes billing, and stores r
 });
 
 test("executeSingleCommentReply releases deferred billing when YouTube posting fails", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let finalized = false;
     let releasedReason = null;
@@ -1003,6 +1068,7 @@ test("executeSingleCommentReply releases deferred billing when YouTube posting f
 });
 
 test("executeBotRun spaces Gemini requests between comments without delaying the first", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     const sleeps = [];
     let findByIdCalls = 0;
@@ -1112,6 +1178,7 @@ test("createTextSnapshot normalizes whitespace and limits stored text length", (
 });
 
 test("executeBotRun stores comment snapshots for skipped previously replied comments", async (t) => {
+    mockCommentReplyStateEmpty(t);
     const updates = [];
     let findByIdCalls = 0;
 

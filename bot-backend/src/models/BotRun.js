@@ -2,11 +2,14 @@ const mongoose = require("mongoose");
 
 const resultSchema = new mongoose.Schema({
     commentId: { type: String, required: true },
-    status: { type: String, enum: ["replied", "skipped", "failed"], required: true },
+    status: { type: String, enum: ["drafted", "replied", "skipped", "failed"], required: true },
     errorCode: String,
     errorMessage: String,
     commentTextSnapshot: { type: String, default: null },
     replyTextSnapshot: { type: String, default: null },
+    draftReplyText: { type: String, default: null },
+    youtubeReplyId: { type: String, default: null },
+    generatedByAi: { type: Boolean, default: null },
     aiLatencyMs: { type: Number, default: null },
     youtubeInsertLatencyMs: { type: Number, default: null },
     attemptCount: { type: Number, default: null }

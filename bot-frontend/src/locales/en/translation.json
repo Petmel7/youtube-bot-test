@@ -98,15 +98,29 @@
         "reply": "Reply",
         "retry": "Try again",
         "replying": "Replying...",
+        "generateDraft": "Generate draft",
+        "generatingDraft": "Generating draft...",
+        "manualReply": "Reply manually",
+        "draftLabel": "Draft reply",
+        "manualReplyLabel": "Manual reply",
+        "saveDraft": "Save draft",
+        "saving": "Saving...",
+        "publish": "Publish",
+        "publishing": "Publishing...",
+        "cancelDraft": "Cancel draft",
+        "clear": "Clear",
+        "clearing": "Clearing...",
         "error": "Error",
         "filters": {
             "all": "All",
+            "drafted": "Drafted",
             "replied": "Replied",
             "failed": "Failed",
             "skipped": "Skipped",
             "unanswered": "Unanswered"
         },
         "statuses": {
+            "drafted": "Drafted",
             "replied": "Replied",
             "failed": "Failed",
             "skipped": "Skipped",
@@ -118,7 +132,9 @@
             "notFound": "Video not found.",
             "reply": "Could not reply to this comment. Try again later.",
             "replyPostFailed": "Could not publish the YouTube reply. No credit was charged.",
-            "alreadyReplied": "This comment already has a bot reply."
+            "alreadyReplied": "This comment already has a bot reply.",
+            "draftNotFound": "Draft not found. Generate a new draft or write a manual reply.",
+            "commentMismatch": "This comment does not belong to the selected video."
         }
     },
     "wallet": {

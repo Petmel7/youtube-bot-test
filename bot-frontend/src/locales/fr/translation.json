@@ -98,15 +98,29 @@
         "reply": "Répondre",
         "retry": "Réessayer",
         "replying": "Réponse...",
+        "generateDraft": "Générer un brouillon",
+        "generatingDraft": "Génération du brouillon...",
+        "manualReply": "Répondre manuellement",
+        "draftLabel": "Brouillon de réponse",
+        "manualReplyLabel": "Réponse manuelle",
+        "saveDraft": "Enregistrer le brouillon",
+        "saving": "Enregistrement...",
+        "publish": "Publier",
+        "publishing": "Publication...",
+        "cancelDraft": "Annuler le brouillon",
+        "clear": "Effacer",
+        "clearing": "Effacement...",
         "error": "Erreur",
         "filters": {
             "all": "Tous",
+            "drafted": "Brouillons",
             "replied": "Répondus",
             "failed": "Échecs",
             "skipped": "Ignorés",
             "unanswered": "Sans réponse"
         },
         "statuses": {
+            "drafted": "Brouillon",
             "replied": "Répondu",
             "failed": "Échec",
             "skipped": "Ignoré",
@@ -118,7 +132,9 @@
             "notFound": "Vidéo introuvable.",
             "reply": "Impossible de répondre à ce commentaire. Réessayez plus tard.",
             "replyPostFailed": "Impossible de publier la réponse YouTube. Aucun crédit n'a été facturé.",
-            "alreadyReplied": "Ce commentaire a déjà une réponse du bot."
+            "alreadyReplied": "Ce commentaire a déjà une réponse du bot.",
+            "draftNotFound": "Brouillon introuvable. Générez un nouveau brouillon ou écrivez une réponse manuelle.",
+            "commentMismatch": "Ce commentaire n'appartient pas à la vidéo sélectionnée."
         }
     },
     "wallet": {

@@ -35,11 +35,33 @@ const toBotRunResultDto = (result) => {
         errorMessage: result.errorMessage || null,
         commentTextSnapshot: result.commentTextSnapshot || null,
         replyTextSnapshot: result.replyTextSnapshot || null,
+        draftReplyText: result.draftReplyText || null,
+        youtubeReplyId: result.youtubeReplyId || null,
+        generatedByAi: result.generatedByAi === undefined ? null : Boolean(result.generatedByAi),
         aiLatencyMs: result.aiLatencyMs ?? null,
         youtubeInsertLatencyMs: result.youtubeInsertLatencyMs ?? null,
         attemptCount: result.attemptCount ?? null,
         createdAt: result.createdAt || null,
         updatedAt: result.updatedAt || null
+    };
+};
+
+const toCommentReplyStateDto = (state) => {
+    if (!state) return null;
+
+    return {
+        commentId: state.commentId,
+        status: state.status,
+        runId: state.botRunId ? String(state.botRunId) : null,
+        errorCode: state.lastErrorCode || null,
+        errorMessage: state.lastErrorMessage || null,
+        commentTextSnapshot: state.commentTextSnapshot || null,
+        replyTextSnapshot: state.postedReplyTextSnapshot || null,
+        draftReplyText: state.draftReplyText || null,
+        youtubeReplyId: state.youtubeReplyId || null,
+        generatedByAi: Boolean(state.generatedByAi),
+        createdAt: state.createdAt || null,
+        updatedAt: state.updatedAt || null
     };
 };
 
@@ -417,6 +439,7 @@ module.exports = {
     toPromptDto,
     toBotRunDto,
     toBotRunResultDto,
+    toCommentReplyStateDto,
     toPaymentIntentDto,
     toPaymentPayerChallengeDto,
     toWalletDto,

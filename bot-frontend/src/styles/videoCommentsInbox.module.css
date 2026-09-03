@@ -55,6 +55,7 @@
 .refreshButton,
 .loadMoreButton,
 .replyButton,
+.secondaryButton,
 .filterSelect {
     min-height: 36px;
     border: 1px solid #d8d8d8;
@@ -66,7 +67,8 @@
 
 .refreshButton,
 .loadMoreButton,
-.replyButton {
+.replyButton,
+.secondaryButton {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -78,7 +80,8 @@
 
 .refreshButton:hover:not(:disabled),
 .loadMoreButton:hover:not(:disabled),
-.replyButton:hover:not(:disabled) {
+.replyButton:hover:not(:disabled),
+.secondaryButton:hover:not(:disabled) {
     border-color: #1e90ff;
     color: #1e90ff;
 }
@@ -86,6 +89,7 @@
 .refreshButton:disabled,
 .loadMoreButton:disabled,
 .replyButton:disabled,
+.secondaryButton:disabled,
 .filterSelect:disabled {
     cursor: not-allowed;
     opacity: 0.6;
@@ -199,6 +203,11 @@
     color: #067647;
 }
 
+.statusDrafted {
+    background: #d1e9ff;
+    color: #175cd3;
+}
+
 .statusFailed {
     background: #fee4e2;
     color: #b42318;
@@ -248,11 +257,52 @@
 
 .actions {
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     justify-content: flex-end;
 }
 
-.replyButton {
+.replyButton,
+.secondaryButton {
     min-width: 132px;
+}
+
+.draftEditor {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.draftEditor label {
+    color: #344054;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.draftEditor textarea {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    box-sizing: border-box;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    padding: 10px;
+    background: #fff;
+    color: #101828;
+    font: inherit;
+    line-height: 1.45;
+}
+
+.editorActions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .loadMoreButton {
@@ -264,6 +314,7 @@
 :global(body.dark-mode) .refreshButton,
 :global(body.dark-mode) .loadMoreButton,
 :global(body.dark-mode) .replyButton,
+:global(body.dark-mode) .secondaryButton,
 :global(body.dark-mode) .filterSelect {
     border-color: #3d3d3d;
     background: #272727;
@@ -271,9 +322,16 @@
 }
 
 :global(body.dark-mode) .toolbar,
-:global(body.dark-mode) .commentCard {
+:global(body.dark-mode) .commentCard,
+:global(body.dark-mode) .draftEditor {
     border-color: #3d3d3d;
     background: #202020;
+}
+
+:global(body.dark-mode) .draftEditor textarea {
+    border-color: #3d3d3d;
+    background: #272727;
+    color: #fff;
 }
 
 :global(body.dark-mode) .heading h2,
@@ -283,6 +341,7 @@
 
 :global(body.dark-mode) .heading p,
 :global(body.dark-mode) .toolbar label,
+:global(body.dark-mode) .draftEditor label,
 :global(body.dark-mode) .stateText,
 :global(body.dark-mode) .author small,
 :global(body.dark-mode) .metaRow,
@@ -306,11 +365,13 @@
 
     .refreshButton,
     .replyButton,
+    .secondaryButton,
     .filterSelect {
         width: 100%;
     }
 
-    .actions {
+    .actions,
+    .editorActions {
         width: 100%;
     }
 

@@ -2,6 +2,7 @@ const { badRequest, unprocessable } = require("./errors");
 
 const MAX_PROMPT_LENGTH = 1200;
 const MAX_THEME_LENGTH = 120;
+const MAX_COMMENT_REPLY_LENGTH = 10000;
 const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const YOUTUBE_COMMENT_ID_RE = /^[A-Za-z0-9._-]{1,256}$/;
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,80}$/;
@@ -18,7 +19,7 @@ const YOUTUBE_MAX_PAGE_SIZE = 25;
 const YOUTUBE_MAX_SEARCH_QUERY_LENGTH = 100;
 const YOUTUBE_COMMENT_DEFAULT_PAGE_SIZE = 20;
 const YOUTUBE_COMMENT_MAX_PAGE_SIZE = 50;
-const YOUTUBE_COMMENT_STATUSES = new Set(["all", "replied", "failed", "skipped", "unanswered"]);
+const YOUTUBE_COMMENT_STATUSES = new Set(["all", "replied", "failed", "skipped", "unanswered", "drafted"]);
 
 const assertObjectBody = (body) => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -64,6 +65,16 @@ const validatePrompt = (prompt) => {
         return "";
     }
     return normalizeString(prompt, "prompt", MAX_PROMPT_LENGTH);
+};
+
+const validateCommentReplyText = (replyText) => normalizeString(replyText, "replyText", MAX_COMMENT_REPLY_LENGTH);
+
+const validateCommentReplySource = (source) => {
+    const value = normalizeString(source, "source", 16);
+    if (!["draft", "manual"].includes(value)) {
+        throw unprocessable("INVALID_REPLY_SOURCE", "source must be draft or manual");
+    }
+    return value;
 };
 
 const validateChannelTheme = (channelTheme) => normalizeString(channelTheme, "channelTheme", MAX_THEME_LENGTH);
@@ -232,6 +243,8 @@ module.exports = {
     validateVideoId,
     validateYoutubeCommentId,
     validatePrompt,
+    validateCommentReplyText,
+    validateCommentReplySource,
     validateChannelTheme,
     validateGender,
     validateIdempotencyKey,

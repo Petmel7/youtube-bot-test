@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 const BotRun = require("../models/BotRun");
+const CommentReplyState = require("../models/CommentReplyState");
 const VideoCatalog = require("../models/VideoCatalog");
 const { getValidAccessToken } = require("./authService");
 const aiProvider = require("./ai/aiProvider");
@@ -18,6 +19,7 @@ const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
 const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
 const BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH = 1000;
 const COMMENT_RESULT_STATUS_PRIORITY = {
+    drafted: 2,
     replied: 3,
     failed: 2,
     skipped: 1
@@ -111,6 +113,14 @@ const skipRemainingForProviderLimit = async ({ runId, items, startIndex, maxResu
 };
 
 const hasPreviouslyReplied = async (userId, videoId, commentId) => {
+    const stateReply = await CommentReplyState.exists({
+        userId,
+        videoId,
+        commentId,
+        status: "replied"
+    });
+    if (stateReply) return true;
+
     return BotRun.exists({
         userId,
         videoId,
@@ -121,6 +131,49 @@ const hasPreviouslyReplied = async (userId, videoId, commentId) => {
             }
         }
     });
+};
+
+const updateCommentReplyStateFromResult = async ({ userId, videoId, result, youtubeReplyId = null }) => {
+    if (!result?.commentId) return null;
+
+    if (result.status === "replied") {
+        return CommentReplyState.findOneAndUpdate({
+            userId,
+            videoId,
+            commentId: result.commentId
+        }, {
+            $set: {
+                status: "replied",
+                commentTextSnapshot: result.commentTextSnapshot || null,
+                draftReplyText: null,
+                postedReplyTextSnapshot: result.replyTextSnapshot || null,
+                youtubeReplyId,
+                lastErrorCode: null,
+                lastErrorMessage: null,
+                generatedByAi: true,
+                botRunId: result.runId || null
+            }
+        }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    }
+
+    if (result.status === "failed") {
+        return CommentReplyState.findOneAndUpdate({
+            userId,
+            videoId,
+            commentId: result.commentId
+        }, {
+            $set: {
+                status: "failed",
+                commentTextSnapshot: result.commentTextSnapshot || null,
+                lastErrorCode: result.errorCode || null,
+                lastErrorMessage: result.errorMessage || null,
+                generatedByAi: false,
+                botRunId: result.runId || null
+            }
+        }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    }
+
+    return null;
 };
 
 const verifyVideoOwnership = async (user, videoId) => {
@@ -215,27 +268,33 @@ async function executeBotRun(runId, user, videoId, userPrompt, {
                     });
                     const responseText = response.text;
                     const insertStartedAt = Date.now();
-                    await replyToComment(accessToken, commentId, responseText);
-                    await addRunResult(runId, {
+                    const youtubeReplyId = await replyToComment(accessToken, commentId, responseText);
+                    const result = {
                         commentId,
                         status: "replied",
+                        runId: String(runId),
                         commentTextSnapshot: createTextSnapshot(commentText),
                         replyTextSnapshot: createTextSnapshot(responseText),
                         aiLatencyMs: response.latencyMs ?? null,
                         youtubeInsertLatencyMs: Date.now() - insertStartedAt,
                         attemptCount: response.attemptCount ?? null
-                    });
+                    };
+                    await addRunResult(runId, result);
+                    await updateCommentReplyStateFromResult({ userId: user._id, videoId, result, youtubeReplyId });
                 } catch (error) {
                     const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
-                    await addRunResult(runId, {
+                    const result = {
                         commentId,
                         status: "failed",
+                        runId: String(runId),
                         errorCode,
                         errorMessage: error.isOperational ? error.message : "Failed to process comment",
                         commentTextSnapshot: createTextSnapshot(commentText),
                         aiLatencyMs: error.latencyMs ?? null,
                         attemptCount: error.attemptCount ?? null
-                    });
+                    };
+                    await addRunResult(runId, result);
+                    await updateCommentReplyStateFromResult({ userId: user._id, videoId, result });
                     if (shouldStopRunAfterAiError(errorCode)) {
                         stopForProviderLimit = true;
                         providerLimitErrorCode = errorCode;
@@ -287,7 +346,7 @@ async function replyToComment(accessToken, commentId, responseText) {
     const youtube = google.youtube({ version: "v3", auth: authClient });
 
     try {
-        await youtube.comments.insert({
+        const response = await youtube.comments.insert({
             part: "snippet",
             resource: {
                 snippet: {
@@ -296,6 +355,7 @@ async function replyToComment(accessToken, commentId, responseText) {
                 }
             }
         });
+        return response.data?.id || null;
     } catch (error) {
         throw upstream("YOUTUBE_REPLY_FAILED", "Failed to reply to YouTube comment");
     }
@@ -729,8 +789,23 @@ const toLatestResultDto = (run, result) => ({
     errorCode: result.errorCode || null,
     errorMessage: result.errorMessage || null,
     replyTextSnapshot: result.replyTextSnapshot || null,
+    draftReplyText: result.draftReplyText || null,
+    youtubeReplyId: result.youtubeReplyId || null,
+    generatedByAi: result.generatedByAi === undefined ? null : Boolean(result.generatedByAi),
     runId: String(run._id || run.id),
     updatedAt: result.updatedAt || result.createdAt || run.updatedAt || run.createdAt || null
+});
+
+const toCommentStateResultDto = (state) => ({
+    status: state.status,
+    errorCode: state.lastErrorCode || null,
+    errorMessage: state.lastErrorMessage || null,
+    replyTextSnapshot: state.postedReplyTextSnapshot || null,
+    draftReplyText: state.draftReplyText || null,
+    youtubeReplyId: state.youtubeReplyId || null,
+    generatedByAi: Boolean(state.generatedByAi),
+    runId: state.botRunId ? String(state.botRunId) : null,
+    updatedAt: state.updatedAt || state.createdAt || null
 });
 
 const isBetterCommentResult = (candidate, current) => {
@@ -785,6 +860,20 @@ const deriveCommentResultMap = async ({ userId, videoId, commentIds }) => {
     ]));
 };
 
+const deriveCommentStateMap = async ({ userId, videoId, commentIds }) => {
+    if (commentIds.length === 0) {
+        return new Map();
+    }
+
+    const states = await CommentReplyState.find({
+        userId,
+        videoId,
+        commentId: { $in: commentIds }
+    }).lean();
+
+    return new Map(states.map(state => [state.commentId, toCommentStateResultDto(state)]));
+};
+
 const listVideoComments = async (user, videoId, { limit = 20, pageToken, status = "all" } = {}) => {
     await verifyVideoOwnership(user, videoId);
 
@@ -811,10 +900,17 @@ const listVideoComments = async (user, videoId, { limit = 20, pageToken, status 
         videoId,
         commentIds: pageComments.map(comment => comment.commentId)
     });
+    const stateByCommentId = await deriveCommentStateMap({
+        userId: user._id,
+        videoId,
+        commentIds: pageComments.map(comment => comment.commentId)
+    });
 
     const comments = pageComments
         .map(comment => {
-            const latestResult = resultByCommentId.get(comment.commentId) || null;
+            const latestResult = stateByCommentId.get(comment.commentId)
+                || resultByCommentId.get(comment.commentId)
+                || null;
             return {
                 ...comment,
                 status: latestResult?.status || "unanswered",
@@ -874,7 +970,7 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         });
 
         const insertStartedAt = Date.now();
-        await replyToComment(accessToken, comment.commentId, aiResult.text);
+        const youtubeReplyId = await replyToComment(accessToken, comment.commentId, aiResult.text);
         await aiResult.finalizeBilling();
 
         const result = {
@@ -889,6 +985,7 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         };
 
         await addRunResult(runId, result);
+        await updateCommentReplyStateFromResult({ userId, videoId, result, youtubeReplyId });
         const run = await BotRun.findByIdAndUpdate(runId, {
             status: "completed",
             completedAt: new Date()
@@ -912,6 +1009,7 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         };
 
         await addRunResult(runId, result);
+        await updateCommentReplyStateFromResult({ userId, videoId, result });
         await BotRun.findByIdAndUpdate(runId, {
             status: "failed",
             errorCode: result.errorCode,

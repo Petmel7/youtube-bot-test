@@ -2,24 +2,32 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const http = require("node:http");
+const { google } = require("googleapis");
 
 const BotRun = require("../src/models/BotRun");
+const CommentReplyState = require("../src/models/CommentReplyState");
 const botRoutes = require("../src/routes/botRoutes");
 const errorHandler = require("../src/middleware/errorHandler");
+const aiProvider = require("../src/services/ai/aiProvider");
 const walletService = require("../src/services/billing/walletService");
 const userPromptService = require("../src/services/userPromptService");
 const {
     createBotRun,
     createSingleCommentReply,
+    generateCommentDraft,
+    publishCommentReply,
     getBotRunCreditEstimate,
     resolveBotRunPrompt
 } = require("../src/services/botRunService");
+const youtubeService = require("../src/services/youtubeService");
 const { toBotRunDto } = require("../src/utils/dto");
 
 const user = {
     _id: "64b000000000000000000010",
     tokens: {
-        access_token: "access-token"
+        access_token: "access-token",
+        refresh_token: "refresh-token",
+        expiry_date: Date.now() + 60_000
     }
 };
 
@@ -82,6 +90,61 @@ const mockPromptNotFound = (t) => {
         error.code = "PROMPT_NOT_FOUND";
         throw error;
     });
+};
+
+const mockYoutubeCommentLookup = (t, {
+    commentId = "comment-1",
+    videoId = "abcDEF12345",
+    commentText = "Great recipe!",
+    youtubeReplyId = "reply-1"
+} = {}) => {
+    t.mock.method(global, "fetch", async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("/channels")) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    items: [{
+                        id: "channel-1",
+                        contentDetails: { relatedPlaylists: { uploads: "uploads-1" } }
+                    }]
+                })
+            };
+        }
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    t.mock.method(google, "youtube", () => ({
+        videos: {
+            async list() {
+                return { data: { items: [{ snippet: { channelId: "channel-1" } }] } };
+            }
+        },
+        commentThreads: {
+            async list(args) {
+                assert.equal(args.id, commentId);
+                return {
+                    data: {
+                        items: [{
+                            snippet: {
+                                videoId,
+                                topLevelComment: {
+                                    id: commentId,
+                                    snippet: { textOriginal: commentText }
+                                }
+                            }
+                        }]
+                    }
+                };
+            }
+        },
+        comments: {
+            async insert(args) {
+                assert.equal(args.resource.snippet.parentId, commentId);
+                return { data: { id: youtubeReplyId } };
+            }
+        }
+    }));
 };
 
 test("createBotRun rejects insufficient credits before creating BotRun", async (t) => {
@@ -211,6 +274,7 @@ test("createSingleCommentReply rejects already replied comments before creating 
         createCalled = true;
         throw new Error("BotRun.create should not be called");
     });
+    t.mock.method(CommentReplyState, "findOne", async () => null);
 
     await assert.rejects(
         () => createSingleCommentReply({
@@ -225,6 +289,128 @@ test("createSingleCommentReply rejects already replied comments before creating 
 
     assert.equal(findOneCalls, 2);
     assert.equal(createCalled, false);
+});
+
+test("generateCommentDraft creates an AI draft and records comment state", async (t) => {
+    mockPromptNotFound(t);
+    mockYoutubeCommentLookup(t);
+    let runCreated = false;
+    let stateUpdated = false;
+
+    t.mock.method(CommentReplyState, "findOne", async () => null);
+    t.mock.method(BotRun, "findOne", (filter) => {
+        if (filter.idempotencyKey) return Promise.resolve(null);
+        return { sort: async () => null };
+    });
+    t.mock.method(walletService, "getAvailableCredits", async () => 1);
+    t.mock.method(BotRun, "create", async (doc) => {
+        runCreated = true;
+        assert.equal(doc.mode, "single-comment");
+        assert.equal(doc.status, "running");
+        return { _id: "66b000000000000000000001", ...doc };
+    });
+    t.mock.method(aiProvider, "generateReply", async (args) => {
+        assert.equal(args.commentId, "comment-1");
+        assert.equal(args.deferBilling, undefined);
+        return {
+            text: "Thanks for the kind note about the recipe.",
+            latencyMs: 123,
+            attemptCount: 1
+        };
+    });
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async (filter, update) => {
+        stateUpdated = true;
+        assert.equal(filter.commentId, "comment-1");
+        assert.equal(update.$set.status, "drafted");
+        assert.equal(update.$set.draftReplyText, "Thanks for the kind note about the recipe.");
+        return {
+            _id: "state-1",
+            userId: user._id,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            ...update.$set,
+            updatedAt: new Date("2026-01-01T00:00:00Z")
+        };
+    });
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => ({
+        _id: runId,
+        userId: user._id,
+        videoId: "abcDEF12345",
+        mode: "single-comment",
+        status: update.status,
+        processedCount: update.processedCount,
+        results: update.results
+    }));
+
+    const result = await generateCommentDraft({
+        user,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        prompt: "Reply politely",
+        idempotencyKey: "draft-comment-key-123"
+    });
+
+    assert.equal(runCreated, true);
+    assert.equal(stateUpdated, true);
+    assert.equal(result.created, true);
+    assert.equal(result.result.status, "drafted");
+    assert.equal(result.result.draftReplyText, "Thanks for the kind note about the recipe.");
+});
+
+test("publishCommentReply posts manual text without invoking AI or wallet billing", async (t) => {
+    mockYoutubeCommentLookup(t, { youtubeReplyId: "reply-123" });
+    let runCreated = false;
+    let stateUpdated = false;
+
+    t.mock.method(CommentReplyState, "findOne", async () => null);
+    t.mock.method(BotRun, "findOne", (filter) => {
+        if (filter.idempotencyKey) return Promise.resolve(null);
+        return { sort: async () => null };
+    });
+    t.mock.method(aiProvider, "generateReply", async () => {
+        throw new Error("AI should not be called when publishing a manual reply");
+    });
+    t.mock.method(walletService, "getAvailableCredits", async () => {
+        throw new Error("Wallet should not be checked when publishing a manual reply");
+    });
+    t.mock.method(BotRun, "create", async (doc) => {
+        runCreated = true;
+        assert.equal(doc.status, "completed");
+        assert.equal(doc.successCount, 1);
+        assert.equal(doc.results[0].replyTextSnapshot, "Manual reply with a useful detail.");
+        return { _id: "66b000000000000000000002", ...doc };
+    });
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async (filter, update) => {
+        stateUpdated = true;
+        assert.equal(filter.commentId, "comment-1");
+        assert.equal(update.$set.status, "replied");
+        assert.equal(update.$set.draftReplyText, null);
+        assert.equal(update.$set.postedReplyTextSnapshot, "Manual reply with a useful detail.");
+        assert.equal(update.$set.youtubeReplyId, "reply-123");
+        return {
+            _id: "state-1",
+            userId: user._id,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            ...update.$set,
+            updatedAt: new Date("2026-01-01T00:00:00Z")
+        };
+    });
+
+    const result = await publishCommentReply({
+        user,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        replyText: "Manual reply with a useful detail.",
+        source: "manual",
+        idempotencyKey: "publish-comment-key-123"
+    });
+
+    assert.equal(runCreated, true);
+    assert.equal(stateUpdated, true);
+    assert.equal(result.created, true);
+    assert.equal(result.result.status, "replied");
+    assert.equal(result.result.youtubeReplyId, "reply-123");
 });
 
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {
@@ -329,6 +515,28 @@ test("POST /bot/comments/:commentId/reply requires auth, write header, and valid
     assert.equal(invalidVideo.body.error.code, "INVALID_VIDEO_ID");
 });
 
+test("comment draft and publish endpoints require auth and write header", async () => {
+    const app = createApp();
+    const endpoints = [
+        { method: "POST", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345", idempotencyKey: "draft-comment-key-123" } },
+        { method: "PUT", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345", draftReplyText: "Draft reply" } },
+        { method: "DELETE", path: "/bot/comments/comment-1/draft", body: { videoId: "abcDEF12345" } },
+        { method: "POST", path: "/bot/comments/comment-1/publish", body: { videoId: "abcDEF12345", replyText: "Manual reply", source: "manual", idempotencyKey: "publish-comment-key-123" } }
+    ];
+
+    for (const endpoint of endpoints) {
+        const unauthenticated = await request(app, endpoint);
+        assert.equal(unauthenticated.status, 401);
+
+        const missingHeader = await request(app, {
+            ...endpoint,
+            userId: user._id
+        });
+        assert.equal(missingHeader.status, 403);
+        assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+    }
+});
+
 test("GET /bot/runs/:runId disables cache and returns safe dominant comment error", async (t) => {
     t.mock.method(BotRun, "findById", async () => ({
         _id: "66b000000000000000000001",
@@ -419,6 +627,9 @@ test("toBotRunDto exposes safe result summaries and handles legacy runs without 
         errorMessage: null,
         commentTextSnapshot: "Viewer asked about sauce.",
         replyTextSnapshot: "Thanks, the sauce works best when stirred slowly.",
+        draftReplyText: null,
+        youtubeReplyId: null,
+        generatedByAi: null,
         aiLatencyMs: 123,
         youtubeInsertLatencyMs: 45,
         attemptCount: 1,

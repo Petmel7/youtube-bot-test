@@ -98,15 +98,29 @@
         "reply": "Antworten",
         "retry": "Erneut versuchen",
         "replying": "Antwortet...",
+        "generateDraft": "Entwurf generieren",
+        "generatingDraft": "Entwurf wird generiert...",
+        "manualReply": "Manuell antworten",
+        "draftLabel": "Antwortentwurf",
+        "manualReplyLabel": "Manuelle Antwort",
+        "saveDraft": "Entwurf speichern",
+        "saving": "Speichern...",
+        "publish": "Veröffentlichen",
+        "publishing": "Veröffentlichen...",
+        "cancelDraft": "Entwurf verwerfen",
+        "clear": "Leeren",
+        "clearing": "Leeren...",
         "error": "Fehler",
         "filters": {
             "all": "Alle",
+            "drafted": "Entwürfe",
             "replied": "Beantwortet",
             "failed": "Fehler",
             "skipped": "Übersprungen",
             "unanswered": "Unbeantwortet"
         },
         "statuses": {
+            "drafted": "Entwurf",
             "replied": "Beantwortet",
             "failed": "Fehler",
             "skipped": "Übersprungen",
@@ -118,7 +132,9 @@
             "notFound": "Video nicht gefunden.",
             "reply": "Auf diesen Kommentar konnte nicht geantwortet werden. Versuche es später erneut.",
             "replyPostFailed": "Die YouTube-Antwort konnte nicht veröffentlicht werden. Es wurde kein Credit berechnet.",
-            "alreadyReplied": "Dieser Kommentar hat bereits eine Bot-Antwort."
+            "alreadyReplied": "Dieser Kommentar hat bereits eine Bot-Antwort.",
+            "draftNotFound": "Entwurf nicht gefunden. Generiere einen neuen Entwurf oder schreibe eine manuelle Antwort.",
+            "commentMismatch": "Dieser Kommentar gehört nicht zum ausgewählten Video."
         }
     },
     "wallet": {
