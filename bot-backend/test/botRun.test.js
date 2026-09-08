@@ -24,6 +24,10 @@ const {
 } = require("../src/services/botRunService");
 const youtubeService = require("../src/services/youtubeService");
 const { toBotRunDto } = require("../src/utils/dto");
+const {
+    recoverStaleBotRuns,
+    runBotRunRecoveryOnce
+} = require("../src/services/botRunRecoveryService");
 
 const user = {
     _id: "64b000000000000000000010",
@@ -826,6 +830,206 @@ test("retryCommentTask rejects already posted tasks", async (t) => {
         }),
         { code: "COMMENT_ALREADY_REPLIED", status: 409 }
     );
+});
+
+test("recoverStaleBotRuns requeues stale processing tasks and queues run for resume", async (t) => {
+    const now = new Date("2026-01-01T00:10:00Z");
+    const oldDate = new Date("2026-01-01T00:00:00Z");
+    const updates = [];
+    const scheduled = [];
+    const run = {
+        _id: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        mode: "bulk",
+        status: "running",
+        updatedAt: oldDate,
+        createdAt: oldDate
+    };
+    const task = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskType: "bulk-reply",
+        status: "processing",
+        botRunId: run._id,
+        lockedAt: oldDate,
+        attempts: 1,
+        async save() {}
+    };
+
+    t.mock.method(BotRun, "find", () => ({
+        sort() {
+            return {
+                limit: async () => [run]
+            };
+        }
+    }));
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort: async () => [task]
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+
+    const summary = await recoverStaleBotRuns({
+        now,
+        staleLockMs: 300000,
+        executeRecoveredRuns: true,
+        scheduler: (fn) => scheduled.push(fn)
+    });
+
+    assert.equal(task.status, "queued");
+    assert.equal(task.lockedAt, null);
+    assert.equal(summary.runsRecovered, 1);
+    assert.equal(summary.tasksRequeued, 1);
+    assert.equal(scheduled.length, 1);
+    assert.equal(updates[0].update.status, "queued");
+    assert.equal(updates[0].update.errorCode, "BOT_RUN_STALE_LOCK_RECOVERED");
+});
+
+test("recoverStaleBotRuns leaves fresh publishing locks active", async (t) => {
+    const now = new Date("2026-01-01T00:10:00Z");
+    const oldDate = new Date("2026-01-01T00:00:00Z");
+    const freshDate = new Date("2026-01-01T00:09:00Z");
+    let saveCalled = false;
+    let runUpdate;
+    const run = {
+        _id: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        mode: "bulk",
+        status: "running",
+        updatedAt: oldDate,
+        createdAt: oldDate
+    };
+    const task = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskType: "bulk-reply",
+        status: "publishing",
+        botRunId: run._id,
+        publishLockId: "fresh-lock",
+        publishLockedAt: freshDate,
+        async save() {
+            saveCalled = true;
+        }
+    };
+
+    t.mock.method(BotRun, "find", () => ({
+        sort() {
+            return {
+                limit: async () => [run]
+            };
+        }
+    }));
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort: async () => [task]
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        runUpdate = update;
+        return {};
+    });
+
+    const summary = await recoverStaleBotRuns({
+        now,
+        staleLockMs: 300000,
+        executeRecoveredRuns: true,
+        scheduler: () => {
+            throw new Error("fresh publishing work should not be rescheduled");
+        }
+    });
+
+    assert.equal(saveCalled, false);
+    assert.equal(task.status, "publishing");
+    assert.equal(summary.runsRecovered, 0);
+    assert.equal(runUpdate.status, "running");
+});
+
+test("recoverStaleBotRuns fails stale publishing tasks without reposting", async (t) => {
+    const now = new Date("2026-01-01T00:10:00Z");
+    const oldDate = new Date("2026-01-01T00:00:00Z");
+    let runUpdate;
+    const run = {
+        _id: "66b000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        mode: "bulk",
+        status: "running",
+        updatedAt: oldDate,
+        createdAt: oldDate
+    };
+    const task = {
+        _id: "66c000000000000000000001",
+        userId: user._id,
+        videoId: "abcDEF12345",
+        commentId: "comment-1",
+        taskType: "bulk-reply",
+        status: "publishing",
+        botRunId: run._id,
+        publishLockId: "stale-lock",
+        publishLockedAt: oldDate,
+        async save() {}
+    };
+
+    t.mock.method(BotRun, "find", () => ({
+        sort() {
+            return {
+                limit: async () => [run]
+            };
+        }
+    }));
+    t.mock.method(CommentReplyState, "find", () => ({
+        sort: async () => [task]
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        runUpdate = update;
+        return {};
+    });
+
+    const summary = await recoverStaleBotRuns({
+        now,
+        staleLockMs: 300000,
+        executeRecoveredRuns: true,
+        scheduler: () => {
+            throw new Error("stale publishing failure should not be auto-resumed");
+        }
+    });
+
+    assert.equal(task.status, "failed");
+    assert.equal(task.publishLockId, null);
+    assert.equal(task.lastErrorCode, "COMMENT_PUBLISH_STALE_LOCK_RECOVERED");
+    assert.equal(summary.tasksFailed, 1);
+    assert.equal(runUpdate.status, "failed");
+    assert.equal(runUpdate.errorCode, "BOT_RUN_RECOVERED_FAILED");
+});
+
+test("runBotRunRecoveryOnce skips overlapping recovery loops", async (t) => {
+    let releaseFind;
+    const firstFind = new Promise((resolve) => {
+        releaseFind = () => resolve([]);
+    });
+
+    t.mock.method(BotRun, "find", () => ({
+        sort() {
+            return {
+                limit: () => firstFind
+            };
+        }
+    }));
+
+    const first = runBotRunRecoveryOnce();
+    const second = await runBotRunRecoveryOnce();
+    releaseFind();
+    const firstSummary = await first;
+
+    assert.equal(second.skipped, true);
+    assert.equal(second.reason, "RECOVERY_IN_PROGRESS");
+    assert.equal(firstSummary.runsScanned, 0);
 });
 
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {

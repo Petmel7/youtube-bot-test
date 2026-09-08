@@ -8,6 +8,10 @@ const {
     geminiRetryCount,
     geminiRequestSpacingMs,
     commentPublishLockTtlMs,
+    botRunStaleLockMs,
+    botRunRecoveryOnStartup,
+    botRunRecoveryBatchSize,
+    botRunRecoveryIntervalMs,
     botMaxCommentsPerRun,
     botMaxPagesPerRun,
     botReplyMaxLength,
@@ -61,6 +65,11 @@ const validateEnv = () => {
         throw new Error("Invalid GEMINI_THINKING_LEVEL configuration");
     }
 
+    validateBooleanEnv("BOT_RUN_RECOVERY_ON_STARTUP");
+    if (typeof botRunRecoveryOnStartup !== "boolean") {
+        throw new Error("Invalid BOT_RUN_RECOVERY_ON_STARTUP configuration");
+    }
+
     const numericSettings = {
         GEMINI_MAX_OUTPUT_TOKENS: geminiMaxOutputTokens,
         ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
@@ -68,6 +77,9 @@ const validateEnv = () => {
         GEMINI_RETRY_COUNT: geminiRetryCount,
         GEMINI_REQUEST_SPACING_MS: geminiRequestSpacingMs,
         COMMENT_PUBLISH_LOCK_TTL_MS: commentPublishLockTtlMs,
+        BOT_RUN_STALE_LOCK_MS: botRunStaleLockMs,
+        BOT_RUN_RECOVERY_BATCH_SIZE: botRunRecoveryBatchSize,
+        BOT_RUN_RECOVERY_INTERVAL_MS: botRunRecoveryIntervalMs,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
@@ -87,6 +99,7 @@ const validateEnv = () => {
         GEMINI_RETRY_COUNT: geminiRetryCount,
         GEMINI_REQUEST_SPACING_MS: geminiRequestSpacingMs,
         COMMENT_PUBLISH_LOCK_TTL_MS: commentPublishLockTtlMs,
+        BOT_RUN_STALE_LOCK_MS: botRunStaleLockMs,
         ...(geminiThinkingBudget === null ? {} : { GEMINI_THINKING_BUDGET: geminiThinkingBudget }),
         AI_PROMPT_TOKEN_CREDIT_RATE: aiPromptTokenCreditRate,
         AI_OUTPUT_TOKEN_CREDIT_RATE: aiOutputTokenCreditRate
@@ -102,6 +115,9 @@ const validateEnv = () => {
         GEMINI_MAX_OUTPUT_TOKENS: geminiMaxOutputTokens,
         GEMINI_TIMEOUT_MS: geminiTimeoutMs,
         COMMENT_PUBLISH_LOCK_TTL_MS: commentPublishLockTtlMs,
+        BOT_RUN_STALE_LOCK_MS: botRunStaleLockMs,
+        BOT_RUN_RECOVERY_BATCH_SIZE: botRunRecoveryBatchSize,
+        BOT_RUN_RECOVERY_INTERVAL_MS: botRunRecoveryIntervalMs,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
@@ -132,6 +148,12 @@ const validateOauthTokenEncryptionKey = (value) => {
 
     if (key.length !== 32 || key.toString("base64") !== value) {
         throw new Error("Invalid OAUTH_TOKEN_ENCRYPTION_KEY configuration");
+    }
+};
+
+const validateBooleanEnv = (name) => {
+    if (process.env[name] !== undefined && !["true", "false"].includes(process.env[name])) {
+        throw new Error(`Invalid ${name} configuration`);
     }
 };
 

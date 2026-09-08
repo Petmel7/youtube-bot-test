@@ -13,6 +13,7 @@ const {
     completeCommentPublish,
     failCommentPublish
 } = require("./commentPublishClaimService");
+const { recoverStaleBotRuns } = require("./botRunRecoveryService");
 const {
     executeBotRun,
     executeSingleCommentReply,
@@ -58,11 +59,20 @@ const createBotRun = async ({ user, videoId, prompt, idempotencyKey }) => {
         return { run: existing, created: false };
     }
 
-    const activeRun = await BotRun.findOne({
+    let activeRun = await BotRun.findOne({
         userId: user._id,
         videoId,
         status: { $in: ["queued", "running"] }
     });
+
+    if (activeRun) {
+        await recoverStaleBotRuns({ executeRecoveredRuns: true });
+        activeRun = await BotRun.findOne({
+            userId: user._id,
+            videoId,
+            status: { $in: ["queued", "running"] }
+        });
+    }
 
     if (activeRun) {
         throw conflict("BOT_RUN_ACTIVE", "A bot run is already active for this video");

@@ -9,6 +9,14 @@ const sessionMiddleware = require("./src/config/session");
 const corsMiddleware = require("./src/config/cors");
 const validateEnv = require("./src/config/validateEnv");
 const errorHandler = require("./src/middleware/errorHandler");
+const {
+    botRunRecoveryOnStartup,
+    botRunRecoveryIntervalMs
+} = require("./src/config/config");
+const {
+    runBotRunRecoveryOnce,
+    startBotRunRecoveryLoop
+} = require("./src/services/botRunRecoveryService");
 
 validateEnv();
 
@@ -28,9 +36,6 @@ const adminRoutes = require("./src/routes/adminRoutes");
 const app = express();
 
 app.set('trust proxy', 1);
-
-// ✅ Підключення до MongoDB
-connectDB();
 
 // ✅ Налаштування middleware
 app.use(corsMiddleware);
@@ -53,6 +58,35 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use(errorHandler);
 
-// ✅ Запуск сервера
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+let stopBotRunRecoveryLoop = null;
+
+const startServer = async () => {
+    await connectDB();
+
+    const server = app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+    if (botRunRecoveryOnStartup) {
+        setImmediate(async () => {
+            try {
+                const summary = await runBotRunRecoveryOnce();
+                console.log("Bot run startup recovery completed", summary);
+            } catch (error) {
+                console.error("Bot run startup recovery failed", { code: error.code || "BOT_RUN_RECOVERY_FAILED" });
+            }
+        });
+        stopBotRunRecoveryLoop = startBotRunRecoveryLoop({ intervalMs: botRunRecoveryIntervalMs });
+    }
+
+    const stopServer = () => {
+        if (stopBotRunRecoveryLoop) {
+            stopBotRunRecoveryLoop();
+        }
+        server.close(() => process.exit(0));
+    };
+
+    process.on("SIGTERM", stopServer);
+    process.on("SIGINT", stopServer);
+};
+
+startServer();

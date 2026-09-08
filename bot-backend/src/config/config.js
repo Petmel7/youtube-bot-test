@@ -7,6 +7,11 @@ const {
     supportedPaymentNetworks
 } = require("./paymentNetworks");
 
+const parseBooleanEnv = (value, defaultValue) => {
+    if (value === undefined) return defaultValue;
+    return value === "true";
+};
+
 module.exports = {
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -28,6 +33,10 @@ module.exports = {
     geminiRetryCount: Number(process.env.GEMINI_RETRY_COUNT || 1),
     geminiRequestSpacingMs: Number(process.env.GEMINI_REQUEST_SPACING_MS || 1500),
     commentPublishLockTtlMs: Number(process.env.COMMENT_PUBLISH_LOCK_TTL_MS || 300000),
+    botRunStaleLockMs: Number(process.env.BOT_RUN_STALE_LOCK_MS || 300000),
+    botRunRecoveryOnStartup: parseBooleanEnv(process.env.BOT_RUN_RECOVERY_ON_STARTUP, true),
+    botRunRecoveryBatchSize: Number(process.env.BOT_RUN_RECOVERY_BATCH_SIZE || 20),
+    botRunRecoveryIntervalMs: Number(process.env.BOT_RUN_RECOVERY_INTERVAL_MS || 60000),
     botMaxCommentsPerRun: Number(process.env.BOT_MAX_COMMENTS_PER_RUN || 10),
     botMaxPagesPerRun: Number(process.env.BOT_MAX_PAGES_PER_RUN || 2),
     botReplyMaxLength: Number(process.env.BOT_REPLY_MAX_LENGTH || 500),
