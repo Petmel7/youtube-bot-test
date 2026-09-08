@@ -7,11 +7,11 @@ const userSchema = new mongoose.Schema({
     picture: { type: String },
     role: { type: String, required: true, default: "user" },
     tokens: {
-        access_token: String,
-        refresh_token: String,
-        scope: String,
-        token_type: String,
-        expiry_date: Number
+        access_token: { type: String, select: false },
+        refresh_token: { type: String, select: false },
+        scope: { type: String, select: false },
+        token_type: { type: String, select: false },
+        expiry_date: { type: Number, select: false }
     }
 }, { timestamps: true });
 

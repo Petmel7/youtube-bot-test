@@ -24,6 +24,6 @@ router.get("/google/callback",
 );
 
 router.post("/logout", requireWriteHeader, logout);
-router.get("/status", getStatus);
+router.get("/status", asyncHandler(getStatus));
 
 module.exports = router;

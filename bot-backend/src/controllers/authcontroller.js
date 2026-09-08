@@ -1,5 +1,5 @@
 
-const { findUserById, storeUserTokensInSession } = require("../services/authService");
+const { findUserById, storeUserTokensInSession, hasYouTubeConnection } = require("../services/authService");
 const { getClientUrl } = require("../utils/env");
 const { toSafeUser } = require("../utils/dto");
 
@@ -29,9 +29,15 @@ const logout = (req, res, next) => {
     });
 };
 
-const getStatus = (req, res) => {
+const getStatus = async (req, res) => {
     if (req.isAuthenticated()) {
-        res.json({ success: true, connected: true, user: toSafeUser(req.user) });
+        const youtubeConnected = await hasYouTubeConnection(req.user);
+        const userObject = req.user.toObject?.() || req.user;
+        res.json({
+            success: true,
+            connected: true,
+            user: toSafeUser({ ...userObject, youtubeConnected })
+        });
     } else {
         res.json({ success: true, connected: false, user: null });
     }

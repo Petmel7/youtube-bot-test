@@ -174,7 +174,6 @@
 .botRunEyebrow,
 .botRunCounters span,
 .botRunTextBlock span,
-.botRunCommentId,
 .botRunMuted {
     color: #667085;
     font-size: 13px;
@@ -315,12 +314,6 @@
     border: 1px solid #eaecf0;
     border-radius: 8px;
     background: #fcfcfd;
-}
-
-.botRunCommentId {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .botRunTextBlock {
@@ -637,7 +630,6 @@
 :global(body.dark-mode) .botRunEyebrow,
 :global(body.dark-mode) .botRunCounters span,
 :global(body.dark-mode) .botRunTextBlock span,
-:global(body.dark-mode) .botRunCommentId,
 :global(body.dark-mode) .botRunMuted {
     color: #c8c8c8;
 }

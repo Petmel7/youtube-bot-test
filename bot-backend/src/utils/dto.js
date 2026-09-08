@@ -7,7 +7,9 @@ const toSafeUser = (user) => {
         email: user.email,
         picture: user.picture || null,
         role: user.role || "user",
-        youtubeConnected: Boolean(user.tokens?.refresh_token || user.tokens?.access_token)
+        youtubeConnected: user.youtubeConnected === undefined
+            ? Boolean(user.tokens?.refresh_token || user.tokens?.access_token)
+            : Boolean(user.youtubeConnected)
     };
 };
 

@@ -46,6 +46,12 @@ const validateEnv = () => {
         throw new Error("Missing required environment variable: CLIENT_PROD_URL");
     }
 
+    if (process.env.NODE_ENV === "production") {
+        validateOauthTokenEncryptionKey(process.env.OAUTH_TOKEN_ENCRYPTION_KEY);
+    } else if (process.env.OAUTH_TOKEN_ENCRYPTION_KEY) {
+        validateOauthTokenEncryptionKey(process.env.OAUTH_TOKEN_ENCRYPTION_KEY);
+    }
+
     if (!geminiModel || !/^gemini-[A-Za-z0-9._-]+$/.test(geminiModel)) {
         throw new Error("Invalid GEMINI_MODEL configuration");
     }
@@ -106,6 +112,23 @@ const validateEnv = () => {
     });
 
     validatePaymentConfig(paymentConfig);
+};
+
+const validateOauthTokenEncryptionKey = (value) => {
+    if (typeof value !== "string" || value.trim() === "") {
+        throw new Error("Missing required environment variable: OAUTH_TOKEN_ENCRYPTION_KEY");
+    }
+
+    let key;
+    try {
+        key = Buffer.from(value, "base64");
+    } catch {
+        throw new Error("Invalid OAUTH_TOKEN_ENCRYPTION_KEY configuration");
+    }
+
+    if (key.length !== 32 || key.toString("base64") !== value) {
+        throw new Error("Invalid OAUTH_TOKEN_ENCRYPTION_KEY configuration");
+    }
 };
 
 const normalizeValidationOptions = (options) => (typeof options === "string" ? {} : (options || {}));
@@ -270,3 +293,4 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
 module.exports = validateEnv;
 module.exports.validatePaymentConfig = validatePaymentConfig;
 module.exports.validatePaymentMethodsConfig = validatePaymentMethodsConfig;
+module.exports.validateOauthTokenEncryptionKey = validateOauthTokenEncryptionKey;

@@ -565,7 +565,6 @@ const VideoCommentsInbox = ({ selectedVideo, botPrompt, onReplyComplete }) => {
 
                             <div className={styles.metaRow}>
                                 <span>{t("comments.likes")}: <strong>{comment.likeCount ?? 0}</strong></span>
-                                <span title={comment.commentId}>{comment.commentId}</span>
                             </div>
 
                             {comment.latestResult?.replyTextSnapshot && (

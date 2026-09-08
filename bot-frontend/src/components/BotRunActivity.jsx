@@ -116,7 +116,6 @@ const BotRunActivity = ({ run, videoTitle, getErrorMessage, onRetryTask }) => {
                                     <span className={`${styles.botRunBadge} ${getStatusClassName(result.status)}`}>
                                         {t(`bot.activity.resultStatuses.${result.status}`, result.status)}
                                     </span>
-                                    <span className={styles.botRunCommentId}>{result.commentId}</span>
                                 </div>
 
                                 {result.commentTextSnapshot ? (

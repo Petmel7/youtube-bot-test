@@ -1,4 +1,5 @@
 const { unauthorized, forbidden } = require("../utils/errors");
+const { hasYouTubeConnection } = require("../services/authService");
 
 const isAuthenticated = (req, res, next) => {
     if (req.isAuthenticated() && req.user) {
@@ -9,11 +10,15 @@ const isAuthenticated = (req, res, next) => {
 };
 
 const requireYouTubeConnection = (req, res, next) => {
-    if (req.user?.tokens?.refresh_token || req.user?.tokens?.access_token) {
-        return next();
-    }
+    hasYouTubeConnection(req.user)
+        .then((connected) => {
+            if (connected) {
+                return next();
+            }
 
-    next(forbidden("YOUTUBE_NOT_CONNECTED", "YouTube authorization is required"));
+            return next(forbidden("YOUTUBE_NOT_CONNECTED", "YouTube authorization is required"));
+        })
+        .catch(next);
 };
 
 module.exports = { isAuthenticated, requireYouTubeConnection };

@@ -15,6 +15,7 @@ module.exports = {
     youtubeScopeReadonly: process.env.YOUTUBE_SCOPE_READONLY,
     youtubeScopeFull: process.env.YOUTUBE_SCOPE_FULL,
     sessionSecret: process.env.SESSION_SECRET,
+    oauthTokenEncryptionKey: process.env.OAUTH_TOKEN_ENCRYPTION_KEY,
     mongoUri: process.env.MONGO_URI,
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",

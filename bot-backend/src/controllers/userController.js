@@ -1,5 +1,6 @@
 
 const { fetchAllUsers } = require("../services/userService");
+const { hasYouTubeConnection } = require("../services/authService");
 const { toSafeUser } = require("../utils/dto");
 
 const getUsers = async (req, res) => {
@@ -8,7 +9,9 @@ const getUsers = async (req, res) => {
 };
 
 const getUser = async (req, res) => {
-    res.json({ success: true, user: toSafeUser(req.user) });
+    const youtubeConnected = await hasYouTubeConnection(req.user);
+    const userObject = req.user.toObject?.() || req.user;
+    res.json({ success: true, user: toSafeUser({ ...userObject, youtubeConnected }) });
 };
 
 const getUserRole = async (req, res) => {
