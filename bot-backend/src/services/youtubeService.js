@@ -5,6 +5,11 @@ const VideoCatalog = require("../models/VideoCatalog");
 const { getValidAccessToken } = require("./authService");
 const aiProvider = require("./ai/aiProvider");
 const {
+    claimCommentPublish,
+    completeCommentPublish,
+    failCommentPublish
+} = require("./commentPublishClaimService");
+const {
     googleClientId,
     googleClientSecret,
     googleRedirectUri,
@@ -13,13 +18,14 @@ const {
     botMaxPagesPerRun,
     geminiRequestSpacingMs
 } = require("../config/config");
-const { forbidden, notFound, unprocessable, upstream } = require("../utils/errors");
+const { conflict, forbidden, notFound, unprocessable, upstream } = require("../utils/errors");
 
 const VIDEO_CATALOG_SYNC_PAGE_SIZE = 50;
 const VIDEO_CATALOG_SYNC_MAX_PAGES = 6;
 const BOT_RUN_TEXT_SNAPSHOT_MAX_LENGTH = 1000;
 const COMMENT_RESULT_STATUS_PRIORITY = {
     processing: 2,
+    publishing: 2,
     queued: 1,
     drafted: 2,
     replied: 3,
@@ -188,7 +194,7 @@ const syncRunCountersFromTasks = async (runId, extra = {}) => {
     const tasks = await getRunTasks(runId);
     const counts = tasks.reduce((summary, task) => {
         if (task.status === "queued") summary.queuedCount++;
-        if (task.status === "processing") summary.processingCount++;
+        if (task.status === "processing" || task.status === "publishing") summary.processingCount++;
         if (task.status === "replied" || task.status === "posted") summary.successCount++;
         if (task.status === "failed") summary.failureCount++;
         if (task.status === "skipped") summary.skippedCount++;
@@ -317,7 +323,7 @@ const createBulkReplyTasks = async (user, videoId, runId) => {
 const taskToResult = (task) => ({
     taskId: String(task._id || task.id),
     commentId: task.commentId,
-    status: task.status === "posted" ? "replied" : task.status,
+    status: task.status === "posted" ? "replied" : (task.status === "publishing" ? "processing" : task.status),
     runId: task.botRunId ? String(task.botRunId) : null,
     errorCode: task.lastErrorCode || null,
     errorMessage: task.lastErrorMessage || null,
@@ -351,7 +357,7 @@ const processQueuedBotRunTasks = async ({ runId, user, videoId, userPrompt, acce
 
     for (const task of tasks) {
         if (stopForProviderLimit) {
-            if (["queued", "processing"].includes(task.status)) {
+            if (["queued", "processing", "publishing"].includes(task.status)) {
                 task.status = "skipped";
                 task.lastErrorCode = providerLimitErrorCode;
                 task.lastErrorMessage = getProviderLimitMessage(providerLimitErrorCode);
@@ -388,33 +394,72 @@ const processQueuedBotRunTasks = async ({ runId, user, videoId, userPrompt, acce
 
             const insertStartedAt = Date.now();
             let youtubeReplyId;
+            let publishClaim;
             try {
+                publishClaim = await claimCommentPublish({
+                    userId: user._id,
+                    videoId,
+                    commentId: task.commentId,
+                    idempotencyKey: task.publishIdempotencyKey || task.idempotencyKey || `${runId}:${task.commentId}:publish`,
+                    source: "bulk",
+                    commentTextSnapshot: createTextSnapshot(task.commentTextSnapshot),
+                    botRunId: runId,
+                    generatedByAi: true
+                });
+                if (!publishClaim.acquired) {
+                    if (response.releaseBilling) {
+                        await response.releaseBilling("comment-publish-not-acquired");
+                    }
+                    task.status = publishClaim.completed ? "skipped" : "failed";
+                    task.lastErrorCode = publishClaim.completed ? "COMMENT_ALREADY_REPLIED" : "COMMENT_REPLY_PUBLISH_IN_PROGRESS";
+                    task.lastErrorMessage = publishClaim.completed
+                        ? "This comment already has a bot reply"
+                        : "A reply is already being published for this comment";
+                    task.lockedAt = null;
+                    task.completedAt = new Date();
+                    await task.save();
+                    continue;
+                }
                 youtubeReplyId = await replyToComment(accessToken, task.commentId, response.text);
                 await response.finalizeBilling();
             } catch (error) {
                 if (response.releaseBilling && error.code === "YOUTUBE_REPLY_FAILED") {
                     await response.releaseBilling("youtube-reply-failed");
                 }
+                if (publishClaim?.acquired) {
+                    await failCommentPublish({
+                        state: publishClaim.state,
+                        publishLockId: publishClaim.publishLockId,
+                        status: "failed",
+                        errorCode: error.code || "YOUTUBE_REPLY_FAILED",
+                        errorMessage: error.isOperational ? error.message : "Failed to publish reply",
+                        commentTextSnapshot: createTextSnapshot(task.commentTextSnapshot),
+                        generatedByAi: true
+                    });
+                }
                 throw error;
             }
 
-            task.status = "replied";
-            task.postedReplyTextSnapshot = createTextSnapshot(response.text);
-            task.youtubeReplyId = youtubeReplyId;
-            task.generatedByAi = true;
-            task.lastErrorCode = null;
-            task.lastErrorMessage = null;
-            task.completedAt = new Date();
-            task.lockedAt = null;
-            await task.save();
+            await completeCommentPublish({
+                state: publishClaim.state,
+                publishLockId: publishClaim.publishLockId,
+                youtubeReplyId,
+                replyTextSnapshot: createTextSnapshot(response.text),
+                commentTextSnapshot: createTextSnapshot(task.commentTextSnapshot),
+                generatedByAi: true,
+                botRunId: runId
+            });
         } catch (error) {
             const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
-            task.status = "failed";
-            task.lastErrorCode = errorCode;
-            task.lastErrorMessage = error.isOperational ? error.message : "Failed to process comment";
-            task.lockedAt = null;
-            task.completedAt = new Date();
-            await task.save();
+            const latestTask = await CommentReplyState.findOne({ _id: task._id }) || task;
+            if (latestTask.status !== "replied" && latestTask.status !== "posted") {
+                latestTask.status = "failed";
+                latestTask.lastErrorCode = errorCode;
+                latestTask.lastErrorMessage = error.isOperational ? error.message : "Failed to process comment";
+                latestTask.lockedAt = null;
+                latestTask.completedAt = new Date();
+                await latestTask.save();
+            }
 
             if (shouldStopRunAfterAiError(errorCode)) {
                 stopForProviderLimit = true;
@@ -535,7 +580,42 @@ async function executeBotRun(runId, user, videoId, userPrompt, {
                     });
                     const responseText = response.text;
                     const insertStartedAt = Date.now();
-                    const youtubeReplyId = await replyToComment(accessToken, commentId, responseText);
+                    let publishClaim;
+                    let youtubeReplyId;
+                    try {
+                        publishClaim = await claimCommentPublish({
+                            userId: user._id,
+                            videoId,
+                            commentId,
+                            idempotencyKey: `${runId}:${commentId}:publish`,
+                            source: "bulk",
+                            commentTextSnapshot: createTextSnapshot(commentText),
+                            botRunId: runId,
+                            generatedByAi: true
+                        });
+                        if (!publishClaim.acquired) {
+                            throw conflict(
+                                publishClaim.completed ? "COMMENT_ALREADY_REPLIED" : "COMMENT_REPLY_PUBLISH_IN_PROGRESS",
+                                publishClaim.completed
+                                    ? "This comment already has a bot reply"
+                                    : "A reply is already being published for this comment"
+                            );
+                        }
+                        youtubeReplyId = await replyToComment(accessToken, commentId, responseText);
+                    } catch (error) {
+                        if (publishClaim?.acquired) {
+                            await failCommentPublish({
+                                state: publishClaim.state,
+                                publishLockId: publishClaim.publishLockId,
+                                status: "failed",
+                                errorCode: error.code || "YOUTUBE_REPLY_FAILED",
+                                errorMessage: error.isOperational ? error.message : "Failed to publish reply",
+                                commentTextSnapshot: createTextSnapshot(commentText),
+                                generatedByAi: true
+                            });
+                        }
+                        throw error;
+                    }
                     const result = {
                         commentId,
                         status: "replied",
@@ -547,7 +627,15 @@ async function executeBotRun(runId, user, videoId, userPrompt, {
                         attemptCount: response.attemptCount ?? null
                     };
                     await addRunResult(runId, result);
-                    await updateCommentReplyStateFromResult({ userId: user._id, videoId, result, youtubeReplyId });
+                    await completeCommentPublish({
+                        state: publishClaim.state,
+                        publishLockId: publishClaim.publishLockId,
+                        youtubeReplyId,
+                        replyTextSnapshot: result.replyTextSnapshot,
+                        commentTextSnapshot: result.commentTextSnapshot,
+                        generatedByAi: true,
+                        botRunId: runId
+                    });
                 } catch (error) {
                     const errorCode = error.providerErrorCode || error.code || "COMMENT_FAILED";
                     const result = {
@@ -561,7 +649,9 @@ async function executeBotRun(runId, user, videoId, userPrompt, {
                         attemptCount: error.attemptCount ?? null
                     };
                     await addRunResult(runId, result);
-                    await updateCommentReplyStateFromResult({ userId: user._id, videoId, result });
+                    if (!["COMMENT_ALREADY_REPLIED", "COMMENT_REPLY_PUBLISH_IN_PROGRESS"].includes(errorCode)) {
+                        await updateCommentReplyStateFromResult({ userId: user._id, videoId, result });
+                    }
                     if (shouldStopRunAfterAiError(errorCode)) {
                         stopForProviderLimit = true;
                         providerLimitErrorCode = errorCode;
@@ -1307,7 +1397,42 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         });
 
         const insertStartedAt = Date.now();
-        const youtubeReplyId = await replyToComment(accessToken, comment.commentId, aiResult.text);
+        let publishClaim;
+        let youtubeReplyId;
+        try {
+            publishClaim = await claimCommentPublish({
+                userId,
+                videoId,
+                commentId: comment.commentId,
+                idempotencyKey: `${runId}:${comment.commentId}:publish`,
+                source: "single-ai",
+                commentTextSnapshot: createTextSnapshot(comment.text),
+                botRunId: runId,
+                generatedByAi: true
+            });
+            if (!publishClaim.acquired) {
+                throw conflict(
+                    publishClaim.completed ? "COMMENT_ALREADY_REPLIED" : "COMMENT_REPLY_PUBLISH_IN_PROGRESS",
+                    publishClaim.completed
+                        ? "This comment already has a bot reply"
+                        : "A reply is already being published for this comment"
+                );
+            }
+            youtubeReplyId = await replyToComment(accessToken, comment.commentId, aiResult.text);
+        } catch (error) {
+            if (publishClaim?.acquired) {
+                await failCommentPublish({
+                    state: publishClaim.state,
+                    publishLockId: publishClaim.publishLockId,
+                    status: "failed",
+                    errorCode: error.code || "YOUTUBE_REPLY_FAILED",
+                    errorMessage: error.isOperational ? error.message : "Failed to publish reply",
+                    commentTextSnapshot: createTextSnapshot(comment.text),
+                    generatedByAi: true
+                });
+            }
+            throw error;
+        }
         await aiResult.finalizeBilling();
 
         const result = {
@@ -1322,7 +1447,15 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         };
 
         await addRunResult(runId, result);
-        const state = await updateCommentReplyStateFromResult({ userId, videoId, result, youtubeReplyId });
+        const state = await completeCommentPublish({
+            state: publishClaim.state,
+            publishLockId: publishClaim.publishLockId,
+            youtubeReplyId,
+            replyTextSnapshot: result.replyTextSnapshot,
+            commentTextSnapshot: result.commentTextSnapshot,
+            generatedByAi: true,
+            botRunId: runId
+        });
         const run = await BotRun.findByIdAndUpdate(runId, {
             status: "completed",
             completedAt: new Date()
@@ -1330,8 +1463,15 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
 
         return { run, result, state };
     } catch (error) {
-        if (aiResult?.releaseBilling && error.code === "YOUTUBE_REPLY_FAILED") {
-            await aiResult.releaseBilling("youtube-reply-failed");
+        if (aiResult?.releaseBilling && [
+            "YOUTUBE_REPLY_FAILED",
+            "COMMENT_ALREADY_REPLIED",
+            "COMMENT_REPLY_PUBLISH_IN_PROGRESS",
+            "COMMENT_PUBLISH_CLAIM_LOST"
+        ].includes(error.code)) {
+            await aiResult.releaseBilling(error.code === "YOUTUBE_REPLY_FAILED"
+                ? "youtube-reply-failed"
+                : "comment-publish-not-acquired");
         }
 
         const result = {
@@ -1346,7 +1486,9 @@ const executeSingleCommentReply = async ({ runId, userId, videoId, comment, acce
         };
 
         await addRunResult(runId, result);
-        await updateCommentReplyStateFromResult({ userId, videoId, result });
+        if (!["COMMENT_ALREADY_REPLIED", "COMMENT_REPLY_PUBLISH_IN_PROGRESS", "COMMENT_PUBLISH_CLAIM_LOST"].includes(result.errorCode)) {
+            await updateCommentReplyStateFromResult({ userId, videoId, result });
+        }
         await BotRun.findByIdAndUpdate(runId, {
             status: "failed",
             errorCode: result.errorCode,

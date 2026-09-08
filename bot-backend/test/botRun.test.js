@@ -458,6 +458,7 @@ test("publishCommentReply posts manual text without invoking AI or wallet billin
     mockYoutubeCommentLookup(t, { youtubeReplyId: "reply-123" });
     let runCreated = false;
     let stateUpdated = false;
+    let capturedPublishLockId = null;
 
     t.mock.method(CommentReplyState, "findOne", async () => null);
     t.mock.method(BotRun, "findOne", (filter) => {
@@ -479,11 +480,16 @@ test("publishCommentReply posts manual text without invoking AI or wallet billin
     });
     t.mock.method(CommentReplyState, "findOneAndUpdate", async (filter, update) => {
         stateUpdated = true;
-        assert.equal(filter.commentId, "comment-1");
-        assert.equal(update.$set.status, "replied");
-        assert.equal(update.$set.draftReplyText, null);
-        assert.equal(update.$set.postedReplyTextSnapshot, "Manual reply with a useful detail.");
-        assert.equal(update.$set.youtubeReplyId, "reply-123");
+        assert.equal(update.$set.status === "publishing" || update.$set.status === "replied", true);
+        if (update.$set.status === "publishing") {
+            assert.equal(filter.commentId, "comment-1");
+            capturedPublishLockId = update.$set.publishLockId;
+        } else {
+            assert.equal(filter.publishLockId, capturedPublishLockId);
+            assert.equal(update.$set.draftReplyText, null);
+            assert.equal(update.$set.postedReplyTextSnapshot, "Manual reply with a useful detail.");
+            assert.equal(update.$set.youtubeReplyId, "reply-123");
+        }
         return {
             _id: "state-1",
             userId: user._id,
@@ -508,6 +514,56 @@ test("publishCommentReply posts manual text without invoking AI or wallet billin
     assert.equal(result.created, true);
     assert.equal(result.result.status, "replied");
     assert.equal(result.result.youtubeReplyId, "reply-123");
+});
+
+test("publishCommentReply rejects an active publish claim before calling YouTube", async (t) => {
+    let youtubeCalled = false;
+
+    t.mock.method(CommentReplyState, "findOne", async (filter) => {
+        if (filter.status === "replied" || filter.publishIdempotencyKey) {
+            return null;
+        }
+
+        if (filter.userId && filter.videoId === "abcDEF12345" && filter.commentId === "comment-1") {
+            return {
+                _id: "state-1",
+                userId: user._id,
+                videoId: "abcDEF12345",
+                commentId: "comment-1",
+                status: "publishing",
+                publishLockId: "active-lock",
+                publishLockedAt: new Date(),
+                publishIdempotencyKey: "other-publish-key"
+            };
+        }
+
+        return null;
+    });
+    t.mock.method(BotRun, "findOne", () => ({ sort: async () => null }));
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async () => {
+        throw new Error("publish claim should not be updated while a fresh lock exists");
+    });
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async insert() {
+                youtubeCalled = true;
+            }
+        }
+    }));
+
+    await assert.rejects(
+        () => publishCommentReply({
+            user,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            replyText: "Manual reply with a useful detail.",
+            source: "manual",
+            idempotencyKey: "new-publish-key"
+        }),
+        { code: "COMMENT_REPLY_PUBLISH_IN_PROGRESS", status: 409 }
+    );
+
+    assert.equal(youtubeCalled, false);
 });
 
 test("editPostedCommentReply updates a stored YouTube reply snapshot and writes audit", async (t) => {

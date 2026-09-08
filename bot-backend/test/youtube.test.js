@@ -55,7 +55,12 @@ const createQuery = (docs) => ({
 
 const mockCommentReplyStateEmpty = (t) => {
     t.mock.method(CommentReplyState, "exists", async () => false);
-    t.mock.method(CommentReplyState, "findOneAndUpdate", async () => ({}));
+    t.mock.method(CommentReplyState, "findOne", async () => null);
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async (filter, update) => ({
+        _id: filter._id || "state-1",
+        ...(update.$setOnInsert || {}),
+        ...(update.$set || {})
+    }));
     t.mock.method(CommentReplyState, "find", () => ({
         sort() {
             return Promise.resolve([]);
@@ -1144,6 +1149,67 @@ test("executeSingleCommentReply releases deferred billing when YouTube posting f
     assert.equal(resultUpdate.update.$push.results.status, "failed");
     assert.equal(resultUpdate.update.$push.results.errorCode, "YOUTUBE_REPLY_FAILED");
     assert.equal(updates.find(entry => entry.update.status === "failed").update.errorCode, "YOUTUBE_REPLY_FAILED");
+});
+
+test("executeSingleCommentReply releases deferred billing when publish claim is active", async (t) => {
+    const updates = [];
+    let releasedReason = null;
+    let insertCalled = false;
+
+    t.mock.method(CommentReplyState, "findOne", async (filter) => {
+        if (filter.publishIdempotencyKey) return null;
+        return {
+            _id: "state-1",
+            userId: user._id,
+            videoId: "abcDEF12345",
+            commentId: "comment-1",
+            status: "publishing",
+            publishLockId: "active-lock",
+            publishLockedAt: new Date(),
+            publishIdempotencyKey: "other-publish-key"
+        };
+    });
+    t.mock.method(CommentReplyState, "findOneAndUpdate", async () => {
+        throw new Error("publish claim should not be updated while a fresh lock exists");
+    });
+    t.mock.method(google, "youtube", () => ({
+        comments: {
+            async insert() {
+                insertCalled = true;
+            }
+        }
+    }));
+    t.mock.method(BotRun, "findByIdAndUpdate", async (runId, update) => {
+        updates.push({ runId, update });
+        return {};
+    });
+    t.mock.method(aiProvider, "generateReply", async () => ({
+        text: "Thanks for the kind note about the recipe.",
+        latencyMs: 120,
+        attemptCount: 1,
+        finalizeBilling: async () => {
+            throw new Error("billing should not finalize when publish claim is blocked");
+        },
+        releaseBilling: async (reason) => {
+            releasedReason = reason;
+        }
+    }));
+
+    await assert.rejects(
+        () => executeSingleCommentReply({
+            runId: "66b000000000000000000001",
+            userId: user._id,
+            videoId: "abcDEF12345",
+            comment: { commentId: "comment-1", text: "Great recipe!" },
+            accessToken: "access-token",
+            prompt: "Reply politely"
+        }),
+        { code: "COMMENT_REPLY_PUBLISH_IN_PROGRESS", status: 409 }
+    );
+
+    assert.equal(insertCalled, false);
+    assert.equal(releasedReason, "comment-publish-not-acquired");
+    assert.equal(updates.find(entry => entry.update.$push?.results).update.$push.results.errorCode, "COMMENT_REPLY_PUBLISH_IN_PROGRESS");
 });
 
 test("executeBotRun spaces Gemini requests between comments without delaying the first", async (t) => {

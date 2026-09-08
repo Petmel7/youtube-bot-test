@@ -6,7 +6,7 @@ const commentReplyStateSchema = new mongoose.Schema({
     commentId: { type: String, required: true, index: true },
     status: {
         type: String,
-        enum: ["queued", "processing", "drafted", "replied", "posted", "failed", "skipped"],
+        enum: ["queued", "processing", "publishing", "drafted", "replied", "posted", "failed", "skipped"],
         required: true,
         default: "drafted",
         index: true
@@ -29,6 +29,9 @@ const commentReplyStateSchema = new mongoose.Schema({
     botRunId: { type: mongoose.Schema.Types.ObjectId, ref: "BotRun", default: null },
     attempts: { type: Number, default: 0 },
     lockedAt: { type: Date, default: null },
+    publishLockId: { type: String, default: null },
+    publishLockedAt: { type: Date, default: null },
+    publishSource: { type: String, enum: ["bulk", "single-ai", "manual", "draft"], default: null },
     completedAt: { type: Date, default: null },
     idempotencyKey: { type: String, default: null },
     draftIdempotencyKey: { type: String, default: null },
@@ -38,6 +41,7 @@ const commentReplyStateSchema = new mongoose.Schema({
 
 commentReplyStateSchema.index({ userId: 1, videoId: 1, commentId: 1 }, { unique: true });
 commentReplyStateSchema.index({ botRunId: 1, status: 1, updatedAt: 1 });
+commentReplyStateSchema.index({ publishLockId: 1 }, { sparse: true });
 commentReplyStateSchema.index(
     { userId: 1, idempotencyKey: 1 },
     { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }

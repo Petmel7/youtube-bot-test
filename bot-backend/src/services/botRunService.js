@@ -9,6 +9,11 @@ const userPromptService = require("./userPromptService");
 const { generatePrompt } = require("../config/promptConfig");
 const { conflict, notFound, forbidden, paymentRequired, unprocessable } = require("../utils/errors");
 const {
+    claimCommentPublish,
+    completeCommentPublish,
+    failCommentPublish
+} = require("./commentPublishClaimService");
+const {
     executeBotRun,
     executeSingleCommentReply,
     getVideoCommentForReply,
@@ -403,14 +408,6 @@ const updateCommentDraft = async ({ user, videoId, commentId, draftReplyText }) 
 };
 
 const publishCommentReply = async ({ user, videoId, commentId, replyText, source, idempotencyKey }) => {
-    const existingPublishedState = await CommentReplyState.findOne({
-        userId: user._id,
-        publishIdempotencyKey: idempotencyKey
-    });
-    if (existingPublishedState) {
-        return { run: null, result: toStateResult(existingPublishedState), state: existingPublishedState, created: false };
-    }
-
     await ensureCommentNotReplied({ userId: user._id, videoId, commentId });
 
     let draftState = null;
@@ -426,10 +423,26 @@ const publishCommentReply = async ({ user, videoId, commentId, replyText, source
         }
     }
 
-    const { accessToken, comment } = await getVideoCommentForReply(user, videoId, commentId);
+    const publishClaim = await claimCommentPublish({
+        userId: user._id,
+        videoId,
+        commentId,
+        idempotencyKey,
+        source,
+        generatedByAi: source === "draft" ? Boolean(draftState?.generatedByAi) : false
+    });
+    if (!publishClaim.acquired) {
+        return { run: null, result: toStateResult(publishClaim.state), state: publishClaim.state, created: false };
+    }
+
+    let comment = null;
+    let accessToken = null;
     const responseText = replyText;
 
     try {
+        const replyContext = await getVideoCommentForReply(user, videoId, commentId);
+        accessToken = replyContext.accessToken;
+        comment = replyContext.comment;
         const insertStartedAt = Date.now();
         const youtubeReplyId = await replyToComment(accessToken, commentId, responseText);
         const result = {
@@ -448,24 +461,15 @@ const publishCommentReply = async ({ user, videoId, commentId, replyText, source
             result
         });
 
-        const state = await CommentReplyState.findOneAndUpdate({
-            userId: user._id,
-            videoId,
-            commentId
-        }, {
-            $set: {
-                status: "replied",
-                commentTextSnapshot: result.commentTextSnapshot,
-                draftReplyText: null,
-                postedReplyTextSnapshot: result.replyTextSnapshot,
-                youtubeReplyId,
-                lastErrorCode: null,
-                lastErrorMessage: null,
-                generatedByAi: result.generatedByAi,
-                botRunId: run._id,
-                publishIdempotencyKey: idempotencyKey
-            }
-        }, { new: true, upsert: true, setDefaultsOnInsert: true });
+        const state = await completeCommentPublish({
+            state: publishClaim.state,
+            publishLockId: publishClaim.publishLockId,
+            youtubeReplyId,
+            replyTextSnapshot: result.replyTextSnapshot,
+            commentTextSnapshot: result.commentTextSnapshot,
+            generatedByAi: result.generatedByAi,
+            botRunId: run._id
+        });
 
         return { run, result: { ...result, runId: String(run._id) }, state, created: true };
     } catch (error) {
@@ -474,25 +478,21 @@ const publishCommentReply = async ({ user, videoId, commentId, replyText, source
             status: source === "draft" ? "drafted" : "failed",
             errorCode: error.code || "YOUTUBE_REPLY_FAILED",
             errorMessage: error.isOperational ? error.message : "Failed to publish reply",
-            commentTextSnapshot: createTextSnapshot(comment.text),
+            commentTextSnapshot: createTextSnapshot(comment?.text),
             draftReplyText: source === "draft" ? replyText : null,
             generatedByAi: source === "draft" ? Boolean(draftState?.generatedByAi) : false
         };
 
-        const state = await CommentReplyState.findOneAndUpdate({
-            userId: user._id,
-            videoId,
-            commentId
-        }, {
-            $set: {
-                status: result.status,
-                commentTextSnapshot: result.commentTextSnapshot,
-                draftReplyText: result.draftReplyText,
-                lastErrorCode: result.errorCode,
-                lastErrorMessage: result.errorMessage,
-                generatedByAi: result.generatedByAi
-            }
-        }, { new: true, upsert: true, setDefaultsOnInsert: true });
+        const state = await failCommentPublish({
+            state: publishClaim.state,
+            publishLockId: publishClaim.publishLockId,
+            status: result.status,
+            errorCode: result.errorCode,
+            errorMessage: result.errorMessage,
+            commentTextSnapshot: result.commentTextSnapshot,
+            draftReplyText: result.draftReplyText,
+            generatedByAi: result.generatedByAi
+        });
 
         if (error.isOperational) {
             error.details = {
@@ -712,7 +712,7 @@ const getOwnedBotRun = async (userId, runId) => {
     const runDtoSource = run.toObject ? run.toObject() : { ...run };
     const counts = tasks.reduce((summary, task) => {
         if (task.status === "queued") summary.queuedCount++;
-        if (task.status === "processing") summary.processingCount++;
+        if (task.status === "processing" || task.status === "publishing") summary.processingCount++;
         if (task.status === "replied" || task.status === "posted") summary.successCount++;
         if (task.status === "failed") summary.failureCount++;
         if (task.status === "skipped") summary.skippedCount++;
@@ -738,7 +738,7 @@ const getOwnedBotRun = async (userId, runId) => {
         results: tasks.map(task => ({
             taskId: String(task._id),
             commentId: task.commentId,
-            status: task.status === "posted" ? "replied" : task.status,
+            status: task.status === "posted" ? "replied" : (task.status === "publishing" ? "processing" : task.status),
             runId: String(run._id),
             errorCode: task.lastErrorCode || null,
             errorMessage: task.lastErrorMessage || null,
