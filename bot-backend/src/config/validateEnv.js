@@ -1,4 +1,5 @@
 const {
+    mongoUri,
     paymentConfig,
     geminiModel,
     geminiMaxOutputTokens,
@@ -12,6 +13,12 @@ const {
     botRunRecoveryOnStartup,
     botRunRecoveryBatchSize,
     botRunRecoveryIntervalMs,
+    rateLimitWindowMs,
+    rateLimitGlobalMax,
+    rateLimitAuthMax,
+    rateLimitBotMax,
+    rateLimitYoutubeMax,
+    rateLimitAdminMax,
     botMaxCommentsPerRun,
     botMaxPagesPerRun,
     botReplyMaxLength,
@@ -36,6 +43,8 @@ const requiredEnv = [
     "GEMINI_API_KEY"
 ];
 
+const DISALLOWED_PRODUCTION_DB_NAMES = new Set(["test"]);
+
 const validateEnv = () => {
     const missing = requiredEnv.filter((name) => !process.env[name]);
 
@@ -56,6 +65,12 @@ const validateEnv = () => {
     } else if (process.env.OAUTH_TOKEN_ENCRYPTION_KEY) {
         validateOauthTokenEncryptionKey(process.env.OAUTH_TOKEN_ENCRYPTION_KEY);
     }
+
+    validateMongoUri(mongoUri, {
+        nodeEnv: process.env.NODE_ENV,
+        expectedDbName: process.env.EXPECTED_MONGO_DB_NAME,
+        allowTestDbName: process.env.ALLOW_PRODUCTION_TEST_DB === "true"
+    });
 
     if (!geminiModel || !/^gemini-[A-Za-z0-9._-]+$/.test(geminiModel)) {
         throw new Error("Invalid GEMINI_MODEL configuration");
@@ -80,6 +95,12 @@ const validateEnv = () => {
         BOT_RUN_STALE_LOCK_MS: botRunStaleLockMs,
         BOT_RUN_RECOVERY_BATCH_SIZE: botRunRecoveryBatchSize,
         BOT_RUN_RECOVERY_INTERVAL_MS: botRunRecoveryIntervalMs,
+        RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
+        RATE_LIMIT_GLOBAL_MAX: rateLimitGlobalMax,
+        RATE_LIMIT_AUTH_MAX: rateLimitAuthMax,
+        RATE_LIMIT_BOT_MAX: rateLimitBotMax,
+        RATE_LIMIT_YOUTUBE_MAX: rateLimitYoutubeMax,
+        RATE_LIMIT_ADMIN_MAX: rateLimitAdminMax,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
@@ -118,6 +139,12 @@ const validateEnv = () => {
         BOT_RUN_STALE_LOCK_MS: botRunStaleLockMs,
         BOT_RUN_RECOVERY_BATCH_SIZE: botRunRecoveryBatchSize,
         BOT_RUN_RECOVERY_INTERVAL_MS: botRunRecoveryIntervalMs,
+        RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
+        RATE_LIMIT_GLOBAL_MAX: rateLimitGlobalMax,
+        RATE_LIMIT_AUTH_MAX: rateLimitAuthMax,
+        RATE_LIMIT_BOT_MAX: rateLimitBotMax,
+        RATE_LIMIT_YOUTUBE_MAX: rateLimitYoutubeMax,
+        RATE_LIMIT_ADMIN_MAX: rateLimitAdminMax,
         BOT_MAX_COMMENTS_PER_RUN: botMaxCommentsPerRun,
         BOT_MAX_PAGES_PER_RUN: botMaxPagesPerRun,
         BOT_REPLY_MAX_LENGTH: botReplyMaxLength,
@@ -155,6 +182,45 @@ const validateBooleanEnv = (name) => {
     if (process.env[name] !== undefined && !["true", "false"].includes(process.env[name])) {
         throw new Error(`Invalid ${name} configuration`);
     }
+};
+
+const getMongoDatabaseName = (uri) => {
+    let parsed;
+    try {
+        parsed = new URL(uri);
+    } catch {
+        throw new Error("Invalid MONGO_URI configuration");
+    }
+
+    const pathname = parsed.pathname || "";
+    const dbName = decodeURIComponent(pathname.replace(/^\/+/, "").split("/")[0] || "").trim();
+    return dbName || null;
+};
+
+const validateMongoUri = (uri, {
+    nodeEnv = process.env.NODE_ENV,
+    expectedDbName = process.env.EXPECTED_MONGO_DB_NAME,
+    allowTestDbName = process.env.ALLOW_PRODUCTION_TEST_DB === "true"
+} = {}) => {
+    const dbName = getMongoDatabaseName(uri);
+
+    if (expectedDbName && dbName !== expectedDbName) {
+        throw new Error("Invalid MONGO_URI database name configuration");
+    }
+
+    if (nodeEnv !== "production") {
+        return dbName;
+    }
+
+    if (!dbName) {
+        throw new Error("Invalid MONGO_URI database name configuration");
+    }
+
+    if (!allowTestDbName && DISALLOWED_PRODUCTION_DB_NAMES.has(dbName.toLowerCase())) {
+        throw new Error("Invalid MONGO_URI database name configuration");
+    }
+
+    return dbName;
 };
 
 const normalizeValidationOptions = (options) => (typeof options === "string" ? {} : (options || {}));
@@ -320,3 +386,5 @@ module.exports = validateEnv;
 module.exports.validatePaymentConfig = validatePaymentConfig;
 module.exports.validatePaymentMethodsConfig = validatePaymentMethodsConfig;
 module.exports.validateOauthTokenEncryptionKey = validateOauthTokenEncryptionKey;
+module.exports.validateMongoUri = validateMongoUri;
+module.exports.getMongoDatabaseName = getMongoDatabaseName;

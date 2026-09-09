@@ -436,9 +436,9 @@ test("payment API write endpoints require write header", async () => {
     });
 
     assert.equal(challengeResponse.status, 403);
-    assert.equal(challengeResponse.body.error.code, "CSRF_HEADER_REQUIRED");
+    assert.equal(challengeResponse.body.error.code, "CSRF_TOKEN_REQUIRED");
     assert.equal(response.status, 403);
-    assert.equal(response.body.error.code, "CSRF_HEADER_REQUIRED");
+    assert.equal(response.body.error.code, "CSRF_TOKEN_REQUIRED");
 });
 
 test("payment API status and verify enforce ownership through lifecycle user scope", async () => {

@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const express = require("express");
+const http = require("node:http");
 const { google } = require("googleapis");
 
 const { toSafeUser, toPromptDto } = require("../src/utils/dto");
@@ -8,7 +10,12 @@ const { getValidAccessToken } = require("../src/services/authService");
 const { encryptToken, decryptToken, isEncryptedToken } = require("../src/services/security/tokenCrypto");
 const passportConfig = require("../src/config/passport");
 const validateEnv = require("../src/config/validateEnv");
-const { validateOauthTokenEncryptionKey } = validateEnv;
+const { validateOauthTokenEncryptionKey, validateMongoUri } = validateEnv;
+const requireWriteHeader = require("../src/middleware/requireWriteHeader");
+const { createCsrfToken } = require("../src/services/security/csrfService");
+const { createRateLimiter, resetRateLimitStores } = require("../src/middleware/rateLimit");
+const { createHealthRoutes } = require("../src/routes/healthRoutes");
+const errorHandler = require("../src/middleware/errorHandler");
 const {
     validateVideoId,
     validateGender,
@@ -18,6 +25,36 @@ const {
 const { validateGeneratedReply } = require("../src/services/geminiService");
 
 const tokenKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
+const request = async (app, { method = "GET", path, headers = {} }) => {
+    const server = app.listen(0);
+    try {
+        const port = server.address().port;
+        return await new Promise((resolve, reject) => {
+            const req = http.request({
+                hostname: "127.0.0.1",
+                port,
+                path,
+                method,
+                headers
+            }, (res) => {
+                let body = "";
+                res.on("data", chunk => { body += chunk; });
+                res.on("end", () => {
+                    resolve({
+                        status: res.statusCode,
+                        headers: res.headers,
+                        body: body ? JSON.parse(body) : {}
+                    });
+                });
+            });
+            req.on("error", reject);
+            req.end();
+        });
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+};
 
 const withTokenKey = async (fn) => {
     const previous = process.env.OAUTH_TOKEN_ENCRYPTION_KEY;
@@ -223,6 +260,146 @@ test("validateEnv requires OAuth token encryption key in production", () => {
         if (previousKey === undefined) delete process.env.OAUTH_TOKEN_ENCRYPTION_KEY;
         else process.env.OAUTH_TOKEN_ENCRYPTION_KEY = previousKey;
     }
+});
+
+test("production MongoDB URI validation requires an explicit non-test database", () => {
+    assert.throws(
+        () => validateMongoUri("mongodb+srv://user:pass@example.mongodb.net/", { nodeEnv: "production" }),
+        /MONGO_URI database name/
+    );
+    assert.throws(
+        () => validateMongoUri("mongodb://localhost:27017/test", { nodeEnv: "production" }),
+        /MONGO_URI database name/
+    );
+    assert.equal(
+        validateMongoUri("mongodb://localhost:27017/youtube_bot_prod", { nodeEnv: "production" }),
+        "youtube_bot_prod"
+    );
+    assert.equal(
+        validateMongoUri("mongodb://localhost:27017/test", { nodeEnv: "development" }),
+        "test"
+    );
+    assert.throws(
+        () => validateMongoUri("mongodb://localhost:27017/wrong", {
+            nodeEnv: "production",
+            expectedDbName: "youtube_bot_prod"
+        }),
+        /MONGO_URI database name/
+    );
+});
+
+test("requireWriteHeader accepts valid session CSRF token and rejects invalid tokens in production", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+        const req = {
+            session: {},
+            get(name) {
+                return this.headers?.[name.toLowerCase()];
+            },
+            headers: {}
+        };
+        const token = createCsrfToken(req);
+        let nextError = null;
+        let nextCalled = false;
+
+        req.headers["x-csrf-token"] = token;
+        requireWriteHeader(req, {}, (error) => {
+            nextError = error || null;
+            nextCalled = true;
+        });
+        assert.equal(nextCalled, true);
+        assert.equal(nextError, null);
+
+        req.headers["x-csrf-token"] = "wrong-token";
+        requireWriteHeader(req, {}, (error) => {
+            nextError = error || null;
+        });
+        assert.equal(nextError.code, "CSRF_TOKEN_INVALID");
+        assert.equal(nextError.status, 403);
+
+        delete req.headers["x-csrf-token"];
+        req.headers["x-csrf-protection"] = "1";
+        requireWriteHeader(req, {}, (error) => {
+            nextError = error || null;
+        });
+        assert.equal(nextError.code, "CSRF_TOKEN_REQUIRED");
+    } finally {
+        if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = previousNodeEnv;
+    }
+});
+
+test("rate limiter scopes authenticated users separately and returns Retry-After", async () => {
+    resetRateLimitStores();
+    const app = express();
+    app.use((req, res, next) => {
+        const userId = req.get("X-Test-User");
+        if (userId) req.user = { _id: userId };
+        next();
+    });
+    app.use(createRateLimiter({
+        group: "test-bot",
+        windowMs: 60000,
+        max: 1,
+        logger: { warn() {} }
+    }));
+    app.get("/limited", (req, res) => res.json({ success: true }));
+    app.use(errorHandler);
+
+    const first = await request(app, { path: "/limited", headers: { "X-Test-User": "user-1" } });
+    const second = await request(app, { path: "/limited", headers: { "X-Test-User": "user-1" } });
+    const otherUser = await request(app, { path: "/limited", headers: { "X-Test-User": "user-2" } });
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error.code, "RATE_LIMITED");
+    assert.equal(Boolean(second.headers["retry-after"]), true);
+    assert.equal(otherUser.status, 200);
+});
+
+test("rate limiter falls back to IP for unauthenticated clients", async () => {
+    resetRateLimitStores();
+    const app = express();
+    app.set("trust proxy", true);
+    app.use(createRateLimiter({
+        group: "test-ip",
+        windowMs: 60000,
+        max: 1,
+        logger: { warn() {} }
+    }));
+    app.get("/limited", (req, res) => res.json({ success: true }));
+    app.use(errorHandler);
+
+    const first = await request(app, { path: "/limited", headers: { "X-Forwarded-For": "203.0.113.10" } });
+    const second = await request(app, { path: "/limited", headers: { "X-Forwarded-For": "203.0.113.10" } });
+    const otherIp = await request(app, { path: "/limited", headers: { "X-Forwarded-For": "203.0.113.11" } });
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error.code, "RATE_LIMITED");
+    assert.equal(otherIp.status, 200);
+});
+
+test("health and readiness endpoints are unauthenticated and do not expose secrets", async () => {
+    const readyApp = express();
+    readyApp.use(createHealthRoutes({ connection: { readyState: 1 } }));
+
+    const health = await request(readyApp, { path: "/healthz" });
+    const ready = await request(readyApp, { path: "/readyz" });
+
+    assert.equal(health.status, 200);
+    assert.deepEqual(health.body, { status: "ok" });
+    assert.equal(ready.status, 200);
+    assert.deepEqual(ready.body, { status: "ready" });
+
+    const notReadyApp = express();
+    notReadyApp.use(createHealthRoutes({ connection: { readyState: 0 } }));
+    const notReady = await request(notReadyApp, { path: "/readyz" });
+
+    assert.equal(notReady.status, 503);
+    assert.deepEqual(notReady.body, { status: "not_ready" });
+    assert.equal(JSON.stringify(notReady.body).includes("MONGO_URI"), false);
 });
 
 test("prompt DTO normalizes legacy gender text", () => {

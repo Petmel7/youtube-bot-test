@@ -1412,7 +1412,7 @@ test("POST /youtube/my-videos/refresh requires auth and write header", async (t)
         userId: user._id
     });
     assert.equal(missingHeader.status, 403);
-    assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+    assert.equal(missingHeader.body.error.code, "CSRF_TOKEN_REQUIRED");
 
     t.mock.method(global, "fetch", async (url) => {
         const parsed = new URL(url);

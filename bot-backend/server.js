@@ -9,6 +9,9 @@ const sessionMiddleware = require("./src/config/session");
 const corsMiddleware = require("./src/config/cors");
 const validateEnv = require("./src/config/validateEnv");
 const errorHandler = require("./src/middleware/errorHandler");
+const healthRoutes = require("./src/routes/healthRoutes");
+const { getCsrfToken } = require("./src/controllers/csrfController");
+const { createConfiguredRateLimiters } = require("./src/middleware/rateLimiters");
 const {
     botRunRecoveryOnStartup,
     botRunRecoveryIntervalMs
@@ -34,8 +37,11 @@ const adminRoutes = require("./src/routes/adminRoutes");
 
 // ✅ Ініціалізація додатку
 const app = express();
+const rateLimiters = createConfiguredRateLimiters();
 
 app.set('trust proxy', 1);
+
+app.use(healthRoutes);
 
 // ✅ Налаштування middleware
 app.use(corsMiddleware);
@@ -44,18 +50,21 @@ app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
+app.get("/csrf-token", getCsrfToken);
+app.use(rateLimiters.global);
+
 app.get("/", (req, res) => {
     res.send("✅ YouTube Bot Backend is running!");
 });
 
 // ✅ Підключення роутів
-app.use("/auth", authRoutes);
-app.use("/bot", botRoutes);
+app.use("/auth", rateLimiters.auth, authRoutes);
+app.use("/bot", rateLimiters.bot, botRoutes);
 app.use("/user", userRoutes);
 app.use("/user-prompt", userPromptRoutes);
-app.use("/youtube", youtubeRoutes);
+app.use("/youtube", rateLimiters.youtube, youtubeRoutes);
 app.use("/api/payments", paymentRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/admin", rateLimiters.admin, adminRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 10000;

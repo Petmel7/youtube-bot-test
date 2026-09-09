@@ -1105,7 +1105,7 @@ test("POST /bot/comments/:commentId/reply requires auth, write header, and valid
         }
     });
     assert.equal(missingHeader.status, 403);
-    assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+    assert.equal(missingHeader.body.error.code, "CSRF_TOKEN_REQUIRED");
 
     const invalidComment = await request(app, {
         method: "POST",
@@ -1153,7 +1153,7 @@ test("comment draft and publish endpoints require auth and write header", async 
             userId: user._id
         });
         assert.equal(missingHeader.status, 403);
-        assert.equal(missingHeader.body.error.code, "CSRF_HEADER_REQUIRED");
+        assert.equal(missingHeader.body.error.code, "CSRF_TOKEN_REQUIRED");
     }
 });
 
