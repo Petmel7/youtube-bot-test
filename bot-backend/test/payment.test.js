@@ -7,7 +7,7 @@ const { Wallet: EthersWallet } = require("ethers");
 const PaymentIntent = require("../src/models/PaymentIntent");
 const PaymentPayerChallenge = require("../src/models/PaymentPayerChallenge");
 const { normalizeEvmAddress } = require("../src/utils/evmAddress");
-const { validatePaymentConfig } = require("../src/config/validateEnv");
+const { validatePaymentConfig, resolveAppEnv } = require("../src/config/validateEnv");
 const { allowedPaymentMethods } = require("../src/config/paymentNetworks");
 const {
     calculateStablecoinBaseUnits,
@@ -246,7 +246,15 @@ const createFakeChallengeModel = (initialChallenges = []) => {
 
 test("payment config validation accepts production Base mainnet USDC config", () => {
     assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "production" }));
+    assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "production", appEnv: "production" }));
     assert.doesNotThrow(() => validatePaymentConfig(validPaymentConfig(), { nodeEnv: "development" }));
+});
+
+test("APP_ENV defaults fail closed for production Node runtimes", () => {
+    assert.equal(resolveAppEnv(undefined, "production"), "production");
+    assert.equal(resolveAppEnv(undefined, "development"), "development");
+    assert.equal(resolveAppEnv(undefined, undefined), "development");
+    assert.equal(resolveAppEnv("staging", "production"), "staging");
 });
 
 test("payment config validation accepts Base Sepolia only with explicit non-production opt-in", () => {
@@ -261,13 +269,13 @@ test("payment config validation accepts Base Sepolia only with explicit non-prod
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "development" }));
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "test" }));
     assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "local" }));
+    assert.doesNotThrow(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production", appEnv: "staging" }));
     assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production" }), /PAYMENT_NETWORK/);
-    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "" }), /NODE_ENV/);
-    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    assert.throws(() => validatePaymentConfig(sepoliaConfig, { nodeEnv: "production", appEnv: "preview" }), /APP_ENV/);
     assert.throws(() => validatePaymentConfig({
         ...sepoliaConfig,
         allowTestnetPayments: false
-    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
+    }, { nodeEnv: "production", appEnv: "staging" }), /ALLOW_TESTNET_PAYMENTS/);
 });
 
 test("payment config validation rejects unknown payment network", () => {
@@ -494,12 +502,12 @@ test("payment config validation accepts BNB testnet USDC only with explicit non-
     });
 
     assert.doesNotThrow(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "development" }));
+    assert.doesNotThrow(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "production", appEnv: "staging" }));
     assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
     assert.throws(() => validatePaymentConfig({
         ...bnbTestnetConfig,
         allowTestnetPayments: false
-    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
-    assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    }, { nodeEnv: "production", appEnv: "staging" }), /ALLOW_TESTNET_PAYMENTS/);
     assert.throws(() => validatePaymentConfig({
         ...bnbTestnetConfig,
         methodsJson: JSON.stringify([{
@@ -548,12 +556,12 @@ test("payment config validation accepts BNB testnet USDT only with explicit non-
     });
 
     assert.doesNotThrow(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "development" }));
+    assert.doesNotThrow(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "production", appEnv: "staging" }));
     assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
     assert.throws(() => validatePaymentConfig({
         ...bnbTestnetConfig,
         allowTestnetPayments: false
-    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
-    assert.throws(() => validatePaymentConfig(bnbTestnetConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    }, { nodeEnv: "production", appEnv: "staging" }), /ALLOW_TESTNET_PAYMENTS/);
     assert.throws(() => validatePaymentConfig({
         ...bnbTestnetConfig,
         methodsJson: JSON.stringify([{
@@ -602,12 +610,12 @@ test("payment config validation accepts Ethereum Sepolia USDT smoke only with ex
     });
 
     assert.doesNotThrow(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "development" }));
+    assert.doesNotThrow(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "production", appEnv: "staging" }));
     assert.throws(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
     assert.throws(() => validatePaymentConfig({
         ...ethereumSepoliaConfig,
         allowTestnetPayments: false
-    }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/);
-    assert.throws(() => validatePaymentConfig(ethereumSepoliaConfig, { nodeEnv: "staging" }), /NODE_ENV/);
+    }, { nodeEnv: "production", appEnv: "staging" }), /ALLOW_TESTNET_PAYMENTS/);
     assert.throws(() => validatePaymentConfig({
         ...ethereumSepoliaConfig,
         methodsJson: JSON.stringify([{
@@ -657,6 +665,7 @@ test("payment config validation accepts explicit Solana devnet only with testnet
     });
 
     assert.doesNotThrow(() => validatePaymentConfig(solanaConfig, { nodeEnv: "development" }));
+    assert.doesNotThrow(() => validatePaymentConfig(solanaConfig, { nodeEnv: "production", appEnv: "staging" }));
     assert.throws(() => validatePaymentConfig(solanaConfig, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
     assert.throws(() => validatePaymentConfig({
         ...solanaConfig,
@@ -713,9 +722,18 @@ test("payment config validation rejects unknown, disabled, and production testne
         allowTestnetPayments: true,
         defaultMethodId: "base-sepolia-usdc"
     }), { nodeEnv: "production" }), /PAYMENT_METHOD_ID/);
+
+    assert.throws(() => validatePaymentConfig(validPaymentConfig({
+        methodsJson: JSON.stringify([{
+            id: "unknown-usdc",
+            enabled: true,
+            rpcUrl: "https://example.invalid",
+            treasuryAddress
+        }])
+    }), { nodeEnv: "production", appEnv: "staging" }), /PAYMENT_METHOD_ID/);
 });
 
-test("payment config validation rejects every testnet smoke method in production and without opt-in", () => {
+test("payment config validation gates every testnet smoke method by APP_ENV and explicit opt-in", () => {
     const testnetMethods = Object.values(allowedPaymentMethods).filter(method => method.production === false);
     assert.ok(testnetMethods.length > 0);
 
@@ -747,10 +765,22 @@ test("payment config validation rejects every testnet smoke method in production
         });
 
         assert.throws(() => validatePaymentConfig(config, { nodeEnv: "production" }), /PAYMENT_METHOD_ID/, method.id);
+        assert.throws(() => validatePaymentConfig(config, {
+            nodeEnv: "production",
+            appEnv: "production"
+        }), /PAYMENT_METHOD_ID/, method.id);
         assert.throws(() => validatePaymentConfig({
             ...config,
             allowTestnetPayments: false
-        }, { nodeEnv: "development" }), /ALLOW_TESTNET_PAYMENTS/, method.id);
+        }, { nodeEnv: "production", appEnv: "staging" }), /ALLOW_TESTNET_PAYMENTS/, method.id);
+        assert.throws(() => validatePaymentConfig(config, {
+            nodeEnv: "production",
+            appEnv: "preview"
+        }), /APP_ENV/, method.id);
+        assert.doesNotThrow(() => validatePaymentConfig(config, {
+            nodeEnv: "production",
+            appEnv: "staging"
+        }), undefined, method.id);
         assert.doesNotThrow(() => validatePaymentConfig(config, { nodeEnv: "development" }), undefined, method.id);
     }
 });

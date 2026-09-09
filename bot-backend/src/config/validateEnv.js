@@ -1,4 +1,5 @@
 const {
+    appEnv,
     mongoUri,
     paymentConfig,
     geminiModel,
@@ -44,6 +45,8 @@ const requiredEnv = [
 ];
 
 const DISALLOWED_PRODUCTION_DB_NAMES = new Set(["test"]);
+const ALLOWED_APP_ENVS = new Set(["production", "staging", "development", "test", "local"]);
+const TESTNET_PAYMENT_APP_ENVS = new Set(["staging", "development", "test", "local"]);
 
 const validateEnv = () => {
     const missing = requiredEnv.filter((name) => !process.env[name]);
@@ -59,6 +62,9 @@ const validateEnv = () => {
     if (process.env.NODE_ENV === "production" && !process.env.CLIENT_PROD_URL) {
         throw new Error("Missing required environment variable: CLIENT_PROD_URL");
     }
+
+    validateAppEnv(appEnv);
+    validateBooleanEnv("ALLOW_TESTNET_PAYMENTS");
 
     if (process.env.NODE_ENV === "production") {
         validateOauthTokenEncryptionKey(process.env.OAUTH_TOKEN_ENCRYPTION_KEY);
@@ -161,6 +167,17 @@ const validateEnv = () => {
     validatePaymentConfig(paymentConfig);
 };
 
+const resolveAppEnv = (rawAppEnv = process.env.APP_ENV, nodeEnv = process.env.NODE_ENV) => {
+    if (rawAppEnv) return rawAppEnv;
+    return nodeEnv === "production" ? "production" : (nodeEnv || "development");
+};
+
+const validateAppEnv = (value) => {
+    if (!ALLOWED_APP_ENVS.has(value)) {
+        throw new Error("Invalid APP_ENV configuration");
+    }
+};
+
 const validateOauthTokenEncryptionKey = (value) => {
     if (typeof value !== "string" || value.trim() === "") {
         throw new Error("Missing required environment variable: OAUTH_TOKEN_ENCRYPTION_KEY");
@@ -227,8 +244,11 @@ const normalizeValidationOptions = (options) => (typeof options === "string" ? {
 
 const validatePaymentConfig = (config, options = {}) => {
     const {
-        nodeEnv = process.env.NODE_ENV
+        nodeEnv = process.env.NODE_ENV,
+        appEnv = config.appEnv || resolveAppEnv(process.env.APP_ENV, nodeEnv)
     } = normalizeValidationOptions(options);
+
+    validateAppEnv(appEnv);
 
     if (!Number.isInteger(config.confirmations) || config.confirmations < 1) {
         throw new Error("Invalid PAYMENT_CONFIRMATIONS configuration");
@@ -251,7 +271,7 @@ const validatePaymentConfig = (config, options = {}) => {
     }
 
     parsePaymentPackages(config.packagesJson, { pricingVersion: config.pricingVersion });
-    validatePaymentMethodsConfig(config, { nodeEnv });
+    validatePaymentMethodsConfig(config, { nodeEnv, appEnv });
 };
 
 const validateUrl = (value, envName) => {
@@ -265,14 +285,25 @@ const validateUrl = (value, envName) => {
     }
 };
 
-const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV } = {}) => {
+const validatePaymentMethodsConfig = (config, {
+    nodeEnv = process.env.NODE_ENV,
+    appEnv = config.appEnv || resolveAppEnv(process.env.APP_ENV, nodeEnv)
+} = {}) => {
+    validateAppEnv(appEnv);
+
     if (!config.methodsJson) {
         const legacyMethod = getAllowedPaymentMethodByLegacyNetwork(config.network);
         if (!legacyMethod) {
             throw new Error("Invalid PAYMENT_NETWORK configuration");
         }
-        if (nodeEnv === "production" && !legacyMethod.production) {
+        if (appEnv === "production" && !legacyMethod.production) {
             throw new Error("Invalid PAYMENT_NETWORK configuration");
+        }
+        if (!legacyMethod.production && config.allowTestnetPayments !== true) {
+            throw new Error("Invalid ALLOW_TESTNET_PAYMENTS configuration");
+        }
+        if (!legacyMethod.production && !TESTNET_PAYMENT_APP_ENVS.has(appEnv)) {
+            throw new Error("Invalid APP_ENV configuration for testnet payments");
         }
         if (!Number.isInteger(config.chainId) || config.chainId !== legacyMethod.chainId) {
             throw new Error("Invalid PAYMENT_CHAIN_ID configuration");
@@ -310,7 +341,7 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
             throw new Error("Invalid PAYMENT_METHOD_ID configuration");
         }
 
-        if (nodeEnv === "production" && !allowed.production) {
+        if (appEnv === "production" && !allowed.production) {
             throw new Error("Invalid PAYMENT_METHOD_ID configuration");
         }
 
@@ -318,8 +349,8 @@ const validatePaymentMethodsConfig = (config, { nodeEnv = process.env.NODE_ENV }
             throw new Error("Invalid ALLOW_TESTNET_PAYMENTS configuration");
         }
 
-        if (!allowed.production && !["development", "test", "local"].includes(nodeEnv)) {
-            throw new Error("Invalid NODE_ENV configuration for testnet payments");
+        if (!allowed.production && !TESTNET_PAYMENT_APP_ENVS.has(appEnv)) {
+            throw new Error("Invalid APP_ENV configuration for testnet payments");
         }
 
         if ((method.namespace || "eip155") !== (allowed.namespace || "eip155")) {
@@ -388,3 +419,5 @@ module.exports.validatePaymentMethodsConfig = validatePaymentMethodsConfig;
 module.exports.validateOauthTokenEncryptionKey = validateOauthTokenEncryptionKey;
 module.exports.validateMongoUri = validateMongoUri;
 module.exports.getMongoDatabaseName = getMongoDatabaseName;
+module.exports.resolveAppEnv = resolveAppEnv;
+module.exports.validateAppEnv = validateAppEnv;
