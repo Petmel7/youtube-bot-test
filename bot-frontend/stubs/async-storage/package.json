@@ -1,0 +1,8 @@
+{
+  "name": "@react-native-async-storage/async-storage",
+  "version": "1.24.0",
+  "private": true,
+  "main": "index.js",
+  "module": "index.js",
+  "browser": "index.js"
+}
