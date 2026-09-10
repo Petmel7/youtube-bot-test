@@ -39,7 +39,7 @@ const Theme = ({
                         </div>
                     </div>
                     <button
-                        className={`${styles.editButton} editAndSaveButton editButton`}
+                        className={styles.editButton}
                         onClick={() => setIsEditingTheme(true)}
                     >
                         {t("change.theme")}

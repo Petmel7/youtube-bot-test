@@ -38,7 +38,7 @@ const Gender = ({
                         </div>
                     </div>
                     <button
-                        className={`${styles.editButton} editAndSaveButton`}
+                        className={styles.editButton}
                         onClick={() => setIsEditingGender(true)}
                     >
                         {t("change.gender")}
