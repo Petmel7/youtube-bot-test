@@ -18,7 +18,8 @@ const {
 } = require("./src/config/config");
 const {
     runBotRunRecoveryOnce,
-    startBotRunRecoveryLoop
+    startBotRunRecoveryLoop,
+    toSafeRecoveryErrorLog
 } = require("./src/services/botRunRecoveryService");
 
 validateEnv();
@@ -81,7 +82,7 @@ const startServer = async () => {
                 const summary = await runBotRunRecoveryOnce();
                 console.log("Bot run startup recovery completed", summary);
             } catch (error) {
-                console.error("Bot run startup recovery failed", { code: error.code || "BOT_RUN_RECOVERY_FAILED" });
+                console.error("Bot run startup recovery failed", toSafeRecoveryErrorLog(error, "BOT_RUN_RECOVERY_FAILED"));
             }
         });
         stopBotRunRecoveryLoop = startBotRunRecoveryLoop({ intervalMs: botRunRecoveryIntervalMs });

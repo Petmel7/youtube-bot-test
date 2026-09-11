@@ -26,7 +26,9 @@ const youtubeService = require("../src/services/youtubeService");
 const { toBotRunDto } = require("../src/utils/dto");
 const {
     recoverStaleBotRuns,
-    runBotRunRecoveryOnce
+    runBotRunRecoveryOnce,
+    startBotRunRecoveryLoop,
+    toSafeRecoveryErrorLog
 } = require("../src/services/botRunRecoveryService");
 
 const user = {
@@ -1030,6 +1032,61 @@ test("runBotRunRecoveryOnce skips overlapping recovery loops", async (t) => {
     assert.equal(second.skipped, true);
     assert.equal(second.reason, "RECOVERY_IN_PROGRESS");
     assert.equal(firstSummary.runsScanned, 0);
+});
+
+test("toSafeRecoveryErrorLog includes stack only in development-like environments", () => {
+    const error = Object.assign(new Error("recovery failed access_token=secret-value"), {
+        code: "RECOVERY_TEST_FAILED"
+    });
+
+    const testLog = toSafeRecoveryErrorLog(error, "FALLBACK", { appEnv: "test" });
+    const productionLog = toSafeRecoveryErrorLog(error, "FALLBACK", { appEnv: "production" });
+
+    assert.equal(testLog.code, "RECOVERY_TEST_FAILED");
+    assert.equal(testLog.name, "Error");
+    assert.match(testLog.message, /access_token=\[REDACTED\]/);
+    assert.ok(testLog.stack);
+    assert.doesNotMatch(testLog.stack, /secret-value/);
+
+    assert.equal(productionLog.code, "RECOVERY_TEST_FAILED");
+    assert.equal(productionLog.name, "Error");
+    assert.match(productionLog.message, /access_token=\[REDACTED\]/);
+    assert.equal(productionLog.stack, undefined);
+});
+
+test("startBotRunRecoveryLoop logs safe failure details and continues after an error", async (t) => {
+    let findCalls = 0;
+    t.mock.method(BotRun, "find", () => {
+        findCalls++;
+        throw Object.assign(new Error("interval failed refresh_token=secret-value"), {
+            code: "BROKEN_RECOVERY_LOOP"
+        });
+    });
+
+    const errors = [];
+    const logger = {
+        info() {},
+        error(message, details) {
+            errors.push({ message, details });
+        }
+    };
+    const stop = startBotRunRecoveryLoop({ intervalMs: 5, logger });
+    t.after(stop);
+
+    const startedAt = Date.now();
+    while (errors.length < 2 && Date.now() - startedAt < 200) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    stop();
+
+    assert.ok(findCalls >= 2);
+    assert.ok(errors.length >= 2);
+    assert.equal(errors[0].message, "Bot run recovery failed");
+    assert.equal(errors[0].details.code, "BROKEN_RECOVERY_LOOP");
+    assert.equal(errors[0].details.name, "Error");
+    assert.match(errors[0].details.message, /refresh_token=\[REDACTED\]/);
+    assert.ok(errors[0].details.stack);
+    assert.doesNotMatch(JSON.stringify(errors[0].details), /secret-value/);
 });
 
 test("POST /bot/start returns 402 details and does not create BotRun when credits are insufficient", async (t) => {

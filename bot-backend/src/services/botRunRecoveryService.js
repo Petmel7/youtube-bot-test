@@ -13,8 +13,48 @@ const { executeBotRun } = require("./youtubeService");
 const RECOVERED_ERROR_CODE = "BOT_RUN_STALE_LOCK_RECOVERED";
 const RECOVERED_FAILED_CODE = "BOT_RUN_RECOVERED_FAILED";
 const PUBLISH_RECOVERED_CODE = "COMMENT_PUBLISH_STALE_LOCK_RECOVERED";
+const STACK_LOG_APP_ENVS = new Set(["development", "test", "local"]);
 
 let recoveryInProgress = false;
+
+const redactSensitiveLogText = (value) => {
+    if (typeof value !== "string") return value;
+    return value
+        .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+        .replace(/\b(access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|secret|password)\b\s*[:=]\s*[^,\s}\]]+/gi, "$1=[REDACTED]");
+};
+
+const trimLogText = (value, maxLength = 1000) => {
+    if (typeof value !== "string") return value;
+    const normalized = value.replace(/\s+/g, " ").trim();
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+};
+
+const resolveRuntimeAppEnv = () => {
+    if (process.env.APP_ENV) return process.env.APP_ENV;
+    if (process.env.NODE_ENV === "production") return "production";
+    return process.env.NODE_ENV || "development";
+};
+
+const shouldIncludeRecoveryStack = (appEnv = resolveRuntimeAppEnv()) => STACK_LOG_APP_ENVS.has(appEnv);
+
+const toSafeRecoveryErrorLog = (
+    error,
+    fallbackCode = "BOT_RUN_RECOVERY_FAILED",
+    { appEnv = resolveRuntimeAppEnv() } = {}
+) => {
+    const safeDetails = {
+        code: redactSensitiveLogText(error?.code || fallbackCode),
+        name: redactSensitiveLogText(error?.name || "Error"),
+        message: trimLogText(redactSensitiveLogText(error?.message || "Unknown recovery error"))
+    };
+
+    if (shouldIncludeRecoveryStack(appEnv) && error?.stack) {
+        safeDetails.stack = trimLogText(redactSensitiveLogText(error.stack), 4000);
+    }
+
+    return safeDetails;
+};
 
 const isOlderThan = (value, staleBefore) => !value || new Date(value).getTime() <= staleBefore.getTime();
 
@@ -214,7 +254,7 @@ const resumeRecoveredRun = (run, { logger = console, scheduler = setImmediate } 
         } catch (error) {
             logger.error("Bot run recovery resume failed", {
                 runId: String(run._id),
-                code: error.code || "BOT_RUN_RECOVERY_RESUME_FAILED"
+                ...toSafeRecoveryErrorLog(error, "BOT_RUN_RECOVERY_RESUME_FAILED")
             });
             await BotRun.findByIdAndUpdate(run._id, {
                 status: "failed",
@@ -284,7 +324,7 @@ const startBotRunRecoveryLoop = ({ intervalMs = botRunRecoveryIntervalMs, logger
                 logger.info("Bot run recovery completed", summary);
             }
         } catch (error) {
-            logger.error("Bot run recovery failed", { code: error.code || "BOT_RUN_RECOVERY_FAILED" });
+            logger.error("Bot run recovery failed", toSafeRecoveryErrorLog(error, "BOT_RUN_RECOVERY_FAILED"));
         }
     }, intervalMs);
 
@@ -305,5 +345,7 @@ module.exports = {
     recoverStaleBotRuns,
     runBotRunRecoveryOnce,
     startBotRunRecoveryLoop,
-    resumeRecoveredRun
+    resumeRecoveredRun,
+    shouldIncludeRecoveryStack,
+    toSafeRecoveryErrorLog
 };
