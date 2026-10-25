@@ -7,7 +7,7 @@ Always inspect the relevant existing implementation before changing code. Preser
 ## Stack
 
 Backend:
-- Runtime: Node.js `22.x` via `bot-backend/package.json` engines.
+- Runtime: Node.js `22.23.4` via repository and package engine declarations.
 - Package manager: npm.
 - HTTP server: Express.
 - Database: MongoDB with Mongoose.
